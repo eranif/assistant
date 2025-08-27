@@ -234,7 +234,7 @@ std::optional<std::vector<std::string>> Manager::GetModelCapabilitiesString(
   }
 }
 
-void Manager::PullModel(const std::string& name, OnResponseCallback cb) {
+void Manager::AsyncPullModel(const std::string& name, OnResponseCallback cb) {
   bool expected{false};
   // If m_puller_busy is == "expected", change it to "true" and return true.
   if (!m_puller_busy.compare_exchange_strong(expected, true)) {

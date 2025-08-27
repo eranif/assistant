@@ -115,7 +115,7 @@ class Manager {
   json ListJSON() const;
 
   /// Pull model from Ollama registry
-  void PullModel(const std::string& name, OnResponseCallback cb);
+  void AsyncPullModel(const std::string& name, OnResponseCallback cb);
 
   std::optional<json> GetModelInfo(const std::string& model) const;
   /// Return a bitwise operator model capabilities.
