@@ -1,13 +1,19 @@
+#pragma once
+
 #include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 
-#include "ollama/ollama.hpp"
+#include "ollamalib.hpp"
 
 namespace ollama::tool {
 
-#define MANDATORY_PARAM(name, desc) Param name()
+#define ASSIGN_FUNC_ARG_OR_RETURN(var, expr) \
+  if (!expr.has_value()) {                   \
+    return "Invalid argument";               \
+  }                                          \
+  var = expr.value();
 
 enum class ParamType {
   kString,
@@ -61,6 +67,27 @@ class Param {
   bool m_required{true};
 };
 
+struct FunctionArgument {
+  std::string name;
+  json value;
+};
+
+struct FunctionArgumentVec {
+  std::vector<FunctionArgument> args;
+  std::optional<json> GetArg(std::string_view name) const {
+    auto where = std::find_if(
+        args.begin(), args.end(),
+        [name](const FunctionArgument& arg) { return arg.name == name; });
+    if (where == args.end()) {
+      return std::nullopt;
+    }
+    return where->value;
+  }
+
+  void Add(FunctionArgument arg) { args.push_back(std::move(arg)); }
+  size_t GetSize() const { return args.size(); }
+};
+
 class Function {
  public:
   Function(std::string_view name, std::string_view desc)
@@ -85,7 +112,7 @@ class Function {
     return j;
   }
 
-  std::string Call(const std::vector<Param>& params) {
+  std::string Call(const FunctionArgumentVec& params) const {
     return m_callback(params);
   }
   inline const std::string& GetName() const { return m_name; }
@@ -94,7 +121,7 @@ class Function {
   std::string m_name;
   std::string m_desc;
   std::vector<Param> m_params;
-  std::function<std::string(const std::vector<Param>&)> m_callback;
+  std::function<std::string(const FunctionArgumentVec&)> m_callback;
   friend class FunctionBuilder;
 };
 
@@ -124,7 +151,7 @@ class FunctionBuilder {
   }
 
   FunctionBuilder& AddCallback(
-      std::function<std::string(const std::vector<Param>&)> func) {
+      std::function<std::string(const FunctionArgumentVec&)> func) {
     m_func = std::move(func);
     return *this;
   }
@@ -139,8 +166,13 @@ class FunctionBuilder {
  private:
   std::string m_name;
   std::string m_desc;
-  std::function<std::string(const std::vector<Param>&)> m_func;
+  std::function<std::string(const FunctionArgumentVec&)> m_func;
   std::vector<Param> m_params;
+};
+
+struct FunctionCall {
+  std::string name;
+  FunctionArgumentVec args;
 };
 
 class FunctionTable {
@@ -155,8 +187,75 @@ class FunctionTable {
   }
 
   void Add(Function f) { m_functions.insert({f.GetName(), std::move(f)}); }
+  std::string Call(const FunctionCall& func_call) const {
+    auto iter = m_functions.find(func_call.name);
+    if (iter == m_functions.end()) {
+      std::stringstream ss;
+      ss << "could not find tool: '" << func_call.name << "'";
+      return ss.str();
+    }
+    return iter->second.Call(func_call.args);
+  }
+
+  void Clear() { m_functions.clear(); }
 
  private:
   std::map<std::string, Function> m_functions;
+};
+
+class ResponseParser {
+ public:
+  static std::optional<std::vector<FunctionCall>> GetTools(
+      const ollama::response& resp) {
+    try {
+      json j = resp.as_json();
+      std::vector<FunctionCall> calls;
+      std::vector<json> tools = j["message"]["tool_calls"];
+      for (json tool : tools) {
+        FunctionCall function_call;
+        function_call.name = tool["function"]["name"];
+        auto items = tool["function"]["arguments"].items();
+        for (const auto& [name, value] : items) {
+          function_call.args.Add({name, value});
+        }
+        calls.push_back(std::move(function_call));
+      }
+      return calls;
+    } catch (std::exception& e) {
+      return std::nullopt;
+    }
+  }
+
+  static std::optional<ollama::message> GetMessage(
+      const ollama::response& resp) {
+    try {
+      json j = resp.as_json();
+      auto msg = ollama::message(j["message"]["role"], j["message"]["content"]);
+      if (j["message"].contains("tool_calls")) {
+        msg["tool_calls"] = j["message"]["tool_calls"];
+      }
+      return msg;
+    } catch (std::exception& e) {
+      return std::nullopt;
+    }
+  }
+
+  static std::optional<std::string> GetContent(const ollama::response& resp) {
+    try {
+      json j = resp.as_json();
+      return j["message"]["content"];
+    } catch (std::exception& e) {
+      return std::nullopt;
+    }
+  }
+
+  static bool IsDone(const ollama::response& resp) {
+    try {
+      json j = resp.as_json();
+      return j["done"];
+    } catch (std::exception&) {
+    }
+    return false;
+  }
 };
 }  // namespace ollama::tool

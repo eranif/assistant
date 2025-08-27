@@ -1,41 +1,47 @@
 #include <iostream>
 
 #include "ollama/ollama.hpp"
-#include "tool.hpp"
+#include "ollama/tool.hpp"
 
-bool OnReponse(const ollama::response& resp) {
-  bool is_done = resp.as_json()["done"];
-  if (resp.as_json().contains("message") &&
-      resp.as_json()["message"].contains("tool_calls")) {
-    std::cout << "Will call: " << resp.as_json()["message"]["tool_calls"]
-              << std::endl;
-  } else {
-    std::string content = resp.as_json()["message"]["content"];
-    std::cout << content;
+using FunctionTable = ollama::tool::FunctionTable;
+using FunctionBuilder = ollama::tool::FunctionBuilder;
+using ParamType = ollama::tool::ParamType;
+using ResponseParser = ollama::tool::ResponseParser;
+using FunctionArgumentVec = ollama::tool::FunctionArgumentVec;
+
+std::string WriteFileContent(const FunctionArgumentVec& params) {
+  std::stringstream ss;
+  if (params.GetSize() != 2) {
+    return "invalid number of arguments";
   }
-  return !is_done;
+
+  ASSIGN_FUNC_ARG_OR_RETURN(std::string filepath, params.GetArg("filepath"));
+  ASSIGN_FUNC_ARG_OR_RETURN(std::string file_content,
+                            params.GetArg("file_content"));
+  ss << "file: '" << filepath << "' successfully written to disk!.";
+  return ss.str();
+}
+
+std::string OpenFileInEditor(const FunctionArgumentVec& params) {
+  std::stringstream ss;
+  if (params.GetSize() != 1) {
+    return "invalid number of arguments";
+  }
+
+  ASSIGN_FUNC_ARG_OR_RETURN(std::string file_name, params.GetArg("filepath"));
+  ss << "file '" << file_name << "' successfully opened file in the editor.";
+  return ss.str();
 }
 
 int main() {
-  using FunctionTable = ollama::tool::FunctionTable;
-  using FunctionBuilder = ollama::tool::FunctionBuilder;
-  using ParamType = ollama::tool::ParamType;
-
-  ollama::show_requests(true);
-  ollama::show_replies(false);
-  ollama::allow_exceptions(true);
-  ollama::setServerURL("http://127.0.0.1:11434");
-  ollama::setReadTimeout(300);
-  ollama::setWriteTimeout(300);
-
-  ollama::options opts;
-
   FunctionTable table;
-  table.Add(FunctionBuilder("Read file content")
-                .SetDescription("Read file content from the disk.")
+  table.Add(FunctionBuilder("Open file in editor")
+                .SetDescription(
+                    "Given a file path, open it inside the editor for editing.")
                 .AddRequiredParam("filepath",
                                   "the path of the file on the disk.",
                                   ParamType::kString)
+                .AddCallback(OpenFileInEditor)
                 .Build());
   table.Add(
       FunctionBuilder("Write file content to disk at a given path")
@@ -45,20 +51,36 @@ int main() {
                             ParamType::kString)
           .AddRequiredParam("file_content", "the content of the file",
                             ParamType::kString)
+          .AddCallback(WriteFileContent)
           .Build());
-
-  opts["temperature"] = 0.0;
-  ollama::message msg{
-      "user",
-      "Create an hello world program in C++. Write the content "
-      "of the program into the "
-      "file main.cpp. In addition, create and write the CMakeLists.txt "
-      "file to build the project."};
+  ollama::Manager::GetInstance().SetFunctionTable(table);
   std::cout << (ollama::is_running() ? "Ollama is running"
                                      : "Ollama is not running")
             << std::endl;
-  ollama::request req{"qwen2.5:7b", {msg}, opts, true};
-  req["tools"] = table.ToJSON();
-  auto response = ollama::chat(req, OnReponse);
+
+  std::atomic<ollama::Reason> ready{ollama::Reason::kPartialResult};
+  ollama::Manager::GetInstance().AsyncChat(
+      "Create an hello world program in C++. Write the content of the program "
+      "into the file main.cpp. In addition, create a CMakeLists.txt file to "
+      "build the project. Once the files are written, open them for editiing "
+      "in the editor.",
+      [&ready](std::string output, ollama::Reason is_done) {
+        std::cout << output;
+        ready.store(is_done);
+        switch (is_done) {
+          case ollama::Reason::kDone:
+            std::cout << "\n\n Completed! \n\n" << std::endl;
+            break;
+          case ollama::Reason::kPartialResult:
+            break;
+          case ollama::Reason::kFatalError:
+            std::cout << "\n\n Fatal error occurred!! \n\n" << std::endl;
+            break;
+        }
+      });
+  while (ready.load(std::memory_order_relaxed) ==
+         ollama::Reason::kPartialResult) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
   return 0;
 }
