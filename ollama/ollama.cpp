@@ -106,14 +106,19 @@ void Manager::Reset() {
 void Manager::AsyncChat(std::string msg, OnResponseCallback cb,
                         std::string model) {
   ollama::message ollama_message{"user", msg};
+  CreateAndPushContext({ollama_message}, cb, model);
+}
+
+void Manager::CreateAndPushContext(ollama::messages msgs, OnResponseCallback cb,
+                                   std::string model) {
   ollama::options opts;
   opts["temperature"] = 0.0;
-  ollama::request req{model, {ollama_message}, opts, true};
+  ollama::request req{model, msgs, opts, true};
   req["tools"] = m_functionTable.ToJSON();
   ChatContext ctx = {
       .callback_ = cb,
       .request_ = req,
-      .history_ = {ollama_message},
+      .history_ = {msgs},
       .model_ = model,
   };
   m_queue.PushBack(std::make_shared<ChatContext>(ctx));
@@ -142,14 +147,83 @@ void ChatContext::InvokeTools(Manager* manager) {
       msgs.push_back(msg);
     }
   }
+  manager->CreateAndPushContext(msgs, callback_, model_);
+}
 
-  // Send back the tool responses to the AI
-  ollama::options opts;
-  opts["temperature"] = 0.0;
-  ollama::request chat_request{model_, msgs, opts, true};
-  history_ = msgs;
-  func_calls_.clear();
-  chat_request["tools"] = manager->m_functionTable.ToJSON();
-  ollama::chat(chat_request, &Manager::OnResponse);
+std::vector<std::string> Manager::List() const {
+  if (!IsRunning()) {
+    return {};
+  }
+  try {
+    return ollama::list_models();
+  } catch (...) {
+    return {};
+  }
+}
+
+json Manager::ListJSON() const {
+  if (!IsRunning()) {
+    return {};
+  }
+  try {
+    return ollama::list_model_json();
+  } catch (...) {
+    return {};
+  }
+}
+
+std::optional<json> Manager::GetModelInfo(const std::string& model) const {
+  if (!IsRunning()) {
+    return std::nullopt;
+  }
+  try {
+    return ollama::show_model_info(model);
+  } catch (std::exception& e) {
+    return std::nullopt;
+  }
+}
+
+std::optional<ModelCapabilities> Manager::GetModelCapabilities(
+    const std::string& model) const {
+  auto opt = GetModelInfo(model);
+  if (!opt.has_value()) {
+    return std::nullopt;
+  }
+
+  auto& j = opt.value();
+  ModelCapabilities flags{ModelCapabilities::kNone};
+  try {
+    std::vector<std::string> capabilities = j["capabilities"];
+    for (const auto& c : capabilities) {
+      if (c == "completion") {
+        flags |= ModelCapabilities::kCompletion;
+      } else if (c == "tools") {
+        flags |= ModelCapabilities::kTooling;
+      } else if (c == "thinking") {
+        flags |= ModelCapabilities::kThinking;
+      } else if (c == "insert") {
+        flags |= ModelCapabilities::kInsert;
+      } else {
+        std::cerr << "unknown capability: " << c << std::endl;
+      }
+    }
+    return flags;
+  } catch (...) {
+    return std::nullopt;
+  }
+}
+std::optional<std::vector<std::string>> Manager::GetModelCapabilitiesString(
+    const std::string& model) const {
+  auto opt = GetModelInfo(model);
+  if (!opt.has_value()) {
+    return std::nullopt;
+  }
+
+  auto& j = opt.value();
+  try {
+    return j["capabilities"];
+  } catch (...) {
+    return std::nullopt;
+  }
 }
 }  // namespace ollama

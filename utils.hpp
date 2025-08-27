@@ -1,0 +1,96 @@
+#pragma once
+
+#include <cstdlib>
+#include <filesystem>
+#include <iostream>
+#include <sstream>
+#include <string>
+
+template <typename Error>
+class Err {
+ public:
+  Err(Error val) : val_(std::move(val)) {}
+  Error GetValue() const { return val_; }
+
+ private:
+  Error val_;
+};
+
+template <typename Value, typename Error>
+class Result {
+ public:
+  Result(Value val) : val_(std::move(val)) {}
+  Result(Err<Error> err) : err_(std::move(err)) {}
+  inline bool IsOk() const { return val_.has_value(); }
+  inline Error GetError() const { return err_.value().GetValue(); }
+  inline Value GetValue() const { return val_.value(); }
+
+ private:
+  std::optional<Value> val_;
+  std::optional<Err<Error>> err_;
+};
+
+/// Given `choices`, present the user with a list of options to pick from.
+/// Return the selected index.
+inline size_t GetChoiceFromUser(const std::vector<std::string>& choices) {
+  size_t num = (size_t)-1;
+  while (true) {
+    num = (size_t)-1;
+    std::cout << "Enter your choice (0-" << choices.size() - 1 << ")>";
+    std::string answer;
+    std::getline(std::cin, answer);
+    if (answer.empty()) {
+      continue;
+    }
+    try {
+      num = std::atol(answer.c_str());
+    } catch (std::exception& e) {
+      std::cerr << e.what() << std::endl;
+      continue;
+    }
+
+    if (num >= choices.size()) {
+      std::cerr << "Invalid number, choose a number between 0-"
+                << choices.size() - 1 << std::endl;
+      continue;
+    }
+    return num;
+  }
+}
+
+inline std::string GetTextFromUser(const std::string& prompt) {
+  while (true) {
+    std::string text;
+    std::cout << prompt << ">";
+    std::getline(std::cin, text);
+    if (text.empty()) {
+      continue;
+    }
+    return text;
+  }
+}
+
+inline Result<bool, std::string> CreateDirectoryForFile(
+    const std::string& file) {
+  // Define the full path for the file, including the non-existent folder.
+  std::filesystem::path file_path = file;
+
+  // 1. Extract the directory path from the full file path.
+  // The parent_path() function returns the path to the directory containing the
+  // file.
+  std::filesystem::path dir_path = file_path.parent_path();
+  if (dir_path.empty()) {
+    return true;
+  }
+
+  // 2. Recursively create all intermediate directories if they don't exist.
+  // create_directories() will not fail if the path already exists.
+  try {
+    std::filesystem::create_directories(dir_path);
+    return true;
+  } catch (const std::filesystem::filesystem_error& e) {
+    std::stringstream ss;
+    ss << "Error creating directories: " << e.what();
+    return Err(ss.str());
+  }
+}

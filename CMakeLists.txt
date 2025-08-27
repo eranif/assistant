@@ -7,6 +7,6 @@ set(CMAKE_CXX_STANDARD 17)
 add_subdirectory(ollama)
 
 if (OLLAMALIB_BUILD_EXAMPLE)
-  add_executable(helloworld main.cpp)
-  target_link_libraries(helloworld PRIVATE ollamalib)
+  add_executable(assistant main.cpp)
+  target_link_libraries(assistant PRIVATE ollamalib)
 endif ()

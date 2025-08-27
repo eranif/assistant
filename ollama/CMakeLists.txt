@@ -17,3 +17,8 @@ endif ()
 if (WIN32)
   target_link_libraries(ollamalib PUBLIC Ws2_32)
 endif ()
+
+if (WIN32)
+  target_compile_options(ollamalib PUBLIC -Wno-deprecated-literal-operator)
+  target_compile_options(ollamalib PUBLIC -Wno-string-plus-int)
+endif ()

@@ -2,6 +2,7 @@
 
 #include "ollama/ollama.hpp"
 #include "ollama/tool.hpp"
+#include "utils.hpp"
 
 using FunctionTable = ollama::tool::FunctionTable;
 using FunctionBuilder = ollama::tool::FunctionBuilder;
@@ -18,7 +19,23 @@ std::string WriteFileContent(const FunctionArgumentVec& params) {
   ASSIGN_FUNC_ARG_OR_RETURN(std::string filepath, params.GetArg("filepath"));
   ASSIGN_FUNC_ARG_OR_RETURN(std::string file_content,
                             params.GetArg("file_content"));
-  ss << "file: '" << filepath << "' successfully written to disk!.";
+
+  auto res = CreateDirectoryForFile(filepath);
+  if (!res.IsOk()) {
+    ss << "Error creating directory for file: '" << filepath << "' to disk. "
+       << res.GetError();
+  } else {
+    std::ofstream out_file(filepath);
+    if (out_file.is_open()) {
+      // 3. Write data to the file using the insertion operator (<<).
+      out_file << file_content;
+      out_file.flush();
+      out_file.close();
+      ss << "file: '" << filepath << "' successfully written to disk!.";
+    } else {
+      ss << "Error while writing file: '" << filepath << "' to disk.";
+    }
+  }
   return ss.str();
 }
 
@@ -54,39 +71,62 @@ int main() {
           .AddCallback(WriteFileContent)
           .Build());
   ollama::Manager::GetInstance().SetFunctionTable(table);
-  std::cout << (ollama::is_running() ? "Ollama is running"
-                                     : "Ollama is not running")
+  std::cout << (ollama::Manager::GetInstance().IsRunning()
+                    ? "Ollama is running"
+                    : "Ollama is not running")
             << std::endl;
 
-  std::atomic_bool done{false};
-  ollama::Manager::GetInstance().AsyncChat(
-      "Create an hello world program in C++. Write the content of the program "
-      "into the file main.cpp. In addition, create a CMakeLists.txt file to "
-      "build the project. Once the files are written, open them for editiing "
-      "in the editor.",
-      [&done](std::string output, ollama::Reason reason) {
-        switch (reason) {
-          case ollama::Reason::kDone:
-            std::cout << "\n\nCompleted!" << std::endl;
-            done = true;
-            break;
-          case ollama::Reason::kLogNotice:
-            std::cout << "NOTICE: " << output << std::endl;
-            break;
-          case ollama::Reason::kLogDebug:
-            std::cout << "DEBUG: " << output << std::endl;
-            break;
-          case ollama::Reason::kPartialResult:
-            std::cout << output;
-            break;
-          case ollama::Reason::kFatalError:
-            std::cout << "** Fatal error occurred!!**" << std::endl;
-            done = true;
-            break;
-        }
-      });
-  while (!done.load(std::memory_order_relaxed)) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  auto models = ollama::Manager::GetInstance().List();
+  std::cout << "Available models:" << std::endl;
+  std::cout << "=================" << std::endl;
+  for (size_t i = 0; i < models.size(); ++i) {
+    std::cout << i << ") " << models[i] << ", Capabilities: ["
+              << JoinArray(ollama::Manager::GetInstance()
+                               .GetModelCapabilitiesString(models[i])
+                               .value(),
+                           ",")
+              << "]" << std::endl;
+  }
+  std::cout << "=================" << std::endl;
+  if (models.empty()) {
+    std::cout << "No models available" << std::endl;
+    return 1;
+  }
+
+  std::string model_name = models[GetChoiceFromUser(models)];
+  while (true) {
+    std::string prompt = GetTextFromUser("Ask me anything");
+    if (prompt == "q" || prompt == "exit" || prompt == "quit") {
+      break;
+    }
+    std::atomic_bool done{false};
+    ollama::Manager::GetInstance().AsyncChat(
+        prompt,
+        [&done](std::string output, ollama::Reason reason) {
+          switch (reason) {
+            case ollama::Reason::kDone:
+              std::cout << "\n\nCompleted!" << std::endl;
+              done = true;
+              break;
+            case ollama::Reason::kLogNotice:
+              std::cout << "NOTICE: " << output << std::endl;
+              break;
+            case ollama::Reason::kLogDebug:
+              std::cout << "DEBUG: " << output << std::endl;
+              break;
+            case ollama::Reason::kPartialResult:
+              std::cout << output;
+              break;
+            case ollama::Reason::kFatalError:
+              std::cout << "** Fatal error occurred!!**" << std::endl;
+              done = true;
+              break;
+          }
+        },
+        model_name);
+    while (!done.load(std::memory_order_relaxed)) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
   }
   return 0;
 }

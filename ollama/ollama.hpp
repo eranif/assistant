@@ -3,6 +3,7 @@
 #include <functional>
 #include <thread>
 
+#include "macros.hpp"
 #include "ollamalib.hpp"
 #include "tool.hpp"
 
@@ -22,6 +23,16 @@ enum class Reason {
   /// Log messages - DEBUG
   kLogDebug,
 };
+
+enum class ModelCapabilities {
+  kNone = (0),
+  kThinking = (1 << 0),
+  kTooling = (1 << 1),
+  kCompletion = (1 << 2),
+  kInsert = (1 << 3),
+};
+
+ENUM_CLASS_BITWISE_OPERATOS(ModelCapabilities);
 
 using OnResponseCallback = std::function<void(std::string, Reason)>;
 
@@ -90,10 +101,27 @@ class Manager {
   /// might get called from a different thread.
   void AsyncChat(std::string msg, OnResponseCallback cb,
                  std::string model = kDefaultModel);
-
   void SetFunctionTable(FunctionTable table) {
     m_functionTable = std::move(table);
   }
+
+  /// Return true if ollama server is running.
+  inline bool IsRunning() const { return ollama::is_running(); }
+
+  /// Return list of models available.
+  std::vector<std::string> List() const;
+
+  /// Return list of models available using JSON format.
+  json ListJSON() const;
+
+  std::optional<json> GetModelInfo(const std::string& model) const;
+  /// Return a bitwise operator model capabilities.
+  std::optional<ModelCapabilities> GetModelCapabilities(
+      const std::string& model) const;
+  /// Return model capabilities as array of strings.
+  std::optional<std::vector<std::string>> GetModelCapabilitiesString(
+      const std::string& model) const;
+
   void Shutdown();
   void Startup();
 
@@ -101,6 +129,9 @@ class Manager {
   static bool OnResponse(const ollama::response& resp);
   static void WorkerMain();
   void ProcessContext(std::shared_ptr<ChatContext> context);
+  void CreateAndPushContext(ollama::messages msgs, OnResponseCallback cb,
+                            std::string model);
+
   Manager();
   ~Manager();
 
@@ -111,3 +142,43 @@ class Manager {
   friend class ChatContext;
 };
 }  // namespace ollama
+
+/**
+ * @brief Joins the elements of a container into a single string with a
+ * separator.
+ *
+ * @tparam Container A container type (e.g., std::vector, std::list,
+ * std::array).
+ * @param elements The container of elements to join.
+ * @param separator The string used to separate the elements.
+ * @return The joined string.
+ */
+template <typename Container>
+std::string JoinArray(const Container& elements, const std::string& separator) {
+  // Return an empty string immediately if the container is empty.
+  if (elements.empty()) {
+    return "";
+  }
+
+  std::ostringstream oss;
+
+  // Use an iterator to handle all container types.
+  auto it = elements.begin();
+
+  // Append the first element without a separator.
+  oss << *it;
+  ++it;
+
+  // Append the remaining elements with the separator.
+  for (; it != elements.end(); ++it) {
+    oss << separator << *it;
+  }
+
+  return oss.str();
+}
+
+template <typename T>
+inline std::ostream& operator<<(std::ostream& o, const std::vector<T>& v) {
+  o << JoinArray(v, "\n");
+  return o;
+}
