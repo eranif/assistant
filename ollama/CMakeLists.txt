@@ -13,3 +13,7 @@ if (OLLAMALIB_WITH_OPENSSL)
   target_compile_options(ollamalib PUBLIC -DCPPHTTPLIB_OPENSSL_SUPPORT=1)
   target_link_libraries(ollamalib PUBLIC OpenSSL::SSL OpenSSL::Crypto)
 endif ()
+
+if (WIN32)
+  target_link_libraries(ollamalib PUBLIC Ws2_32)
+endif ()
