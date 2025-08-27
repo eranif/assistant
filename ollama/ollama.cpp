@@ -71,6 +71,7 @@ Manager::Manager() {
   ollama::allow_exceptions(true);
   ollama::setServerURL(
       std::string{kDefaultOllamaUrl.data(), kDefaultOllamaUrl.size()});
+  m_url = kDefaultOllamaUrl;
   ollama::setReadTimeout(300);
   ollama::setWriteTimeout(300);
   Startup();
@@ -84,7 +85,13 @@ void Manager::Shutdown() {
   if (m_worker) {
     m_worker->join();
   }
+
+  if (m_puller_thread) {
+    m_puller_thread->join();
+  }
+  m_puller_busy.store(false);
   m_worker.reset();
+  m_puller_thread.reset();
 }
 
 void Manager::Startup() {
@@ -93,9 +100,9 @@ void Manager::Startup() {
   m_worker.reset(new std::thread(Manager::WorkerMain));
 }
 
-void Manager::SetUrl(std::string_view url) {
-  ollama::setServerURL(
-      std::string{kDefaultOllamaUrl.data(), kDefaultOllamaUrl.size()});
+void Manager::SetUrl(const std::string& url) {
+  m_url = url;
+  ollama::setServerURL(url);
 }
 
 void Manager::Reset() {
@@ -225,5 +232,30 @@ std::optional<std::vector<std::string>> Manager::GetModelCapabilitiesString(
   } catch (...) {
     return std::nullopt;
   }
+}
+
+void Manager::PullModel(const std::string& name, OnResponseCallback cb) {
+  bool expected{false};
+  // If m_puller_busy is == "expected", change it to "true" and return true.
+  if (!m_puller_busy.compare_exchange_strong(expected, true)) {
+    cb("Server is busy pulling another model", Reason::kFatalError);
+    return;
+  }
+  std::string url = m_url;
+  m_puller_thread =
+      std::make_shared<std::thread>([this, name, cb = std::move(cb), url]() {
+        try {
+          Ollama ol;
+          std::stringstream ss;
+          ol.setServerURL(url);
+          ss << "Pulling model: " << name;
+          cb(ss.str(), Reason::kLogNotice);
+          ol.pull_model(name, true);
+          cb("Model successfully pulled.", Reason::kDone);
+          m_puller_busy.store(false);
+        } catch (std::exception& e) {
+          cb(e.what(), Reason::kFatalError);
+        }
+      });
 }
 }  // namespace ollama

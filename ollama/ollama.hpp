@@ -94,7 +94,7 @@ struct ChatContextQueue {
 class Manager {
  public:
   static Manager& GetInstance();
-  void SetUrl(std::string_view url);
+  void SetUrl(const std::string& url);
   void Reset();
 
   /// Start a chat. All responses will be directed to the `cb`. Note that `cb`
@@ -113,6 +113,9 @@ class Manager {
 
   /// Return list of models available using JSON format.
   json ListJSON() const;
+
+  /// Pull model from Ollama registry
+  void PullModel(const std::string& name, OnResponseCallback cb);
 
   std::optional<json> GetModelInfo(const std::string& model) const;
   /// Return a bitwise operator model capabilities.
@@ -138,7 +141,10 @@ class Manager {
   FunctionTable m_functionTable;
   ChatContextQueue m_queue;
   std::shared_ptr<std::thread> m_worker;
+  std::shared_ptr<std::thread> m_puller_thread;
   std::atomic_bool m_shutdown_flag{false};
+  std::atomic_bool m_puller_busy{false};
+  std::string m_url;
   friend class ChatContext;
 };
 }  // namespace ollama

@@ -70,21 +70,23 @@ int main() {
                             ParamType::kString)
           .AddCallback(WriteFileContent)
           .Build());
-  ollama::Manager::GetInstance().SetFunctionTable(table);
-  std::cout << (ollama::Manager::GetInstance().IsRunning()
-                    ? "Ollama is running"
-                    : "Ollama is not running")
+  auto& manager = ollama::Manager::GetInstance();
+  manager.SetFunctionTable(table);
+
+  manager.PullModel("llama3.1:8b", [](std::string what, ollama::Reason reason) {
+    std::cout << what << std::endl;
+  });
+  std::cout << (manager.IsRunning() ? "Ollama is running"
+                                    : "Ollama is not running")
             << std::endl;
 
-  auto models = ollama::Manager::GetInstance().List();
+  auto models = manager.List();
   std::cout << "Available models:" << std::endl;
   std::cout << "=================" << std::endl;
   for (size_t i = 0; i < models.size(); ++i) {
     std::cout << i << ") " << models[i] << ", Capabilities: ["
-              << JoinArray(ollama::Manager::GetInstance()
-                               .GetModelCapabilitiesString(models[i])
-                               .value(),
-                           ",")
+              << JoinArray(
+                     manager.GetModelCapabilitiesString(models[i]).value(), ",")
               << "]" << std::endl;
   }
   std::cout << "=================" << std::endl;
@@ -100,7 +102,7 @@ int main() {
       break;
     }
     std::atomic_bool done{false};
-    ollama::Manager::GetInstance().AsyncChat(
+    manager.AsyncChat(
         prompt,
         [&done](std::string output, ollama::Reason reason) {
           switch (reason) {
