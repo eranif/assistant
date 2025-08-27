@@ -12,7 +12,6 @@ constexpr std::string_view kDefaultOllamaUrl = "http://127.0.0.1:11434";
 
 void Manager::WorkerMain() {
   auto& queue = GetInstance().m_queue;
-  std::cout << "Worker thread started" << std::endl;
   while (!GetInstance().m_shutdown_flag.load(std::memory_order_relaxed)) {
     if (queue.IsEmpty()) {
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -21,7 +20,6 @@ void Manager::WorkerMain() {
     GetInstance().ProcessContext(queue.Top());
     queue.Pop();
   }
-  std::cout << "Worker thread exited" << std::endl;
 }
 
 void Manager::ProcessContext(std::shared_ptr<ChatContext> context) {
@@ -32,7 +30,7 @@ void Manager::ProcessContext(std::shared_ptr<ChatContext> context) {
     }
   } catch (std::exception& e) {
     std::cerr << "ollama::chat threw an exception:" << e.what() << std::endl;
-    context->done_cb_("", Reason::kFatalError);
+    context->callback_("", Reason::kFatalError);
     m_queue.Clear();
   }
 }
@@ -54,9 +52,9 @@ bool Manager::OnResponse(const ollama::response& resp) {
                       ? Reason::kDone
                       : Reason::kPartialResult;
     if (content.has_value()) {
-      req->done_cb_(content.value(), reason);
+      req->callback_(content.value(), reason);
     } else if (is_done) {
-      req->done_cb_({}, reason);
+      req->callback_({}, reason);
     }
   }
   return !is_done;
@@ -113,7 +111,7 @@ void Manager::AsyncChat(std::string msg, OnResponseCallback cb,
   ollama::request req{model, {ollama_message}, opts, true};
   req["tools"] = m_functionTable.ToJSON();
   ChatContext ctx = {
-      .done_cb_ = cb,
+      .callback_ = cb,
       .request_ = req,
       .history_ = {ollama_message},
       .model_ = model,
@@ -129,9 +127,18 @@ void ChatContext::InvokeTools(Manager* manager) {
   for (auto [msg, calls] : func_calls_) {
     msgs.push_back(msg);
     for (auto func_call : calls) {
+      std::stringstream ss;
+      ss << "Invoking tool: '" << func_call.name << "', args:\n";
+      for (const auto& arg : func_call.args.args) {
+        ss << std::setw(2) << "  " << arg.name << " => " << arg.value << "\n";
+      }
+      callback_(ss.str(), Reason::kLogNotice);
       auto result = manager->m_functionTable.Call(func_call);
+      ss = {};
+      ss << "Tool output:\n" << result;
+      callback_(ss.str(), Reason::kLogNotice);
       // Add the tool response
-      ollama::message msg("tool", result);
+      ollama::message msg{"tool", result};
       msgs.push_back(msg);
     }
   }

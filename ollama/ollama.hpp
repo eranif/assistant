@@ -16,15 +16,20 @@ enum class Reason {
   /// More data to come.
   kPartialResult,
   /// A non recoverable error.
-  kFatalError
+  kFatalError,
+  /// Log messages - NOTICE
+  kLogNotice,
+  /// Log messages - DEBUG
+  kLogDebug,
 };
+
 using OnResponseCallback = std::function<void(std::string, Reason)>;
 
 const std::string kDefaultModel = "qwen2.5:7b";
 
 class Manager;
 struct ChatContext {
-  OnResponseCallback done_cb_;
+  OnResponseCallback callback_;
   ollama::request request_;
   /// Messages that were sent to the AI, will be placed here
   ollama::messages history_;

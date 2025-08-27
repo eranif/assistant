@@ -58,28 +58,34 @@ int main() {
                                      : "Ollama is not running")
             << std::endl;
 
-  std::atomic<ollama::Reason> ready{ollama::Reason::kPartialResult};
+  std::atomic_bool done{false};
   ollama::Manager::GetInstance().AsyncChat(
       "Create an hello world program in C++. Write the content of the program "
       "into the file main.cpp. In addition, create a CMakeLists.txt file to "
       "build the project. Once the files are written, open them for editiing "
       "in the editor.",
-      [&ready](std::string output, ollama::Reason is_done) {
-        std::cout << output;
-        ready.store(is_done);
-        switch (is_done) {
+      [&done](std::string output, ollama::Reason reason) {
+        switch (reason) {
           case ollama::Reason::kDone:
-            std::cout << "\n\n Completed! \n\n" << std::endl;
+            std::cout << "\n\nCompleted!" << std::endl;
+            done = true;
+            break;
+          case ollama::Reason::kLogNotice:
+            std::cout << "NOTICE: " << output << std::endl;
+            break;
+          case ollama::Reason::kLogDebug:
+            std::cout << "DEBUG: " << output << std::endl;
             break;
           case ollama::Reason::kPartialResult:
+            std::cout << output;
             break;
           case ollama::Reason::kFatalError:
-            std::cout << "\n\n Fatal error occurred!! \n\n" << std::endl;
+            std::cout << "** Fatal error occurred!!**" << std::endl;
+            done = true;
             break;
         }
       });
-  while (ready.load(std::memory_order_relaxed) ==
-         ollama::Reason::kPartialResult) {
+  while (!done.load(std::memory_order_relaxed)) {
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
   return 0;
