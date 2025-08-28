@@ -18,7 +18,9 @@ if (WIN32)
   target_link_libraries(ollamalib PUBLIC Ws2_32)
 endif ()
 
-if (WIN32)
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID MATCHES
+                                             "AppleClang")
   target_compile_options(ollamalib PUBLIC -Wno-deprecated-literal-operator)
   target_compile_options(ollamalib PUBLIC -Wno-string-plus-int)
 endif ()
+

@@ -73,10 +73,10 @@ int main() {
   auto& manager = ollama::Manager::GetInstance();
   manager.SetFunctionTable(table);
 
-  manager.AsyncPullModel("llama3.1:8b",
-                         [](std::string what, ollama::Reason reason) {
-                           std::cout << what << std::endl;
-                         });
+  //  manager.AsyncPullModel("llama3.1:8b",
+  //                         [](std::string what, ollama::Reason reason) {
+  //                           std::cout << what << std::endl;
+  //                         });
   std::cout << (manager.IsRunning() ? "Ollama is running"
                                     : "Ollama is not running")
             << std::endl;
