@@ -1,26 +1,33 @@
 project(ollamalib)
 
 set(CMAKE_CXX_STANDARD 17)
-
-add_library(ollamalib STATIC ${CMAKE_CURRENT_LIST_DIR}/ollama.cpp)
-target_include_directories(ollamalib PUBLIC ${CMAKE_SOURCE_DIR})
-
 if (OLLAMALIB_WITH_OPENSSL)
   find_package(
     OpenSSL
     COMPONENTS SSL Crypto
     REQUIRED)
+endif ()
+
+add_subdirectory(cpp-mcp)
+
+add_library(ollamalib STATIC ${CMAKE_CURRENT_LIST_DIR}/ollama.cpp)
+target_include_directories(ollamalib PUBLIC ${CMAKE_SOURCE_DIR})
+target_include_directories(ollamalib PUBLIC ${CMAKE_SOURCE_DIR}/ollama/common)
+
+if (OLLAMALIB_WITH_OPENSSL)
   target_compile_options(ollamalib PUBLIC -DCPPHTTPLIB_OPENSSL_SUPPORT=1)
   target_link_libraries(ollamalib PUBLIC OpenSSL::SSL OpenSSL::Crypto)
+  if (WIN32)
+    target_link_libraries(ollamalib PUBLIC Crypt32)
+  endif ()
 endif ()
 
 if (WIN32)
   target_link_libraries(ollamalib PUBLIC Ws2_32)
 endif ()
 
-if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID MATCHES
-                                             "AppleClang")
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID MATCHES "AppleClang")
   target_compile_options(ollamalib PUBLIC -Wno-deprecated-literal-operator)
   target_compile_options(ollamalib PUBLIC -Wno-string-plus-int)
+  target_compile_options(ollamalib PUBLIC -Wno-deprecated-literal-operator)
 endif ()
-
