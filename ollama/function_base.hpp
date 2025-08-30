@@ -2,6 +2,7 @@
 
 #include <string>
 
+#include "ollama/logger.hpp"
 #include "ollama/ollamalib.hpp"
 
 namespace ollama {
@@ -100,7 +101,9 @@ class FunctionTable {
   }
 
   void Add(std::shared_ptr<FunctionBase> f) {
-    m_functions.insert({f->GetName(), f});
+    if (!m_functions.insert({f->GetName(), f}).second) {
+      LG_WARN() << "Duplicate function found: " << f->GetName();
+    }
   }
 
   void AddMCPServer(std::shared_ptr<MCPStdioClient> client);
