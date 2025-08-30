@@ -1,8 +1,10 @@
+#include "ollama/logger.hpp"
 #ifdef __WIN32
 #include <winsock2.h>
 #endif
 #include <iostream>
 
+#include "ollama/config.hpp"
 #include "ollama/mcp_local_process.hpp"
 #include "ollama/ollama.hpp"
 #include "ollama/tool.hpp"
@@ -58,7 +60,7 @@ std::string OpenFileInEditor(const ollama::json& args) {
   return ss.str();
 }
 
-int main() {
+int main(int argc, char** argv) {
   FunctionTable table;
   table.Add(FunctionBuilder("Open file in editor")
                 .SetDescription(
@@ -77,50 +79,47 @@ int main() {
           .SetCallback(WriteFileContent)
           .Build());
 
-  // Add external functions from the test mcp server.
-  std::vector<std::string> args = {"/home/eran/devl/demo_mcp/env/bin/python3",
-                                   "/home/eran/devl/demo_mcp/add.py"};
-
-  ollama::SSHLogin ssh_log{
-      .ssh_program = "ssh",
-      .ssh_key = "",
-      .user = "eran",
-      .hostname = "127.0.0.1",
-  };
-
-  std::shared_ptr<McpClientStdio> client =
-      std::make_shared<McpClientStdio>(ssh_log, args);
-  if (client->Initialise()) {
-    table.AddMCPServer(client);
+  if (argc > 1) {
+    ollama::Config conf{argv[1]};
+    for (const auto& s : conf.GetServers()) {
+      std::shared_ptr<McpClientStdio> client{nullptr};
+      if (s.IsRemote()) {
+        client = std::make_shared<McpClientStdio>(s.ssh_login.value(), s.args);
+      } else {
+        client = std::make_shared<McpClientStdio>(s.args);
+      }
+      if (client->Initialise()) {
+        table.AddMCPServer(client);
+      }
+    }
   }
+
   auto& ollama_manager = ollama::Manager::GetInstance();
   if (!ollama_manager.IsRunning()) {
-    std::cerr << "Make sure ollama server is running and try again"
-              << std::endl;
+    LG_ERROR() << "Make sure ollama server is running and try again";
     return 1;
   }
 
-  std::cout << "Available functions:" << std::endl;
-  std::cout << "=================" << std::endl;
+  LG_INFO() << "Available functions:";
+  LG_INFO() << "=================";
 
   ollama::json tools_json = table.ToJSON();
   for (const auto& func_obj : tools_json) {
-    std::cout << "- " << func_obj["function"]["name"] << std::endl;
+    LG_INFO() << "- " << func_obj["function"]["name"];
   }
 
   ollama_manager.SetFunctionTable(std::move(table));
   auto models = ollama_manager.List();
-  std::cout << "Available models:" << std::endl;
-  std::cout << "=================" << std::endl;
+  LG_INFO() << "Available models:";
+  LG_INFO() << "=================";
   for (size_t i = 0; i < models.size(); ++i) {
-    std::cout << i << ") " << models[i] << std::endl;
+    LG_INFO() << i << ") " << models[i];
   }
 
-  std::cout << "=================" << std::endl;
+  LG_INFO() << "=================";
   if (models.empty()) {
-    std::cerr
-        << "No models available, please pull at least 1 model and try again."
-        << std::endl;
+    LG_ERROR()
+        << "No models available, please pull at least 1 model and try again.";
     return 1;
   }
 
@@ -137,20 +136,21 @@ int main() {
         [&done](std::string output, ollama::Reason reason) {
           switch (reason) {
             case ollama::Reason::kDone:
-              std::cout << "\n\nCompleted!" << std::endl;
+              std::cout << std::endl;
+              LG_INFO() << "Completed!";
               done = true;
               break;
             case ollama::Reason::kLogNotice:
-              std::cout << "NOTICE: " << output << std::endl;
+              LG_INFO() << output;
               break;
             case ollama::Reason::kLogDebug:
-              std::cout << "DEBUG: " << output << std::endl;
+              LG_DEBUG() << output;
               break;
             case ollama::Reason::kPartialResult:
               std::cout << output;
               break;
             case ollama::Reason::kFatalError:
-              std::cout << "** Fatal error occurred**: " << output << std::endl;
+              LG_ERROR() << "** Fatal error occurred**: " << output;
               done = true;
               break;
           }
