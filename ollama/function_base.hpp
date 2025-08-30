@@ -114,7 +114,10 @@ class FunctionTable {
     return iter->second->Call(func_call.args);
   }
 
-  void Clear() { m_functions.clear(); }
+  void Clear() {
+    m_functions.clear();
+    m_clients.clear();
+  }
 
  private:
   std::map<std::string, std::shared_ptr<FunctionBase>> m_functions;

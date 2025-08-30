@@ -1,11 +1,44 @@
 #include "mcp_local_process.hpp"
 
 #include "ollama/function.hpp"
-#include "ollama/ollama.hpp"
 
 namespace ollama {
+
+namespace {
+void WrapWithDoubleQuotes(std::string& s) {
+  if (!s.empty()                             // not empty
+      && (s.find(" ") != std::string::npos)  // contains space
+      && s[0] != '"'  // does not already wrapped with double quotes
+  ) {
+    s.insert(s.begin(), '"');
+    s.push_back('"');
+  }
+}
+
+void EscapeDoubleQuotes(std::string& str) {
+  if (str.empty()) {
+    return;
+  }
+
+  std::string result;
+  result.reserve(str.size() * 2);
+  for (auto c : str) {
+    if (c == '"') {
+      result.append("\\\"");
+    } else {
+      result.push_back(c);
+    }
+  }
+  str.swap(result);
+}
+}  // namespace
+
 MCPStdioClient::MCPStdioClient(const std::vector<std::string>& args)
     : m_args(args) {}
+
+MCPStdioClient::MCPStdioClient(const SSHLogin& ssh_login,
+                               const std::vector<std::string>& args)
+    : m_args(args), m_ssh_login(ssh_login) {}
 
 bool MCPStdioClient::Initialise() {
   try {
@@ -14,14 +47,37 @@ bool MCPStdioClient::Initialise() {
       if (i != 0) {
         ss << " ";
       }
-      if (m_args[i].find(" ") != std::string::npos) {
-        ss << "\"" << m_args[i] << "\"";
-      } else {
-        ss << m_args[i];
+      WrapWithDoubleQuotes(m_args[i]);
+      ss << m_args[i];
+    }
+    std::string command = ss.str();
+
+    ss = {};
+    if (IsRemote()) {
+      SSHLogin ssh_login = m_ssh_login.value();
+
+      WrapWithDoubleQuotes(ssh_login.ssh_program);
+      WrapWithDoubleQuotes(ssh_login.user);
+      WrapWithDoubleQuotes(ssh_login.ssh_key);
+      ss << ssh_login.ssh_program;
+      if (!ssh_login.ssh_key.empty()) {
+        ss << " -i " << ssh_login.ssh_key;
       }
+
+      if (!ssh_login.user.empty()) {
+        ss << " -l " << ssh_login.user;
+      }
+
+      ss << " -p " << ssh_login.port << " " << ssh_login.hostname << " ";
+
+      // escape the command if needed
+      EscapeDoubleQuotes(command);
+      ss << '"' << command << '"';
+      command = ss.str();
     }
 
-    m_client.reset(new mcp::stdio_client(ss.str()));
+    m_client.reset(new mcp::stdio_client(command));
+
     m_client->initialize("assistant", "1.0");
     m_client->ping();
     m_tools = m_client->get_tools();
@@ -36,12 +92,13 @@ std::string MCPStdioClient::Call(const mcp::tool& t, const json& args) const {
   return result["content"][0]["text"];
 }
 
-std::vector<std::shared_ptr<FunctionBase>> MCPStdioClient::GetFunctions() {
+std::vector<std::shared_ptr<FunctionBase>> MCPStdioClient::GetFunctions()
+    const {
   std::vector<std::shared_ptr<FunctionBase>> result;
   result.reserve(m_tools.size());
   for (auto t : m_tools) {
-    std::shared_ptr<FunctionBase> f =
-        std::make_shared<ExternalFunction>(this, t);
+    std::shared_ptr<FunctionBase> f = std::make_shared<ExternalFunction>(
+        const_cast<MCPStdioClient*>(this), t);
     result.push_back(std::move(f));
   }
   return result;

@@ -78,25 +78,27 @@ int main() {
           .Build());
 
   // Add external functions from the test mcp server.
-  std::vector<std::string> args = {
-      R"#(C:\msys64\home\eran\devl\test-mcp\env\bin\python3.exe)#",
-      R"#(C:\msys64\home\eran\devl\test-mcp\add.py)#"};
+  std::vector<std::string> args = {"/home/eran/devl/demo_mcp/env/bin/python3",
+                                   "/home/eran/devl/demo_mcp/add.py"};
+
+  ollama::SSHLogin ssh_log{
+      .ssh_program = "ssh",
+      .ssh_key = "",
+      .user = "eran",
+      .hostname = "127.0.0.1",
+  };
 
   std::shared_ptr<McpClientStdio> client =
-      std::make_shared<McpClientStdio>(args);
+      std::make_shared<McpClientStdio>(ssh_log, args);
   if (client->Initialise()) {
     table.AddMCPServer(client);
   }
-  auto& manager = ollama::Manager::GetInstance();
-  if (!manager.IsRunning()) {
+  auto& ollama_manager = ollama::Manager::GetInstance();
+  if (!ollama_manager.IsRunning()) {
     std::cerr << "Make sure ollama server is running and try again"
               << std::endl;
     return 1;
   }
-
-  std::cout << (manager.IsRunning() ? "Ollama is running"
-                                    : "Ollama is not running")
-            << std::endl;
 
   std::cout << "Available functions:" << std::endl;
   std::cout << "=================" << std::endl;
@@ -106,8 +108,8 @@ int main() {
     std::cout << "- " << func_obj["function"]["name"] << std::endl;
   }
 
-  manager.SetFunctionTable(table);
-  auto models = manager.List();
+  ollama_manager.SetFunctionTable(std::move(table));
+  auto models = ollama_manager.List();
   std::cout << "Available models:" << std::endl;
   std::cout << "=================" << std::endl;
   for (size_t i = 0; i < models.size(); ++i) {
@@ -130,7 +132,7 @@ int main() {
     }
 
     std::atomic_bool done{false};
-    manager.AsyncChat(
+    ollama_manager.AsyncChat(
         prompt,
         [&done](std::string output, ollama::Reason reason) {
           switch (reason) {
