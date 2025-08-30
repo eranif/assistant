@@ -68,6 +68,7 @@ bool MCPStdioClient::Initialise() {
         ss << " -l " << ssh_login.user;
       }
 
+      ss << " -o ServerAliveInterval=30";  // Keep alive connection
       ss << " -p " << ssh_login.port << " " << ssh_login.hostname << " ";
 
       // escape the command if needed
