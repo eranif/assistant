@@ -15,7 +15,11 @@ add_library(
   ${CMAKE_CURRENT_LIST_DIR}/ollama.cpp
   ${CMAKE_CURRENT_LIST_DIR}/ollama.hpp
   ${CMAKE_CURRENT_LIST_DIR}/mcp_local_process.cpp
-  ${CMAKE_CURRENT_LIST_DIR}/mcp_local_process.hpp)
+  ${CMAKE_CURRENT_LIST_DIR}/mcp_local_process.hpp
+  ${CMAKE_CURRENT_LIST_DIR}/function.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/function.hpp
+  ${CMAKE_CURRENT_LIST_DIR}/function_base.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/function_base.hpp)
 
 target_include_directories(ollamalib PUBLIC ${CMAKE_SOURCE_DIR})
 target_link_libraries(ollamalib PUBLIC mcp-cpp)

@@ -4,33 +4,28 @@
 
 #include "ollama/cpp-mcp/mcp_tool.h"
 #include "ollama/function_base.hpp"
-#include "ollama/mcp_local_process.hpp"
 #include "ollama/ollamalib.hpp"
 
 namespace ollama {
+class MCPStdioClient;
 class InProcessFunction : public FunctionBase {
  public:
   InProcessFunction(const std::string& name, const std::string& desc)
       : FunctionBase(name, desc) {}
-  std::string Call(const FunctionArgumentVec& params) const override {
-    return m_callback(params);
-  }
+  std::string Call(const json& args) const override { return m_callback(args); }
 
  protected:
-  std::function<std::string(const FunctionArgumentVec&)> m_callback;
+  std::function<std::string(const json&)> m_callback;
   friend class FunctionBuilder;
 };
 
 class ExternalFunction : public FunctionBase {
  public:
-  ExternalFunction(std::shared_ptr<ollama::MCPStdioClient> client, mcp::tool t)
-      : FunctionBase(t.name, t.description) {}
-  std::string Call(const FunctionArgumentVec& params) const override {
-    return m_client->Call(m_tool, params);
-  }
+  ExternalFunction(ollama::MCPStdioClient* client, mcp::tool t);
+  std::string Call(const json& args) const override;
 
  protected:
-  std::shared_ptr<ollama::MCPStdioClient> m_client;
+  ollama::MCPStdioClient* m_client{nullptr};
   mcp::tool m_tool;
 };
 
@@ -48,19 +43,20 @@ class FunctionBuilder {
   }
 
   FunctionBuilder& AddRequiredParam(const std::string& name,
-                                    const std::string& desc, ParamType type) {
+                                    const std::string& desc,
+                                    const std::string& type) {
     m_params.push_back({name, desc, type, true});
     return *this;
   }
 
   FunctionBuilder& AddOptionalParam(const std::string& name,
-                                    const std::string& desc, ParamType type) {
+                                    const std::string& desc,
+                                    const std::string& type) {
     m_params.push_back({name, desc, type, false});
     return *this;
   }
 
-  FunctionBuilder& SetCallback(
-      std::function<std::string(const FunctionArgumentVec&)> func) {
+  FunctionBuilder& SetCallback(std::function<std::string(const json&)> func) {
     m_func = std::move(func);
     return *this;
   }
@@ -75,7 +71,7 @@ class FunctionBuilder {
  private:
   std::string m_name;
   std::string m_desc;
-  std::function<std::string(const FunctionArgumentVec&)> m_func;
+  std::function<std::string(const json&)> m_func;
   std::vector<Param> m_params;
 };
 

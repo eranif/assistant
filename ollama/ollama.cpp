@@ -138,13 +138,14 @@ void ChatContext::InvokeTools(Manager* manager) {
     for (auto func_call : calls) {
       std::stringstream ss;
       ss << "Invoking tool: '" << func_call.name << "', args:\n";
-      for (const auto& arg : func_call.args.args) {
-        ss << std::setw(2) << "  " << arg.name << " => " << arg.value << "\n";
+      auto args = func_call.args.items();
+      for (const auto& [name, value] : args) {
+        ss << std::setw(2) << "  " << name << " => " << value << "\n";
       }
       callback_(ss.str(), Reason::kLogNotice);
       auto result = manager->m_functionTable.Call(func_call);
       ss = {};
-      ss << "Tool output:\n" << result;
+      ss << "Tool output: " << result;
       callback_(ss.str(), Reason::kLogNotice);
       // Add the tool response
       ollama::message msg{"tool", result};

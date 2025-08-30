@@ -19,10 +19,8 @@ class ResponseParser {
       for (json tool : tools) {
         FunctionCall function_call;
         function_call.name = tool["function"]["name"];
-        auto items = tool["function"]["arguments"].items();
-        for (const auto& [name, value] : items) {
-          function_call.args.Add({name, value});
-        }
+        json arguments = tool["function"]["arguments"];
+        function_call.args = std::move(arguments);
         calls.push_back(std::move(function_call));
       }
       return calls;

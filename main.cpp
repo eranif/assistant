@@ -10,20 +10,21 @@
 
 using FunctionTable = ollama::FunctionTable;
 using FunctionBuilder = ollama::FunctionBuilder;
-using ParamType = ollama::ParamType;
 using ResponseParser = ollama::ResponseParser;
-using FunctionArgumentVec = ollama::FunctionArgumentVec;
 using McpClientStdio = ollama::MCPStdioClient;
 
-std::string WriteFileContent(const FunctionArgumentVec& params) {
+std::string WriteFileContent(const ollama::json& args) {
   std::stringstream ss;
-  if (params.GetSize() != 2) {
-    return "invalid number of arguments";
+  if (args.size() != 2) {
+    return "Invalid number of arguments";
   }
 
-  ASSIGN_FUNC_ARG_OR_RETURN(std::string filepath, params.GetArg("filepath"));
-  ASSIGN_FUNC_ARG_OR_RETURN(std::string file_content,
-                            params.GetArg("file_content"));
+  ASSIGN_FUNC_ARG_OR_RETURN(
+      std::string filepath,
+      ::ollama::GetFunctionArg<std::string>(args, "filepath"));
+  ASSIGN_FUNC_ARG_OR_RETURN(
+      std::string file_content,
+      ::ollama::GetFunctionArg<std::string>(args, "file_content"));
 
   auto res = CreateDirectoryForFile(filepath);
   if (!res.IsOk()) {
@@ -44,13 +45,15 @@ std::string WriteFileContent(const FunctionArgumentVec& params) {
   return ss.str();
 }
 
-std::string OpenFileInEditor(const FunctionArgumentVec& params) {
+std::string OpenFileInEditor(const ollama::json& args) {
   std::stringstream ss;
-  if (params.GetSize() != 1) {
+  if (args.size() != 1) {
     return "invalid number of arguments";
   }
 
-  ASSIGN_FUNC_ARG_OR_RETURN(std::string file_name, params.GetArg("filepath"));
+  ASSIGN_FUNC_ARG_OR_RETURN(
+      std::string file_name,
+      ::ollama::GetFunctionArg<std::string>(args, "filepath"));
   ss << "file '" << file_name << "' successfully opened file in the editor.";
   return ss.str();
 }
@@ -61,8 +64,7 @@ int main() {
                 .SetDescription(
                     "Given a file path, open it inside the editor for editing.")
                 .AddRequiredParam("filepath",
-                                  "the path of the file on the disk.",
-                                  ParamType::kString)
+                                  "the path of the file on the disk.", "string")
                 .SetCallback(OpenFileInEditor)
                 .Build());
   table.Add(
@@ -70,31 +72,42 @@ int main() {
           .SetDescription("Write file content to disk at a given path. Create "
                           "the file if it does not exist.")
           .AddRequiredParam("filepath", "the path of the file on the disk.",
-                            ParamType::kString)
-          .AddRequiredParam("file_content", "the content of the file",
-                            ParamType::kString)
+                            "string")
+          .AddRequiredParam("file_content", "the content of the file", "string")
           .SetCallback(WriteFileContent)
           .Build());
-  auto& manager = ollama::Manager::GetInstance();
 
-  McpClientStdio client(
-      {R"#(C:\msys64\home\eran\devl\test-mcp\env\bin\python3.exe)#",
-       R"#(C:\msys64\home\eran\devl\test-mcp\add.py)#"});
-  client.Initialise();
-  manager.SetFunctionTable(table);
+  // Add external functions from the test mcp server.
+  std::vector<std::string> args = {
+      R"#(C:\msys64\home\eran\devl\test-mcp\env\bin\python3.exe)#",
+      R"#(C:\msys64\home\eran\devl\test-mcp\add.py)#"};
+
+  std::shared_ptr<McpClientStdio> client =
+      std::make_shared<McpClientStdio>(args);
+  if (client->Initialise()) {
+    table.AddMCPServer(client);
+  }
+  auto& manager = ollama::Manager::GetInstance();
   std::cout << (manager.IsRunning() ? "Ollama is running"
                                     : "Ollama is not running")
             << std::endl;
 
+  std::cout << "Available functions:" << std::endl;
+  std::cout << "=================" << std::endl;
+
+  ollama::json tools_json = table.ToJSON();
+  for (const auto& func_obj : tools_json) {
+    std::cout << "- " << func_obj["function"]["name"] << std::endl;
+  }
+
+  manager.SetFunctionTable(table);
   auto models = manager.List();
   std::cout << "Available models:" << std::endl;
   std::cout << "=================" << std::endl;
   for (size_t i = 0; i < models.size(); ++i) {
-    std::cout << i << ") " << models[i] << ", Capabilities: ["
-              << JoinArray(
-                     manager.GetModelCapabilitiesString(models[i]).value(), ",")
-              << "]" << std::endl;
+    std::cout << i << ") " << models[i] << std::endl;
   }
+
   std::cout << "=================" << std::endl;
   if (models.empty()) {
     std::cout << "No models available" << std::endl;
@@ -107,6 +120,7 @@ int main() {
     if (prompt == "q" || prompt == "exit" || prompt == "quit") {
       break;
     }
+
     std::atomic_bool done{false};
     manager.AsyncChat(
         prompt,
@@ -126,7 +140,7 @@ int main() {
               std::cout << output;
               break;
             case ollama::Reason::kFatalError:
-              std::cout << "** Fatal error occurred!!**" << std::endl;
+              std::cout << "** Fatal error occurred**: " << output << std::endl;
               done = true;
               break;
           }
