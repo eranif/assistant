@@ -8,7 +8,7 @@
 #ifndef MCP_TOOL_H
 #define MCP_TOOL_H
 
-#include "mcp_message.h"
+#include "ollama/cpp-mcp/mcp_message.h"
 #include <functional>
 #include <string>
 #include <vector>

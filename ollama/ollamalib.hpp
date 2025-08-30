@@ -44,14 +44,14 @@
     This library was created by Yuji Hirose and is available under the MIT
    License. For more details visit: https://github.com/yhirose/cpp-httplib
 */
-#include "httplib.h"
+#include "ollama/common/httplib.h"
 
 /*
     nlohmnann JSON is a feature-rich header-only C++ JSON implementation.
     This library was created by Niels Lohmann and is available under the MIT
    License. For more details visit: https://github.com/nlohmann/json
 */
-#include "json.hpp"
+#include "ollama/common/json.hpp"
 
 /*
     Base64.h is a header-only C++ library for encoding and decoding Base64
@@ -68,7 +68,7 @@
 #include <numeric>
 #include <string>
 
-#include "base64.hpp"
+#include "ollama/common/base64.hpp"
 
 // Namespace types and classes
 namespace ollama {

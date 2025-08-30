@@ -10,9 +10,15 @@ endif ()
 
 add_subdirectory(cpp-mcp)
 
-add_library(ollamalib STATIC ${CMAKE_CURRENT_LIST_DIR}/ollama.cpp)
+add_library(
+  ollamalib STATIC
+  ${CMAKE_CURRENT_LIST_DIR}/ollama.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ollama.hpp
+  ${CMAKE_CURRENT_LIST_DIR}/mcp_local_process.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/mcp_local_process.hpp)
+
 target_include_directories(ollamalib PUBLIC ${CMAKE_SOURCE_DIR})
-target_include_directories(ollamalib PUBLIC ${CMAKE_SOURCE_DIR}/ollama/common)
+target_link_libraries(ollamalib PUBLIC mcp-cpp)
 
 if (OLLAMALIB_WITH_OPENSSL)
   target_compile_options(ollamalib PUBLIC -DCPPHTTPLIB_OPENSSL_SUPPORT=1)
@@ -26,7 +32,12 @@ if (WIN32)
   target_link_libraries(ollamalib PUBLIC Ws2_32)
 endif ()
 
-if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID MATCHES "AppleClang")
+if (CMAKE_CXX_COMPILER_ID
+    MATCHES
+    "Clang"
+    OR CMAKE_CXX_COMPILER_ID
+       MATCHES
+       "AppleClang")
   target_compile_options(ollamalib PUBLIC -Wno-deprecated-literal-operator)
   target_compile_options(ollamalib PUBLIC -Wno-string-plus-int)
   target_compile_options(ollamalib PUBLIC -Wno-deprecated-literal-operator)

@@ -4,12 +4,11 @@
 #include <thread>
 
 #include "macros.hpp"
-#include "ollamalib.hpp"
-#include "tool.hpp"
+#include "ollama/function.hpp"
+#include "ollama/function_base.hpp"
+#include "ollama/ollamalib.hpp"
 
 namespace ollama {
-using FunctionTable = tool::FunctionTable;
-using FunctionCall = tool::FunctionCall;
 
 enum class Reason {
   /// The current reason completed successfully.
@@ -48,7 +47,7 @@ struct ChatContext {
   /// If a tool(s) invocation is required, it will be placed here. Once we
   /// invoke the tool and push the tool response + the request to the history
   /// and remove it from here.
-  std::vector<std::pair<ollama::message, std::vector<tool::FunctionCall>>>
+  std::vector<std::pair<ollama::message, std::vector<FunctionCall>>>
       func_calls_;
   void InvokeTools(Manager* manager);
 };

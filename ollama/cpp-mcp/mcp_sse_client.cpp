@@ -7,7 +7,7 @@
  */
 
 #include "mcp_sse_client.h"
-#include "base64.hpp"
+#include "ollama/common/base64.hpp"
 
 namespace mcp {
 

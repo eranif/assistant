@@ -1,14 +1,19 @@
+#ifdef __WIN32
+#include <winsock2.h>
+#endif
 #include <iostream>
 
+#include "ollama/mcp_local_process.hpp"
 #include "ollama/ollama.hpp"
 #include "ollama/tool.hpp"
 #include "utils.hpp"
 
-using FunctionTable = ollama::tool::FunctionTable;
-using FunctionBuilder = ollama::tool::FunctionBuilder;
-using ParamType = ollama::tool::ParamType;
-using ResponseParser = ollama::tool::ResponseParser;
-using FunctionArgumentVec = ollama::tool::FunctionArgumentVec;
+using FunctionTable = ollama::FunctionTable;
+using FunctionBuilder = ollama::FunctionBuilder;
+using ParamType = ollama::ParamType;
+using ResponseParser = ollama::ResponseParser;
+using FunctionArgumentVec = ollama::FunctionArgumentVec;
+using McpClientStdio = ollama::MCPStdioClient;
 
 std::string WriteFileContent(const FunctionArgumentVec& params) {
   std::stringstream ss;
@@ -58,7 +63,7 @@ int main() {
                 .AddRequiredParam("filepath",
                                   "the path of the file on the disk.",
                                   ParamType::kString)
-                .AddCallback(OpenFileInEditor)
+                .SetCallback(OpenFileInEditor)
                 .Build());
   table.Add(
       FunctionBuilder("Write file content to disk at a given path")
@@ -68,15 +73,15 @@ int main() {
                             ParamType::kString)
           .AddRequiredParam("file_content", "the content of the file",
                             ParamType::kString)
-          .AddCallback(WriteFileContent)
+          .SetCallback(WriteFileContent)
           .Build());
   auto& manager = ollama::Manager::GetInstance();
-  manager.SetFunctionTable(table);
 
-  //  manager.AsyncPullModel("llama3.1:8b",
-  //                         [](std::string what, ollama::Reason reason) {
-  //                           std::cout << what << std::endl;
-  //                         });
+  McpClientStdio client(
+      {R"#(C:\msys64\home\eran\devl\test-mcp\env\bin\python3.exe)#",
+       R"#(C:\msys64\home\eran\devl\test-mcp\add.py)#"});
+  client.Initialise();
+  manager.SetFunctionTable(table);
   std::cout << (manager.IsRunning() ? "Ollama is running"
                                     : "Ollama is not running")
             << std::endl;

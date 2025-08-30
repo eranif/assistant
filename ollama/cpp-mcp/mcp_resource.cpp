@@ -15,7 +15,7 @@
 #include <mutex>
 #include <sstream>
 
-#include "base64.hpp"
+#include "ollama/common/base64.hpp"
 
 namespace fs = std::filesystem;
 

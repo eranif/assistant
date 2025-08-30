@@ -1,12 +1,9 @@
 #include "ollama.hpp"
 
-#include "ollamalib.hpp"
-#include "tool.hpp"
+#include "ollama/ollamalib.hpp"
+#include "ollama/tool.hpp"
 
 namespace ollama {
-using FunctionBuilder = ollama::tool::FunctionBuilder;
-using ParamType = ollama::tool::ParamType;
-using ResponseParser = ollama::tool::ResponseParser;
 
 constexpr std::string_view kDefaultOllamaUrl = "http://127.0.0.1:11434";
 
@@ -41,7 +38,7 @@ bool Manager::OnResponse(const ollama::response& resp) {
   bool is_done = ResponseParser::IsDone(resp);
   if (calls.has_value() && !calls.value().empty()) {
     // Add the AI response
-    auto ai_message_opt = ResponseParser::GetMessage(resp);
+    auto ai_message_opt = ResponseParser::GetResponseMessage(resp);
     if (ai_message_opt.has_value()) {
       req->func_calls_.push_back(
           {ai_message_opt.value(), std::move(calls.value())});
