@@ -88,6 +88,12 @@ int main() {
     table.AddMCPServer(client);
   }
   auto& manager = ollama::Manager::GetInstance();
+  if (!manager.IsRunning()) {
+    std::cerr << "Make sure ollama server is running and try again"
+              << std::endl;
+    return 1;
+  }
+
   std::cout << (manager.IsRunning() ? "Ollama is running"
                                     : "Ollama is not running")
             << std::endl;
@@ -110,7 +116,9 @@ int main() {
 
   std::cout << "=================" << std::endl;
   if (models.empty()) {
-    std::cout << "No models available" << std::endl;
+    std::cerr
+        << "No models available, please pull at least 1 model and try again."
+        << std::endl;
     return 1;
   }
 
