@@ -105,7 +105,8 @@ int main(int argc, char** argv) {
 
   ollama::json tools_json = table.ToJSON();
   for (const auto& func_obj : tools_json) {
-    LG_INFO() << "- " << func_obj["function"]["name"];
+    LG_INFO() << "- " << func_obj["function"]["name"] << ": "
+              << func_obj["function"]["description"].get<std::string>();
   }
 
   ollama_manager.SetFunctionTable(std::move(table));
