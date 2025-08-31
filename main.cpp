@@ -82,14 +82,22 @@ int main(int argc, char** argv) {
   if (argc > 1) {
     ollama::Config conf{argv[1]};
     for (const auto& s : conf.GetServers()) {
-      std::shared_ptr<McpClientStdio> client{nullptr};
-      if (s.IsRemote()) {
-        client = std::make_shared<McpClientStdio>(s.ssh_login.value(), s.args);
-      } else {
-        client = std::make_shared<McpClientStdio>(s.args);
+      if (!s.enabled) {
+        continue;
       }
-      if (client->Initialise()) {
-        table.AddMCPServer(client);
+      if (s.type == ollama::kServerKindStdio) {
+        std::shared_ptr<McpClientStdio> client{nullptr};
+        if (s.IsRemote()) {
+          client =
+              std::make_shared<McpClientStdio>(s.ssh_login.value(), s.args);
+        } else {
+          client = std::make_shared<McpClientStdio>(s.args);
+        }
+        if (client->Initialise()) {
+          table.AddMCPServer(client);
+        }
+      } else {
+        LG_WARN() << "Server of type: " << s.type << " are not supported yet";
       }
     }
   }

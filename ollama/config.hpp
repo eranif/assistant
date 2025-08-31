@@ -6,11 +6,15 @@
 
 namespace ollama {
 
+const std::string_view kServerKindStdio = "stdio";
+const std::string_view kServerKindSse = "sse";
+
 struct ServerConfig {
   std::string name;
   std::vector<std::string> args;
   std::optional<SSHLogin> ssh_login;
-
+  bool enabled{true};
+  std::string type{kServerKindStdio};
   inline bool IsRemote() const { return ssh_login.has_value(); }
 };
 
