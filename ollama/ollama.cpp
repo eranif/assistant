@@ -1,5 +1,7 @@
 #include "ollama.hpp"
 
+#include "ollama/cpp-mcp/mcp_logger.h"
+#include "ollama/logger.hpp"
 #include "ollama/ollamalib.hpp"
 #include "ollama/tool.hpp"
 
@@ -40,6 +42,7 @@ bool Manager::OnResponse(const ollama::response& resp) {
     // Add the AI response
     auto ai_message_opt = ResponseParser::GetResponseMessage(resp);
     if (ai_message_opt.has_value()) {
+      auto func_calls = calls.value();
       req->func_calls_.push_back(
           {ai_message_opt.value(), std::move(calls.value())});
     }
@@ -71,6 +74,7 @@ Manager::Manager() {
   m_url = kDefaultOllamaUrl;
   ollama::setReadTimeout(300);
   ollama::setWriteTimeout(300);
+  mcp::set_log_level(mcp::log_level::error);
   Startup();
 }
 
@@ -117,6 +121,7 @@ void Manager::CreateAndPushContext(ollama::messages msgs, OnResponseCallback cb,
                                    std::string model) {
   ollama::options opts;
   opts["temperature"] = 0.0;
+  opts["num_ctx"] = 1024 * 32;  // 32K by default.
   ollama::request req{model, msgs, opts, true};
   req["tools"] = m_functionTable.ToJSON();
   ChatContext ctx = {

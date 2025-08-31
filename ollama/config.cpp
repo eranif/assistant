@@ -14,7 +14,7 @@ std::optional<T> GetValueFromJson(const json& j, const std::string& name) {
     }
     return j[name].get<T>();
   } catch (std::exception& e) {
-    LG_ERROR() << e.what();
+    LOG_ERROR() << e.what();
     return std::nullopt;
   }
 }
@@ -28,7 +28,7 @@ T GetValueFromJsonWithDefault(const json& j, const std::string& name,
     }
     return j[name].get<T>();
   } catch (std::exception& e) {
-    LG_ERROR() << e.what();
+    LOG_ERROR() << e.what();
     return default_value;
   }
 }
@@ -38,7 +38,7 @@ Config::Config(const std::string& filepath) {
   try {
     std::ifstream input_file(filepath);
     if (!input_file.is_open()) {
-      LG_ERROR() << "Failed to open file: " << filepath;
+      LOG_ERROR() << "Failed to open file: " << filepath;
       return;
     }
     json parsed_data = json::parse(input_file);
@@ -70,10 +70,10 @@ Config::Config(const std::string& filepath) {
       }
       m_servers.push_back(std::move(server_config));
     }
-    LG_INFO() << "Successfully loaded " << m_servers.size()
+    LOG_INFO() << "Successfully loaded " << m_servers.size()
               << " configurations";
   } catch (std::exception& e) {
-    LG_ERROR() << "Failed to parse configuration file: " << filepath << ". "
+    LOG_ERROR() << "Failed to parse configuration file: " << filepath << ". "
                << e.what();
   }
 }

@@ -102,7 +102,7 @@ class FunctionTable {
 
   void Add(std::shared_ptr<FunctionBase> f) {
     if (!m_functions.insert({f->GetName(), f}).second) {
-      LG_WARN() << "Duplicate function found: " << f->GetName();
+      LOG_WARNING() << "Duplicate function found: " << f->GetName();
     }
   }
 

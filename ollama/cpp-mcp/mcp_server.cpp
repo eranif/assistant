@@ -24,7 +24,7 @@ bool server::start(bool blocking) {
         return true;  // Already running
     }
     
-    LOG_INFO("Starting MCP server on ", host_, ":", port_);
+    MCP_LOG_INFO("Starting MCP server on ", host_, ":", port_);
     
     // Setup CORS handling
     http_server_->Options(".*", [](const httplib::Request& req, httplib::Response& res) {
@@ -37,13 +37,13 @@ bool server::start(bool blocking) {
     // Setup JSON-RPC endpoint
     http_server_->Post(msg_endpoint_.c_str(), [this](const httplib::Request& req, httplib::Response& res) {
         this->handle_jsonrpc(req, res);
-        LOG_INFO(req.remote_addr, ":", req.remote_port, " - \"POST ", req.path, " HTTP/1.1\" ", res.status);
+        MCP_LOG_INFO(req.remote_addr, ":", req.remote_port, " - \"POST ", req.path, " HTTP/1.1\" ", res.status);
     });
 
     // Setup SSE endpoint
     http_server_->Get(sse_endpoint_.c_str(), [this](const httplib::Request& req, httplib::Response& res) {
         this->handle_sse(req, res);
-        LOG_INFO(req.remote_addr, ":", req.remote_port, " - \"GET ", req.path, " HTTP/1.1\" ", res.status);
+        MCP_LOG_INFO(req.remote_addr, ":", req.remote_port, " - \"GET ", req.path, " HTTP/1.1\" ", res.status);
     });
     
     // Start resource check thread (only start in non-blocking mode)
@@ -56,9 +56,9 @@ bool server::start(bool blocking) {
                     try {
                         check_inactive_sessions();
                     } catch (const std::exception& e) {
-                        LOG_ERROR("Exception in maintenance thread: ", e.what());
+                        MCP_LOG_ERROR("Exception in maintenance thread: ", e.what());
                     } catch (...) {
-                        LOG_ERROR("Unknown exception in maintenance thread");
+                        MCP_LOG_ERROR("Unknown exception in maintenance thread");
                     }
                 }
             }
@@ -68,19 +68,19 @@ bool server::start(bool blocking) {
     // Start server
     if (blocking) {
         running_ = true;
-        LOG_INFO("Starting server in blocking mode");
+        MCP_LOG_INFO("Starting server in blocking mode");
         if (!http_server_->listen(host_.c_str(), port_)) {
             running_ = false;
-            LOG_ERROR("Failed to start server on ", host_, ":", port_);
+            MCP_LOG_ERROR("Failed to start server on ", host_, ":", port_);
             return false;
         }
         return true;
     } else {
         // Start server in a separate thread
         server_thread_ = std::make_unique<std::thread>([this]() {
-            LOG_INFO("Starting server in separate thread");
+            MCP_LOG_INFO("Starting server in separate thread");
             if (!http_server_->listen(host_.c_str(), port_)) {
-                LOG_ERROR("Failed to start server on ", host_, ":", port_);
+                MCP_LOG_ERROR("Failed to start server on ", host_, ":", port_);
                 running_ = false;
                 return;
             }
@@ -95,7 +95,7 @@ void server::stop() {
         return;
     }
     
-    LOG_INFO("Stopping MCP server on ", host_, ":", port_);
+    MCP_LOG_INFO("Stopping MCP server on ", host_, ":", port_);
     running_ = false;
     
     // Close maintenance thread
@@ -152,7 +152,7 @@ void server::stop() {
         
         if (std::chrono::steady_clock::now() >= timeout_point) {
             // If timeout reached, detach remaining threads
-            LOG_WARNING("Thread join timeout reached, detaching remaining threads");
+            MCP_LOG_WARN("Thread join timeout reached, detaching remaining threads");
             thread->detach();
             continue;
         }
@@ -215,7 +215,7 @@ void server::stop() {
         http_server_->stop();
     }
     
-    LOG_INFO("MCP server stopped");
+    MCP_LOG_INFO("MCP server stopped");
 }
 
 bool server::is_running() const {
@@ -440,19 +440,19 @@ void server::handle_sse(const httplib::Request& req, httplib::Response& res) {
                 try {
                     bool sent = session_dispatcher->send_event(heartbeat.str());
                     if (!sent) {
-                        LOG_WARNING("Failed to send heartbeat, client may have closed connection: ", session_id);
+                        MCP_LOG_WARN("Failed to send heartbeat, client may have closed connection: ", session_id);
                         break;
                     }
                     
                     // Update activity time (heartbeat successful)
                     session_dispatcher->update_activity();
                 } catch (const std::exception& e) {
-                    LOG_ERROR("Failed to send heartbeat: ", e.what());
+                    MCP_LOG_ERROR("Failed to send heartbeat: ", e.what());
                     break;
                 }
             }
         } catch (const std::exception& e) {
-            LOG_ERROR("SSE session thread exception: ", session_id, ", ", e.what());
+            MCP_LOG_ERROR("SSE session thread exception: ", session_id, ", ", e.what());
         }
         
         close_session(session_id);
@@ -478,7 +478,7 @@ void server::handle_sse(const httplib::Request& req, httplib::Response& res) {
             // Wait for event
             bool result = session_dispatcher->wait_event(&sink);
             if (!result) {
-                LOG_WARNING("Failed to wait for event, closing connection: ", session_id);
+                MCP_LOG_WARN("Failed to wait for event, closing connection: ", session_id);
                 
                 close_session(session_id);
                 
@@ -490,7 +490,7 @@ void server::handle_sse(const httplib::Request& req, httplib::Response& res) {
 
             return true;
         } catch (const std::exception& e) {
-            LOG_ERROR("SSE content provider exception: ", e.what());
+            MCP_LOG_ERROR("SSE content provider exception: ", e.what());
             
             close_session(session_id);
             
@@ -537,7 +537,7 @@ void server::handle_jsonrpc(const httplib::Request& req, httplib::Response& res)
     try {
         req_json = json::parse(req.body);
     } catch (const json::exception& e) {
-        LOG_ERROR("Failed to parse JSON request: ", e.what());
+        MCP_LOG_ERROR("Failed to parse JSON request: ", e.what());
         res.status = 400;
         res.set_content("{\"error\":\"Invalid JSON\"}", "application/json");
         return;
@@ -555,7 +555,7 @@ void server::handle_jsonrpc(const httplib::Request& req, httplib::Response& res)
                 res.set_content("Accepted", "text/plain");
                 return;
             }
-            LOG_ERROR("Session not found: ", session_id);
+            MCP_LOG_ERROR("Session not found: ", session_id);
             res.status = 404;
             res.set_content("{\"error\":\"Session not found\"}", "application/json");
             return;
@@ -575,7 +575,7 @@ void server::handle_jsonrpc(const httplib::Request& req, httplib::Response& res)
             mcp_req.params = req_json["params"];
         }
     } catch (const std::exception& e) {
-        LOG_ERROR("Failed to create request object: ", e.what());
+        MCP_LOG_ERROR("Failed to create request object: ", e.what());
         res.status = 400;
         res.set_content("{\"error\":\"Invalid request format\"}", "application/json");
         return;
@@ -605,7 +605,7 @@ void server::handle_jsonrpc(const httplib::Request& req, httplib::Response& res)
         bool result = dispatcher->send_event(ss.str());
         
         if (!result) {
-            LOG_ERROR("Failed to send response via SSE: session_id=", session_id);
+            MCP_LOG_ERROR("Failed to send response via SSE: session_id=", session_id);
         }
     });
     
@@ -625,7 +625,7 @@ json server::process_request(const request& req, const std::string& session_id) 
     
     // Process method call
     try {
-        LOG_INFO("Processing method call: ", req.method);
+        MCP_LOG_INFO("Processing method call: ", req.method);
         
         // Special case: initialization
         if (req.method == "initialize") {
@@ -635,7 +635,7 @@ json server::process_request(const request& req, const std::string& session_id) 
         }
 
         if (!is_session_initialized(session_id)) {
-            LOG_WARNING("Session not initialized: ", session_id);
+            MCP_LOG_WARN("Session not initialized: ", session_id);
             return response::create_error(
                 req.id,
                 error_code::invalid_request,
@@ -655,19 +655,19 @@ json server::process_request(const request& req, const std::string& session_id) 
         
         if (handler) {
             // Call handler
-            LOG_INFO("Calling method handler: ", req.method);
+            MCP_LOG_INFO("Calling method handler: ", req.method);
             auto future = thread_pool_.enqueue([handler, params = req.params, session_id]() -> json {
                 return handler(params, session_id);
             });
             json result = future.get();
             
             // Create success response
-            LOG_INFO("Method call successful: ", req.method);
+            MCP_LOG_INFO("Method call successful: ", req.method);
             return response::create_success(req.id, result).to_json();
         }
         
         // Method not found
-        LOG_WARNING("Method not found: ", req.method);
+        MCP_LOG_WARN("Method not found: ", req.method);
         return response::create_error(
             req.id,
             error_code::method_not_found,
@@ -675,7 +675,7 @@ json server::process_request(const request& req, const std::string& session_id) 
         ).to_json();
     } catch (const mcp_exception& e) {
         // MCP exception
-        LOG_ERROR("MCP exception: ", e.what(), ", code: ", static_cast<int>(e.code()));
+        MCP_LOG_ERROR("MCP exception: ", e.what(), ", code: ", static_cast<int>(e.code()));
         return response::create_error(
             req.id,
             e.code(),
@@ -683,7 +683,7 @@ json server::process_request(const request& req, const std::string& session_id) 
         ).to_json();
     } catch (const std::exception& e) {
         // Other exceptions
-        LOG_ERROR("Exception while processing request: ", e.what());
+        MCP_LOG_ERROR("Exception while processing request: ", e.what());
         return response::create_error(
             req.id,
             error_code::internal_error,
@@ -691,7 +691,7 @@ json server::process_request(const request& req, const std::string& session_id) 
         ).to_json();
     } catch (...) {
         // Unknown exception
-        LOG_ERROR("Unknown exception while processing request");
+        MCP_LOG_ERROR("Unknown exception while processing request");
         return response::create_error(
             req.id,
             error_code::internal_error,
@@ -705,7 +705,7 @@ json server::handle_initialize(const request& req, const std::string& session_id
 
     // Version negotiation
     if (!params.contains("protocolVersion") || !params["protocolVersion"].is_string()) {
-        LOG_ERROR("Missing or invalid protocolVersion parameter");
+        MCP_LOG_ERROR("Missing or invalid protocolVersion parameter");
         return response::create_error(
             req.id, 
             error_code::invalid_params, 
@@ -714,10 +714,10 @@ json server::handle_initialize(const request& req, const std::string& session_id
     }
 
     std::string requested_version = params["protocolVersion"].get<std::string>();
-    LOG_INFO("Client requested protocol version: ", requested_version);
+    MCP_LOG_INFO("Client requested protocol version: ", requested_version);
 
     if (requested_version != MCP_VERSION) {
-        LOG_ERROR("Unsupported protocol version: ", requested_version, ", server supports: ", MCP_VERSION);
+        MCP_LOG_ERROR("Unsupported protocol version: ", requested_version, ", server supports: ", MCP_VERSION);
         return response::create_error(
             req.id, 
             error_code::invalid_params, 
@@ -743,7 +743,7 @@ json server::handle_initialize(const request& req, const std::string& session_id
     }
     
     // Log connection
-    LOG_INFO("Client connected: ", client_name, " ", client_version);
+    MCP_LOG_INFO("Client connected: ", client_name, " ", client_version);
     
     // Return server info and capabilities
     json server_info = {
@@ -757,7 +757,7 @@ json server::handle_initialize(const request& req, const std::string& session_id
         {"serverInfo", server_info}
     };
 
-    LOG_INFO("Initialization successful, waiting for notifications/initialized notification");
+    MCP_LOG_INFO("Initialization successful, waiting for notifications/initialized notification");
     
     return response::create_success(req.id, result).to_json();
 }
@@ -765,7 +765,7 @@ json server::handle_initialize(const request& req, const std::string& session_id
 void server::send_jsonrpc(const std::string& session_id, const json& message) {
     // Check if session ID is valid
     if (session_id.empty()) {
-        LOG_WARNING("Cannot send message to empty session_id");
+        MCP_LOG_WARN("Cannot send message to empty session_id");
         return;
     }
 
@@ -775,7 +775,7 @@ void server::send_jsonrpc(const std::string& session_id, const json& message) {
         std::lock_guard<std::mutex> lock(mutex_);
         auto it = session_dispatchers_.find(session_id);
         if (it == session_dispatchers_.end()) {
-            LOG_ERROR("Session not found: ", session_id);
+            MCP_LOG_ERROR("Session not found: ", session_id);
             return;
         }
         dispatcher = it->second;
@@ -783,7 +783,7 @@ void server::send_jsonrpc(const std::string& session_id, const json& message) {
     
     // Confirm dispatcher is still valid
     if (!dispatcher || dispatcher->is_closed()) {
-        LOG_WARNING("Cannot send to closed session: ", session_id);
+        MCP_LOG_WARN("Cannot send to closed session: ", session_id);
         return;
     }
     
@@ -793,7 +793,7 @@ void server::send_jsonrpc(const std::string& session_id, const json& message) {
     bool result = dispatcher->send_event(ss.str());
     
     if (!result) {
-        LOG_ERROR("Failed to send message to session: ", session_id);
+        MCP_LOG_ERROR("Failed to send message to session: ", session_id);
     }
 }
 
@@ -812,7 +812,7 @@ bool server::is_session_initialized(const std::string& session_id) const {
         auto it = session_initialized_.find(session_id);
         return (it != session_initialized_.end() && it->second);
     } catch (const std::exception& e) {
-        LOG_ERROR("Exception checking if session is initialized: ", e.what());
+        MCP_LOG_ERROR("Exception checking if session is initialized: ", e.what());
         return false;
     }
 }
@@ -820,7 +820,7 @@ bool server::is_session_initialized(const std::string& session_id) const {
 void server::set_session_initialized(const std::string& session_id, bool initialized) {
     // Check if session ID is valid
     if (session_id.empty()) {
-        LOG_WARNING("Cannot set initialization state for empty session_id");
+        MCP_LOG_WARN("Cannot set initialization state for empty session_id");
         return;
     }
     
@@ -829,12 +829,12 @@ void server::set_session_initialized(const std::string& session_id, bool initial
         // Check if session still exists
         auto it = session_dispatchers_.find(session_id);
         if (it == session_dispatchers_.end()) {
-            LOG_WARNING("Cannot set initialization state for non-existent session: ", session_id);
+            MCP_LOG_WARN("Cannot set initialization state for non-existent session: ", session_id);
             return;
         }
         session_initialized_[session_id] = initialized;
     } catch (const std::exception& e) {
-        LOG_ERROR("Exception setting session initialization state: ", e.what());
+        MCP_LOG_ERROR("Exception setting session initialization state: ", e.what());
     }
 }
 
@@ -894,7 +894,7 @@ void server::check_inactive_sessions() {
     
     // Close inactive sessions
     for (const auto& session_id : sessions_to_close) {
-        LOG_INFO("Closing inactive session: ", session_id);
+        MCP_LOG_INFO("Closing inactive session: ", session_id);
         
         close_session(session_id);
     }
@@ -946,9 +946,9 @@ void server::close_session(const std::string& session_id) {
             thread_to_release.release();
         }
     } catch (const std::exception& e) {
-        LOG_WARNING("Exception while cleaning up session resources: ", session_id, ", ", e.what());
+        MCP_LOG_WARN("Exception while cleaning up session resources: ", session_id, ", ", e.what());
     } catch (...) {
-        LOG_WARNING("Unknown exception while cleaning up session resources: ", session_id);
+        MCP_LOG_WARN("Unknown exception while cleaning up session resources: ", session_id);
     }
 }
 
