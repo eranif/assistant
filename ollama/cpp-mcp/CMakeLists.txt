@@ -8,7 +8,7 @@ add_library(
   mcp_sse_client.cpp)
 
 target_link_libraries(mcp-cpp PUBLIC ${CMAKE_THREAD_LIBS_INIT})
-target_include_directories(mcp-cpp PUBLIC ${CMAKE_SOURCE_DIR})
+target_include_directories(mcp-cpp PUBLIC ${OLLAMLIB_ROOT})
 
 if (OLLAMALIB_WITH_OPENSSL)
   target_compile_options(mcp-cpp PUBLIC -DCPPHTTPLIB_OPENSSL_SUPPORT=1)
