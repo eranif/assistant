@@ -9,6 +9,7 @@ add_library(
 
 target_link_libraries(mcp-cpp PUBLIC ${CMAKE_THREAD_LIBS_INIT})
 target_include_directories(mcp-cpp PUBLIC ${OLLAMLIB_ROOT})
+target_include_directories(mcp-cpp PRIVATE ${CMAKE_CURRENT_LIST_DIR})
 
 if (OLLAMALIB_WITH_OPENSSL)
   target_compile_options(mcp-cpp PUBLIC -DCPPHTTPLIB_OPENSSL_SUPPORT=1)
