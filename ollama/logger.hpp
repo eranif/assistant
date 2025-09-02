@@ -5,6 +5,7 @@
 #include <iomanip>
 #include <iostream>
 #include <mutex>
+#include <optional>
 #include <sstream>
 
 namespace ollama {
@@ -108,6 +109,7 @@ class Logger {
       case Level::kError:
         return "[ERROR] ";
     }
+    return "";
   }
 
   Level level_;
