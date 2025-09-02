@@ -14,9 +14,16 @@ ExternalFunction::ExternalFunction(ollama::MCPStdioClient* client, mcp::tool t)
     std::unordered_set<std::string> required_param = {required.begin(),
                                                       required.end()};
     for (const auto& [name, obj] : properties.items()) {
-      Param p(name, obj["description"], obj["type"],
-              required_param.count(name));
-      m_params.push_back(std::move(p));
+      if (obj.contains("description") && obj.contains("type")) {
+        // The spec requires "description" & "type"
+        Param p(name, obj["description"], obj["type"],
+                required_param.count(name));
+        m_params.push_back(std::move(p));
+      } else if (obj.contains("type") && obj.contains("title")) {
+        // FastMCP, by default will generate "type" & "title"
+        Param p(name, obj["title"], obj["type"], required_param.count(name));
+        m_params.push_back(std::move(p));
+      }
     }
   } catch (std::exception& e) {
     LOG_WARNING() << "Failed to build external function from tool. "
