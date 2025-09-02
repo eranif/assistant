@@ -985,7 +985,8 @@ class Ollama {
       json response = json::parse(res->body);
       version = response["version"];
     } else {
-      throw ollama::exception("Error retrieving version: " + res->status);
+      throw ollama::exception(std::string{"Error retrieving version: "} +
+                              std::to_string(res->status));
     }
 
     return version;

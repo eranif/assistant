@@ -28,8 +28,9 @@ void Manager::ProcessContext(std::shared_ptr<ChatContext> context) {
       context->InvokeTools(this);
     }
   } catch (std::exception& e) {
-    std::cerr << "ollama::chat threw an exception:" << e.what() << std::endl;
-    context->callback_("", Reason::kFatalError);
+    std::stringstream ss;
+    ss << "ollama::chat threw an exception:" << e.what();
+    context->callback_(ss.str(), Reason::kFatalError);
     m_queue.Clear();
   }
 }
