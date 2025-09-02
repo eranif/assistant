@@ -26,7 +26,7 @@ ExternalFunction::ExternalFunction(ollama::MCPStdioClient* client, mcp::tool t)
       }
     }
   } catch (std::exception& e) {
-    LOG_WARNING() << "Failed to build external function from tool. "
+    OLOG(OLogLevel::kWarning) << "Failed to build external function from tool. "
                   << e.what();
   }
 }

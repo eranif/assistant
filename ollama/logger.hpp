@@ -8,9 +8,6 @@
 #include <sstream>
 
 namespace ollama {
-
-enum class eLogLevel { kDebug, kInfo, kWarning, kError };
-
 class Logger {
  public:
   static Logger& Instance() {
@@ -18,21 +15,23 @@ class Logger {
     return instance;
   }
 
-  static eLogLevel FromString(const std::string& level) {
+  enum class Level { kDebug, kInfo, kWarning, kError };
+
+  static Level FromString(const std::string& level) {
     if (level == "debug") {
-      return eLogLevel::kDebug;
+      return Level::kDebug;
     } else if (level == "info") {
-      return eLogLevel::kInfo;
+      return Level::kInfo;
     } else if (level == "error") {
-      return eLogLevel::kError;
+      return Level::kError;
     } else if (level == "warn") {
-      return eLogLevel::kWarning;
+      return Level::kWarning;
     } else {
-      return eLogLevel::kInfo;
+      return Level::kInfo;
     }
   }
 
-  void SetLogLevel(eLogLevel level) {
+  void SetLogLevel(Level level) {
     std::lock_guard<std::mutex> lock(mutex_);
     level_ = level;
   }
@@ -45,15 +44,15 @@ class Logger {
     }
   }
 
-  void debug(const std::stringstream& ss) { log(eLogLevel::kDebug, ss); }
-  void info(const std::stringstream& ss) { log(eLogLevel::kInfo, ss); }
-  void warning(const std::stringstream& ss) { log(eLogLevel::kWarning, ss); }
-  void error(const std::stringstream& ss) { log(eLogLevel::kError, ss); }
+  void debug(const std::stringstream& ss) { log(Level::kDebug, ss); }
+  void info(const std::stringstream& ss) { log(Level::kInfo, ss); }
+  void warning(const std::stringstream& ss) { log(Level::kWarning, ss); }
+  void error(const std::stringstream& ss) { log(Level::kError, ss); }
 
  private:
-  Logger() : level_(eLogLevel::kInfo) {}
+  Logger() : level_(Level::kInfo) {}
 
-  void log(eLogLevel level, const std::stringstream& msg) {
+  void log(Level level, const std::stringstream& msg) {
     if (level < level_) {
       return;
     }
@@ -71,16 +70,16 @@ class Logger {
       ss << GetLevelString(level);
     } else {
       switch (level) {
-        case eLogLevel::kDebug:
+        case Level::kDebug:
           ss << "\033[36m" << GetLevelString(level) << "\033[0m ";  // Cyan
           break;
-        case eLogLevel::kInfo:
+        case Level::kInfo:
           ss << "\033[32m" << GetLevelString(level) << "\033[0m ";  // Green
           break;
-        case eLogLevel::kWarning:
+        case Level::kWarning:
           ss << "\033[33m" << GetLevelString(level) << "\033[0m ";  // Yellow
           break;
-        case eLogLevel::kError:
+        case Level::kError:
           ss << "\033[31m" << GetLevelString(level) << "\033[0m ";  // Red
           break;
       }
@@ -98,53 +97,54 @@ class Logger {
   }
 
  private:
-  const char* GetLevelString(eLogLevel level) const {
+  const char* GetLevelString(Level level) const {
     switch (level) {
-      case eLogLevel::kDebug:
+      case Level::kDebug:
         return "[DEBUG] ";
-      case eLogLevel::kInfo:
+      case Level::kInfo:
         return "[INFO] ";
-      case eLogLevel::kWarning:
+      case Level::kWarning:
         return "[WARNING] ";
-      case eLogLevel::kError:
+      case Level::kError:
         return "[ERROR] ";
     }
   }
 
-  eLogLevel level_;
+  Level level_;
   std::mutex mutex_;
   std::optional<std::ofstream> file_;
 };
 
 class LogStream : public std::stringstream {
  public:
-  LogStream(eLogLevel level) : m_level(level) {}
+  LogStream(Logger::Level level) : m_level(level) {}
   virtual ~LogStream() {
     switch (m_level) {
-      case eLogLevel::kDebug:
+      case Logger::Level::kDebug:
         Logger::Instance().debug(*this);
         break;
-      case eLogLevel::kInfo:
+      case Logger::Level::kInfo:
         Logger::Instance().info(*this);
         break;
-      case eLogLevel::kWarning:
+      case Logger::Level::kWarning:
         Logger::Instance().warning(*this);
         break;
-      case eLogLevel::kError:
+      case Logger::Level::kError:
         Logger::Instance().error(*this);
         break;
     }
   }
 
  private:
-  eLogLevel m_level{eLogLevel::kInfo};
+  Logger::Level m_level{Logger::Level::kInfo};
 };
 
-#define LOG_DEBUG() ollama::LogStream(ollama::eLogLevel::kDebug)
-#define LOG_INFO() ollama::LogStream(ollama::eLogLevel::kInfo)
-#define LOG_WARNING() ollama::LogStream(ollama::eLogLevel::kWarning)
-#define LOG_ERROR() ollama::LogStream(ollama::eLogLevel::kError)
-
-inline void LogLevel(eLogLevel level) { Logger::Instance().SetLogLevel(level); }
+inline void LogLevel(Logger::Level level) {
+  Logger::Instance().SetLogLevel(level);
+}
 
 }  // namespace ollama
+
+using OLogLevel = ollama::Logger::Level;
+
+#define OLOG(level) ollama::LogStream(level)

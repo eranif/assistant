@@ -32,7 +32,7 @@ struct ArgvIter {
 
 struct Args {
   std::string log_file;
-  ollama::eLogLevel log_level{ollama::eLogLevel::kInfo};
+  OLogLevel log_level{OLogLevel::kInfo};
   std::string config_file;
 };
 
@@ -151,15 +151,16 @@ int main(int argc, char** argv) {
           table.AddMCPServer(client);
         }
       } else {
-        LOG_WARNING() << "Server of type: " << s.type
-                      << " are not supported yet";
+        OLOG(OLogLevel::kWarning)
+            << "Server of type: " << s.type << " are not supported yet";
       }
     }
   }
 
   auto& ollama_manager = ollama::Manager::GetInstance();
   if (!ollama_manager.IsRunning()) {
-    LOG_ERROR() << "Make sure ollama server is running and try again";
+    OLOG(OLogLevel::kError)
+        << "Make sure ollama server is running and try again";
     return 1;
   }
 
@@ -181,7 +182,7 @@ int main(int argc, char** argv) {
 
   std::cout << "=================" << std::endl;
   if (models.empty()) {
-    LOG_ERROR()
+    OLOG(OLogLevel::kError)
         << "No models available, please pull at least 1 model and try again.";
     return 1;
   }
@@ -197,25 +198,26 @@ int main(int argc, char** argv) {
     ollama_manager.AsyncChat(
         prompt,
         [&done](std::string output, ollama::Reason reason) {
-          LOG_DEBUG() << "Chat callback called: reason: "
-                      << static_cast<int>(reason);
+          OLOG(OLogLevel::kDebug)
+              << "Chat callback called: reason: " << static_cast<int>(reason);
           switch (reason) {
             case ollama::Reason::kDone:
               std::cout << std::endl;
-              LOG_INFO() << "Completed!";
+              OLOG(OLogLevel::kInfo) << "Completed!";
               done = true;
               break;
             case ollama::Reason::kLogNotice:
-              LOG_INFO() << output;
+              OLOG(OLogLevel::kInfo) << output;
               break;
             case ollama::Reason::kLogDebug:
-              LOG_DEBUG() << output;
+              OLOG(OLogLevel::kDebug) << output;
               break;
             case ollama::Reason::kPartialResult:
               std::cout << output;
               break;
             case ollama::Reason::kFatalError:
-              LOG_ERROR() << "** Fatal error occurred**: " << output;
+              OLOG(OLogLevel::kError)
+                  << "** Fatal error occurred**: " << output;
               done = true;
               break;
           }

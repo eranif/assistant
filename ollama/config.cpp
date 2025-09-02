@@ -14,7 +14,7 @@ std::optional<T> GetValueFromJson(const json& j, const std::string& name) {
     }
     return j[name].get<T>();
   } catch (std::exception& e) {
-    LOG_ERROR() << e.what();
+    OLOG(OLogLevel::kError) << e.what();
     return std::nullopt;
   }
 }
@@ -28,7 +28,7 @@ T GetValueFromJsonWithDefault(const json& j, const std::string& name,
     }
     return j[name].get<T>();
   } catch (std::exception& e) {
-    LOG_ERROR() << e.what();
+    OLOG(OLogLevel::kError) << e.what();
     return default_value;
   }
 }
@@ -38,7 +38,7 @@ Config::Config(const std::string& filepath) {
   try {
     std::ifstream input_file(filepath);
     if (!input_file.is_open()) {
-      LOG_ERROR() << "Failed to open file: " << filepath;
+      OLOG(OLogLevel::kError) << "Failed to open file: " << filepath;
       return;
     }
     json parsed_data = json::parse(input_file);
@@ -70,10 +70,10 @@ Config::Config(const std::string& filepath) {
       }
       m_servers.push_back(std::move(server_config));
     }
-    LOG_INFO() << "Successfully loaded " << m_servers.size()
+    OLOG(OLogLevel::kInfo) << "Successfully loaded " << m_servers.size()
               << " configurations";
   } catch (std::exception& e) {
-    LOG_ERROR() << "Failed to parse configuration file: " << filepath << ". "
+    OLOG(OLogLevel::kError) << "Failed to parse configuration file: " << filepath << ". "
                << e.what();
   }
 }
