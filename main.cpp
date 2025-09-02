@@ -168,8 +168,6 @@ int main(int argc, char** argv) {
 
   ollama::json tools_json = table.ToJSON();
   for (const auto& func_obj : tools_json) {
-    LOG_DEBUG() << "- " << func_obj["function"]["name"] << ": " << std::setw(2)
-                << func_obj["function"];
     std::cout << "- " << func_obj["function"]["name"] << std::endl;
   }
 

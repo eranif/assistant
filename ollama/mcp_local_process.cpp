@@ -99,7 +99,7 @@ std::vector<std::shared_ptr<FunctionBase>> MCPStdioClient::GetFunctions()
   result.reserve(m_tools.size());
   for (auto t : m_tools) {
     std::shared_ptr<FunctionBase> f = std::make_shared<ExternalFunction>(
-        const_cast<MCPStdioClient*>(this), t);
+        const_cast<MCPStdioClient*>(this), std::move(t));
     result.push_back(std::move(f));
   }
   return result;

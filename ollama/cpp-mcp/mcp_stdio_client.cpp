@@ -149,7 +149,7 @@ std::vector<tool> stdio_client::get_tools() {
       t.parameters_schema = tool_json["inputSchema"];
     }
 
-    tools.push_back(t);
+    tools.push_back(std::move(t));
   }
 
   return tools;
