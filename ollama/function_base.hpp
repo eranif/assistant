@@ -54,6 +54,7 @@ class FunctionBase {
  public:
   FunctionBase(const std::string& name, const std::string& desc)
       : m_name(name), m_desc(desc) {}
+  virtual ~FunctionBase() = default;
 
   json ToJSON() const {
     json j;

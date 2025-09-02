@@ -7,6 +7,7 @@ add_library(
   mcp_stdio_client.cpp
   mcp_sse_client.cpp)
 
+target_compile_options(mcp-cpp PUBLIC -Wall)
 target_link_libraries(mcp-cpp PUBLIC ${CMAKE_THREAD_LIBS_INIT})
 target_include_directories(mcp-cpp PUBLIC ${OLLAMLIB_ROOT})
 target_include_directories(mcp-cpp PRIVATE ${CMAKE_CURRENT_LIST_DIR})

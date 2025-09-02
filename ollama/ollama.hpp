@@ -144,7 +144,7 @@ class Manager {
   std::atomic_bool m_shutdown_flag{false};
   std::atomic_bool m_puller_busy{false};
   std::string m_url;
-  friend class ChatContext;
+  friend struct ChatContext;
 };
 }  // namespace ollama
 
