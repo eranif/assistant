@@ -144,8 +144,8 @@ class Manager {
   void ProcessContext(std::shared_ptr<ChatContext> context);
   void CreateAndPushContext(std::optional<ollama::message> msg,
                             OnResponseCallback cb, std::string model);
-  void PushHistory(ollama::message msg);
-  ollama::messages GetHistory() const;
+  void AddMessage(std::optional<ollama::message> msg);
+  ollama::messages GetMessages() const;
 
   Manager();
   ~Manager();
@@ -160,7 +160,7 @@ class Manager {
   size_t m_windows_size{20};
   size_t m_context_size{32 * 1024};
   /// Messages that were sent to the AI, will be placed here
-  ollama::messages m_history;
+  ollama::messages m_messages;
   friend struct ChatContext;
 };
 }  // namespace ollama

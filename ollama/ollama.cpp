@@ -110,7 +110,7 @@ void Manager::SetUrl(const std::string& url) {
 void Manager::Reset() {
   m_queue.Clear();
   m_function_table.Clear();
-  m_history.clear();
+  m_messages.clear();
 }
 
 void Manager::AsyncChat(std::string msg, OnResponseCallback cb,
@@ -125,11 +125,8 @@ void Manager::CreateAndPushContext(std::optional<ollama::message> msg,
   opts["temperature"] = 0.0;
   opts["num_ctx"] = GetContextSize();
 
-  if (msg.has_value()) {
-    PushHistory(msg.value());
-  }
-
-  auto history = GetHistory();
+  AddMessage(msg);
+  auto history = GetMessages();
   ollama::request req{model, history, opts, true};
   OLOG(Logger::Level::kDebug) << "Pushing message to the queue.";
   for (const auto& msg : history) {
@@ -151,7 +148,7 @@ void ChatContext::InvokeTools(Manager* manager) {
   }
 
   for (auto [msg, calls] : func_calls_) {
-    manager->PushHistory(std::move(msg));
+    manager->AddMessage(std::move(msg));
     for (auto func_call : calls) {
       std::stringstream ss;
       ss << "Invoking tool: '" << func_call.name << "', args:\n";
@@ -166,7 +163,7 @@ void ChatContext::InvokeTools(Manager* manager) {
       callback_(ss.str(), Reason::kLogNotice);
       // Add the tool response
       ollama::message msg{"tool", result};
-      manager->PushHistory(std::move(msg));
+      manager->AddMessage(std::move(msg));
     }
   }
   manager->CreateAndPushContext(std::nullopt, callback_, model_);
@@ -281,19 +278,31 @@ const std::string kContextSystemMessage =
 const std::string kSystemRole = "system";
 }  // namespace
 
-void Manager::PushHistory(ollama::message msg) {
-  m_history.push_back(msg);
+void Manager::AddMessage(std::optional<ollama::message> msg) {
+  if (!msg.has_value()) {
+    return;
+  }
+
+  m_messages.push_back(std::move(*msg));
   // truncate the history to fit the window size
-  if (m_history.size() >= m_windows_size) {
-    m_history.erase(m_history.begin());
+  if (m_messages.size() >= m_windows_size) {
+    m_messages.erase(m_messages.begin());
   }
 }
-ollama::messages ollama::Manager::GetHistory() const {
-  ollama::message system_message{kSystemRole, kContextSystemMessage};
+ollama::messages ollama::Manager::GetMessages() const {
+  if (m_messages.empty()) {
+    return {};
+  }
+
+  if (m_messages.size() == 1) {
+    return m_messages;
+  }
+
   ollama::messages h;
-  h.reserve(m_history.size() + 1);
+  h.reserve(m_messages.size() + 1);
+  ollama::message system_message{kSystemRole, kContextSystemMessage};
   h.push_back(std::move(system_message));
-  h.insert(h.end(), m_history.begin(), m_history.end());
+  h.insert(h.end(), m_messages.begin(), m_messages.end());
   return h;
 }
 }  // namespace ollama
