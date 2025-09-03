@@ -15,6 +15,24 @@ using FunctionBuilder = ollama::FunctionBuilder;
 using ResponseParser = ollama::ResponseParser;
 using McpClientStdio = ollama::MCPStdioClient;
 
+namespace {
+const std::string_view kCyan = "\033[36m";
+const std::string_view kReset = "\033[0m";
+const std::string_view kYellow = "\033[33m";
+
+std::string Cyan(std::string_view word) {
+  std::stringstream ss;
+  ss << kCyan << word << kReset;
+  return ss.str();
+}
+
+std::string Yellow(std::string_view word) {
+  std::stringstream ss;
+  ss << kYellow << word << kReset;
+  return ss.str();
+}
+
+}  // namespace
 struct ArgvIter {
  public:
   ArgvIter(int argc, char** argv) : m_argc(argc), m_argv(argv) {}
@@ -186,12 +204,25 @@ int main(int argc, char** argv) {
         << "No models available, please pull at least 1 model and try again.";
     return 1;
   }
-
   std::string model_name = models[GetChoiceFromUser(models)];
+
+  std::cout << "" << std::endl;
+  std::cout << Yellow("#") << " Interactive session started." << std::endl;
+  std::cout << Yellow("#") << " Type " << Cyan("q") << ", " << Cyan("quit")
+            << " or " << Cyan("exit") << " to exit." << std::endl;
+  std::cout << Yellow("#") << " Type " << Cyan("clear") << " or "
+            << Cyan("reset") << " to clear the session." << std::endl;
+  std::cout << "" << std::endl;
+
   while (true) {
     std::string prompt = GetTextFromUser("Ask me anything");
     if (prompt == "q" || prompt == "exit" || prompt == "quit") {
       break;
+    } else if (prompt == "clear" || prompt == "reset") {
+      // Clear the session
+      ollama_manager.Reset();
+      std::cout << "Session cleared." << std::endl;
+      continue;
     }
 
     std::atomic_bool done{false};

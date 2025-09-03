@@ -41,8 +41,6 @@ class Manager;
 struct ChatContext {
   OnResponseCallback callback_;
   ollama::request request_;
-  /// Messages that were sent to the AI, will be placed here
-  ollama::messages history_;
   std::string model_;
   /// If a tool(s) invocation is required, it will be placed here. Once we
   /// invoke the tool and push the tool response + the request to the history
@@ -94,6 +92,8 @@ class Manager {
  public:
   static Manager& GetInstance();
   void SetUrl(const std::string& url);
+
+  /// Clear the current session.
   void Reset();
 
   /// Start a chat. All responses will be directed to the `cb`. Note that `cb`
@@ -101,7 +101,7 @@ class Manager {
   void AsyncChat(std::string msg, OnResponseCallback cb,
                  std::string model = kDefaultModel);
   void SetFunctionTable(FunctionTable table) {
-    m_functionTable = std::move(table);
+    m_function_table = std::move(table);
   }
 
   /// Return true if ollama server is running.
@@ -124,6 +124,17 @@ class Manager {
   std::optional<std::vector<std::string>> GetModelCapabilitiesString(
       const std::string& model) const;
 
+  /// Set the number of messages to keep when chatting with the model. The
+  /// implementation uses a FIFO.
+  inline void SetHistorySize(size_t count) { m_windows_size = count; }
+  inline size_t GetHistorySize() const { return m_windows_size; }
+
+  /// Define the context size, default is 32K.
+  inline void SetContextSize(size_t context_size) {
+    m_context_size = context_size;
+  }
+  inline size_t GetContextSize() const { return m_context_size; }
+
   void Shutdown();
   void Startup();
 
@@ -131,19 +142,25 @@ class Manager {
   static bool OnResponse(const ollama::response& resp);
   static void WorkerMain();
   void ProcessContext(std::shared_ptr<ChatContext> context);
-  void CreateAndPushContext(ollama::messages msgs, OnResponseCallback cb,
-                            std::string model);
+  void CreateAndPushContext(std::optional<ollama::message> msg,
+                            OnResponseCallback cb, std::string model);
+  void PushHistory(ollama::messages msgs);
+  const ollama::messages& GetHistory() const { return m_history; }
 
   Manager();
   ~Manager();
 
-  FunctionTable m_functionTable;
+  FunctionTable m_function_table;
   ChatContextQueue m_queue;
   std::shared_ptr<std::thread> m_worker;
   std::shared_ptr<std::thread> m_puller_thread;
   std::atomic_bool m_shutdown_flag{false};
   std::atomic_bool m_puller_busy{false};
   std::string m_url;
+  size_t m_windows_size{20};
+  size_t m_context_size{32 * 1024};
+  /// Messages that were sent to the AI, will be placed here
+  ollama::messages m_history;
   friend struct ChatContext;
 };
 }  // namespace ollama

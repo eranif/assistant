@@ -109,26 +109,35 @@ void Manager::SetUrl(const std::string& url) {
 
 void Manager::Reset() {
   m_queue.Clear();
-  m_functionTable.Clear();
+  m_function_table.Clear();
+  m_history.clear();
 }
 
 void Manager::AsyncChat(std::string msg, OnResponseCallback cb,
                         std::string model) {
   ollama::message ollama_message{"user", msg};
-  CreateAndPushContext({ollama_message}, cb, model);
+  CreateAndPushContext(ollama_message, cb, model);
 }
 
-void Manager::CreateAndPushContext(ollama::messages msgs, OnResponseCallback cb,
-                                   std::string model) {
+void Manager::CreateAndPushContext(std::optional<ollama::message> msg,
+                                   OnResponseCallback cb, std::string model) {
   ollama::options opts;
   opts["temperature"] = 0.0;
-  opts["num_ctx"] = 1024 * 32;  // 32K by default.
+  opts["num_ctx"] = GetContextSize();
+  ollama::messages msgs{GetHistory()};
+  if (msg.has_value()) {
+    msgs.push_back(std::move(msg.value()));
+  }
   ollama::request req{model, msgs, opts, true};
-  req["tools"] = m_functionTable.ToJSON();
+  OLOG(Logger::Level::kDebug) << "Pushing message to the queue.";
+  for (const auto& msg : msgs) {
+    OLOG(Logger::Level::kDebug) << msg;
+  }
+  req["tools"] = m_function_table.ToJSON();
+  PushHistory(std::move(msgs));
   ChatContext ctx = {
       .callback_ = cb,
       .request_ = req,
-      .history_ = {msgs},
       .model_ = model,
   };
   m_queue.PushBack(std::make_shared<ChatContext>(ctx));
@@ -138,9 +147,9 @@ void ChatContext::InvokeTools(Manager* manager) {
   if (func_calls_.empty()) {
     return;
   }
-  ollama::messages msgs{history_};
+
   for (auto [msg, calls] : func_calls_) {
-    msgs.push_back(msg);
+    manager->PushHistory(std::move(msg));
     for (auto func_call : calls) {
       std::stringstream ss;
       ss << "Invoking tool: '" << func_call.name << "', args:\n";
@@ -149,16 +158,16 @@ void ChatContext::InvokeTools(Manager* manager) {
         ss << std::setw(2) << "  " << name << " => " << value << "\n";
       }
       callback_(ss.str(), Reason::kLogNotice);
-      auto result = manager->m_functionTable.Call(func_call);
+      auto result = manager->m_function_table.Call(func_call);
       ss = {};
       ss << "Tool output: " << result;
       callback_(ss.str(), Reason::kLogNotice);
       // Add the tool response
       ollama::message msg{"tool", result};
-      msgs.push_back(msg);
+      manager->PushHistory(std::move(msg));
     }
   }
-  manager->CreateAndPushContext(msgs, callback_, model_);
+  manager->CreateAndPushContext(std::nullopt, callback_, model_);
 }
 
 std::vector<std::string> Manager::List() const {
@@ -261,5 +270,13 @@ void Manager::AsyncPullModel(const std::string& name, OnResponseCallback cb) {
           cb(e.what(), Reason::kFatalError);
         }
       });
+}
+
+void Manager::PushHistory(ollama::messages msgs) {
+  m_history.insert(m_history.end(), msgs.begin(), msgs.end());
+  // truncate the history to fit the window size
+  while (!m_history.empty() && m_history.size() >= m_windows_size) {
+    m_history.erase(m_history.begin());
+  }
 }
 }  // namespace ollama
