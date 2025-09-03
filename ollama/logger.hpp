@@ -16,10 +16,12 @@ class Logger {
     return instance;
   }
 
-  enum class Level { kDebug, kInfo, kWarning, kError };
+  enum class Level { kTrace, kDebug, kInfo, kWarning, kError };
 
   static Level FromString(const std::string& level) {
-    if (level == "debug") {
+    if (level == "trace") {
+      return Level::kTrace;
+    } else if (level == "debug") {
       return Level::kDebug;
     } else if (level == "info") {
       return Level::kInfo;
@@ -45,6 +47,7 @@ class Logger {
     }
   }
 
+  void trace(const std::stringstream& ss) { log(Level::kTrace, ss); }
   void debug(const std::stringstream& ss) { log(Level::kDebug, ss); }
   void info(const std::stringstream& ss) { log(Level::kInfo, ss); }
   void warning(const std::stringstream& ss) { log(Level::kWarning, ss); }
@@ -71,6 +74,9 @@ class Logger {
       ss << GetLevelString(level);
     } else {
       switch (level) {
+        case Level::kTrace:
+          ss << "\033[37m" << GetLevelString(level) << "\033[0m ";  // Gray
+          break;
         case Level::kDebug:
           ss << "\033[36m" << GetLevelString(level) << "\033[0m ";  // Cyan
           break;
@@ -100,6 +106,8 @@ class Logger {
  private:
   const char* GetLevelString(Level level) const {
     switch (level) {
+      case Level::kTrace:
+        return "[TRACE] ";
       case Level::kDebug:
         return "[DEBUG] ";
       case Level::kInfo:
@@ -122,6 +130,9 @@ class LogStream : public std::stringstream {
   LogStream(Logger::Level level) : m_level(level) {}
   virtual ~LogStream() {
     switch (m_level) {
+      case Logger::Level::kTrace:
+        Logger::Instance().trace(*this);
+        break;
       case Logger::Level::kDebug:
         Logger::Instance().debug(*this);
         break;

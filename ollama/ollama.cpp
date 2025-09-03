@@ -124,17 +124,19 @@ void Manager::CreateAndPushContext(std::optional<ollama::message> msg,
   ollama::options opts;
   opts["temperature"] = 0.0;
   opts["num_ctx"] = GetContextSize();
-  ollama::messages msgs{GetHistory()};
+
   if (msg.has_value()) {
-    msgs.push_back(std::move(msg.value()));
+    PushHistory(msg.value());
   }
-  ollama::request req{model, msgs, opts, true};
+
+  auto history = GetHistory();
+  ollama::request req{model, history, opts, true};
   OLOG(Logger::Level::kDebug) << "Pushing message to the queue.";
-  for (const auto& msg : msgs) {
-    OLOG(Logger::Level::kDebug) << msg;
+  for (const auto& msg : history) {
+    OLOG(Logger::Level::kInfo) << msg;
   }
+
   req["tools"] = m_function_table.ToJSON();
-  PushHistory(std::move(msgs));
   ChatContext ctx = {
       .callback_ = cb,
       .request_ = req,
@@ -272,11 +274,26 @@ void Manager::AsyncPullModel(const std::string& name, OnResponseCallback cb) {
       });
 }
 
-void Manager::PushHistory(ollama::messages msgs) {
-  m_history.insert(m_history.end(), msgs.begin(), msgs.end());
+namespace {
+const std::string kContextSystemMessage =
+    "Use previous messages as context but only respond to the last user "
+    "message.";
+const std::string kSystemRole = "system";
+}  // namespace
+
+void Manager::PushHistory(ollama::message msg) {
+  m_history.push_back(msg);
   // truncate the history to fit the window size
-  while (!m_history.empty() && m_history.size() >= m_windows_size) {
+  if (m_history.size() >= m_windows_size) {
     m_history.erase(m_history.begin());
   }
+}
+ollama::messages ollama::Manager::GetHistory() const {
+  ollama::message system_message{kSystemRole, kContextSystemMessage};
+  ollama::messages h;
+  h.reserve(m_history.size() + 1);
+  h.push_back(std::move(system_message));
+  h.insert(h.end(), m_history.begin(), m_history.end());
+  return h;
 }
 }  // namespace ollama

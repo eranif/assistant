@@ -144,8 +144,8 @@ class Manager {
   void ProcessContext(std::shared_ptr<ChatContext> context);
   void CreateAndPushContext(std::optional<ollama::message> msg,
                             OnResponseCallback cb, std::string model);
-  void PushHistory(ollama::messages msgs);
-  const ollama::messages& GetHistory() const { return m_history; }
+  void PushHistory(ollama::message msg);
+  ollama::messages GetHistory() const;
 
   Manager();
   ~Manager();

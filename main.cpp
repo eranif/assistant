@@ -229,7 +229,7 @@ int main(int argc, char** argv) {
     ollama_manager.AsyncChat(
         prompt,
         [&done](std::string output, ollama::Reason reason) {
-          OLOG(OLogLevel::kDebug)
+          OLOG(OLogLevel::kTrace)
               << "Chat callback called: reason: " << static_cast<int>(reason);
           switch (reason) {
             case ollama::Reason::kDone:
