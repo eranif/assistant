@@ -100,9 +100,9 @@ class Manager {
   /// might get called from a different thread.
   void AsyncChat(std::string msg, OnResponseCallback cb,
                  std::string model = kDefaultModel);
-  void SetFunctionTable(FunctionTable table) {
-    m_function_table = std::move(table);
-  }
+
+  /// Load configuration object into the manager.
+  void ApplyConfig(const ollama::Config* conf);
 
   /// Return true if ollama server is running.
   inline bool IsRunning() const { return ollama::is_running(); }
@@ -136,6 +136,9 @@ class Manager {
   inline size_t GetContextSize() const { return m_context_size; }
   inline void SetPreferCPU(bool b) { m_preferCPU = b; }
   inline bool GetPreferCPU() const { return m_preferCPU; }
+  const FunctionTable& GetFunctionTable() const { return m_function_table; }
+  FunctionTable& GetFunctionTable() { return m_function_table; }
+
   void Shutdown();
   void Startup();
 

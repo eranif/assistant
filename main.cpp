@@ -5,7 +5,6 @@
 #include <iostream>
 
 #include "ollama/config.hpp"
-#include "ollama/mcp_local_process.hpp"
 #include "ollama/ollama.hpp"
 #include "ollama/tool.hpp"
 #include "utils.hpp"
@@ -13,7 +12,6 @@
 using FunctionTable = ollama::FunctionTable;
 using FunctionBuilder = ollama::FunctionBuilder;
 using ResponseParser = ollama::ResponseParser;
-using McpClientStdio = ollama::MCPStdioClient;
 
 namespace {
 const std::string_view kCyan = "\033[36m";
@@ -132,16 +130,17 @@ int main(int argc, char** argv) {
     ollama::Logger::Instance().SetLogFile(args.log_file);
   }
   ollama::Logger::Instance().SetLogLevel(args.log_level);
+  auto& ollama_manager = ollama::Manager::GetInstance();
 
-  FunctionTable table;
-  table.Add(FunctionBuilder("Open file in editor")
-                .SetDescription(
-                    "Given a file path, open it inside the editor for editing.")
-                .AddRequiredParam("filepath",
-                                  "the path of the file on the disk.", "string")
-                .SetCallback(OpenFileInEditor)
-                .Build());
-  table.Add(
+  ollama_manager.GetFunctionTable().Add(
+      FunctionBuilder("Open file in editor")
+          .SetDescription(
+              "Given a file path, open it inside the editor for editing.")
+          .AddRequiredParam("filepath", "the path of the file on the disk.",
+                            "string")
+          .SetCallback(OpenFileInEditor)
+          .Build());
+  ollama_manager.GetFunctionTable().Add(
       FunctionBuilder("Write file content to disk at a given path")
           .SetDescription("Write file content to disk at a given path. Create "
                           "the file if it does not exist.")
@@ -150,32 +149,11 @@ int main(int argc, char** argv) {
           .AddRequiredParam("file_content", "the content of the file", "string")
           .SetCallback(WriteFileContent)
           .Build());
-
   if (!args.config_file.empty()) {
     ollama::Config conf{args.config_file};
-    for (const auto& s : conf.GetServers()) {
-      if (!s.enabled) {
-        continue;
-      }
-      if (s.type == ollama::kServerKindStdio) {
-        std::shared_ptr<McpClientStdio> client{nullptr};
-        if (s.IsRemote()) {
-          client =
-              std::make_shared<McpClientStdio>(s.ssh_login.value(), s.args);
-        } else {
-          client = std::make_shared<McpClientStdio>(s.args);
-        }
-        if (client->Initialise()) {
-          table.AddMCPServer(client);
-        }
-      } else {
-        OLOG(OLogLevel::kWarning)
-            << "Server of type: " << s.type << " are not supported yet";
-      }
-    }
+    ollama_manager.ApplyConfig(&conf);
   }
 
-  auto& ollama_manager = ollama::Manager::GetInstance();
   if (!ollama_manager.IsRunning()) {
     OLOG(OLogLevel::kError)
         << "Make sure ollama server is running and try again";
@@ -185,12 +163,11 @@ int main(int argc, char** argv) {
   std::cout << "Available functions:" << std::endl;
   std::cout << "====================" << std::endl;
 
-  ollama::json tools_json = table.ToJSON();
+  ollama::json tools_json = ollama_manager.GetFunctionTable().ToJSON();
   for (const auto& func_obj : tools_json) {
     std::cout << "- " << func_obj["function"]["name"] << std::endl;
   }
 
-  ollama_manager.SetFunctionTable(std::move(table));
   auto models = ollama_manager.List();
   std::cout << "Available models:" << std::endl;
   std::cout << "=================" << std::endl;

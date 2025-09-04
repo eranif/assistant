@@ -8,6 +8,8 @@
 namespace ollama {
 
 class MCPStdioClient;
+class Config;
+
 template <typename ArgType>
 std::optional<ArgType> GetFunctionArg(const ollama::json& args,
                                       const std::string& name) {
@@ -122,6 +124,8 @@ class FunctionTable {
     m_functions.clear();
     m_clients.clear();
   }
+
+  void ReloadMCPServers(const Config* config);
 
  private:
   std::map<std::string, std::shared_ptr<FunctionBase>> m_functions;

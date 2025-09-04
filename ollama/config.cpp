@@ -44,7 +44,7 @@ Config::Config(const std::string& filepath) {
     json parsed_data = json::parse(input_file);
     auto servers = parsed_data["servers"];
     for (const auto& server : servers) {
-      ServerConfig server_config;
+      MCPServerConfig server_config;
       server_config.name = server["name"];
       server_config.enabled =
           GetValueFromJson<bool>(server, "enabled").value_or(true);
@@ -70,11 +70,21 @@ Config::Config(const std::string& filepath) {
       }
       m_servers.push_back(std::move(server_config));
     }
+
+    m_url = GetValueFromJsonWithDefault<std::string>(parsed_data, "server_url",
+                                                     "http://127.0.0.1:11434");
+    m_use_gpu = GetValueFromJsonWithDefault<bool>(parsed_data, "use_gpu", true);
+    m_history_size =
+        GetValueFromJsonWithDefault<size_t>(parsed_data, "history_size", 20);
+    m_context_size =
+        GetValueFromJsonWithDefault<size_t>(parsed_data, "context_size", 32768);
+
     OLOG(OLogLevel::kInfo) << "Successfully loaded " << m_servers.size()
-              << " configurations";
+                           << " configurations";
   } catch (std::exception& e) {
-    OLOG(OLogLevel::kError) << "Failed to parse configuration file: " << filepath << ". "
-               << e.what();
+    OLOG(OLogLevel::kError)
+        << "Failed to parse configuration file: " << filepath << ". "
+        << e.what();
   }
 }
 

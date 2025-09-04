@@ -1,5 +1,6 @@
 #include "ollama.hpp"
 
+#include "ollama/config.hpp"
 #include "ollama/cpp-mcp/mcp_logger.h"
 #include "ollama/logger.hpp"
 #include "ollama/ollamalib.hpp"
@@ -109,6 +110,17 @@ void Manager::Reset() {
   m_queue.Clear();
   m_function_table.Clear();
   m_messages.clear();
+}
+
+void Manager::ApplyConfig(const ollama::Config* conf) {
+  if (!conf) {
+    return;
+  }
+  m_url = conf->GetUrl();
+  m_preferCPU = !conf->IsUseGpu();
+  m_context_size = conf->GetContextSize();
+  m_windows_size = conf->GetHistorySize();
+  m_function_table.ReloadMCPServers(conf);
 }
 
 void Manager::AsyncChat(std::string msg, OnResponseCallback cb,
