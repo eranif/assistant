@@ -504,9 +504,9 @@ class Ollama {
       return true;
     } else {
       if (ollama::use_exceptions)
-        throw ollama::exception("No response from server returned at URL " +
-                                this->server_url +
-                                " Error: " + httplib::to_string(res.error()));
+        throw ollama::exception(
+            "No response from server returned at URL: " + this->server_url +
+            "\nError: " + httplib::to_string(res.error()));
     }
 
     return false;
@@ -607,11 +607,10 @@ class Ollama {
       return true;
     } else {
       if (ollama::use_exceptions)
-        throw ollama::exception("No response from server returned at URL" +
-                                this->server_url +
-                                " Error: " + httplib::to_string(res.error()));
+        throw ollama::exception(
+            "No response from server returned at URL: " + this->server_url +
+            "\nError: " + httplib::to_string(res.error()));
     }
-
     return false;
   }
 
