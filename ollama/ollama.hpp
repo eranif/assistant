@@ -134,7 +134,8 @@ class Manager {
     m_context_size = context_size;
   }
   inline size_t GetContextSize() const { return m_context_size; }
-
+  inline void SetPreferCPU(bool b) { m_preferCPU = b; }
+  inline bool GetPreferCPU() const { return m_preferCPU; }
   void Shutdown();
   void Startup();
 
@@ -159,6 +160,7 @@ class Manager {
   std::string m_url;
   size_t m_windows_size{20};
   size_t m_context_size{32 * 1024};
+  bool m_preferCPU{false};
   /// Messages that were sent to the AI, will be placed here
   ollama::messages m_messages;
   friend struct ChatContext;

@@ -124,6 +124,9 @@ void Manager::CreateAndPushContext(std::optional<ollama::message> msg,
   ollama::options opts;
   opts["temperature"] = 0.0;
   opts["num_ctx"] = GetContextSize();
+  if (GetPreferCPU()) {
+    opts["num_gpu"] = 0;
+  }
 
   AddMessage(msg);
   auto history = GetMessages();
