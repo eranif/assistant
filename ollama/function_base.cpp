@@ -28,7 +28,7 @@ void FunctionTable::ReloadMCPServers(const Config* config) {
 
   for (const auto& funcname : names) {
     m_functions.erase(funcname);
-    OLOG(Logger::Level::kInfo) << "Deleting MCP server function: " << funcname;
+    OLOG(LogLevel::kInfo) << "Deleting MCP server function: " << funcname;
   }
   m_clients.clear();
 

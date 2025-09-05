@@ -141,9 +141,9 @@ void Manager::CreateAndPushContext(std::optional<ollama::message> msg,
   AddMessage(msg);
   auto history = GetMessages();
   ollama::request req{model, history, opts, true};
-  OLOG(Logger::Level::kDebug) << "Pushing message to the queue.";
+  OLOG(LogLevel::kDebug) << "Pushing message to the queue.";
   for (const auto& msg : history) {
-    OLOG(Logger::Level::kInfo) << msg;
+    OLOG(LogLevel::kInfo) << msg;
   }
 
   req["tools"] = m_function_table.ToJSON();

@@ -9,6 +9,8 @@
 #include <sstream>
 
 namespace ollama {
+enum class LogLevel { kTrace, kDebug, kInfo, kWarning, kError };
+
 class Logger {
  public:
   static Logger& Instance() {
@@ -16,26 +18,24 @@ class Logger {
     return instance;
   }
 
-  enum class Level { kTrace, kDebug, kInfo, kWarning, kError };
-
-  static Level FromString(const std::string& level) {
+  static LogLevel FromString(const std::string& level) {
     if (level == "trace") {
-      return Level::kTrace;
+      return LogLevel::kTrace;
     } else if (level == "debug") {
-      return Level::kDebug;
+      return LogLevel::kDebug;
     } else if (level == "info") {
-      return Level::kInfo;
+      return LogLevel::kInfo;
     } else if (level == "error") {
-      return Level::kError;
+      return LogLevel::kError;
     } else if (level == "warn") {
-      return Level::kWarning;
+      return LogLevel::kWarning;
     } else {
-      return Level::kInfo;
+      return LogLevel::kInfo;
     }
   }
 
-  void SetLogLevel(Level level) {
-    std::lock_guard<std::mutex> lock(mutex_);
+  void SetLogLevel(LogLevel level) {
+    std::lock_guard lock{mutex_};
     level_ = level;
   }
 
@@ -47,17 +47,29 @@ class Logger {
     }
   }
 
-  void trace(const std::stringstream& ss) { log(Level::kTrace, ss); }
-  void debug(const std::stringstream& ss) { log(Level::kDebug, ss); }
-  void info(const std::stringstream& ss) { log(Level::kInfo, ss); }
-  void warning(const std::stringstream& ss) { log(Level::kWarning, ss); }
-  void error(const std::stringstream& ss) { log(Level::kError, ss); }
+  void SetLogSink(std::function<void(LogLevel, std::string)> sink) {
+    std::lock_guard lock{mutex_};
+    m_log_sink = std::move(sink);
+  }
+
+  void trace(const std::stringstream& ss) { log(LogLevel::kTrace, ss); }
+  void debug(const std::stringstream& ss) { log(LogLevel::kDebug, ss); }
+  void info(const std::stringstream& ss) { log(LogLevel::kInfo, ss); }
+  void warning(const std::stringstream& ss) { log(LogLevel::kWarning, ss); }
+  void error(const std::stringstream& ss) { log(LogLevel::kError, ss); }
 
  private:
-  Logger() : level_(Level::kInfo) {}
+  Logger() : level_(LogLevel::kInfo) {}
 
-  void log(Level level, const std::stringstream& msg) {
+  void log(LogLevel level, const std::stringstream& msg) {
     if (level < level_) {
+      return;
+    }
+
+    if (m_log_sink.has_value()) {
+      // If the user provided its own sink, use it instead of the default
+      // logging system.
+      (*m_log_sink)(level, msg.str());
       return;
     }
 
@@ -74,23 +86,24 @@ class Logger {
       ss << GetLevelString(level);
     } else {
       switch (level) {
-        case Level::kTrace:
+        case LogLevel::kTrace:
           ss << "\033[37m" << GetLevelString(level) << "\033[0m ";  // Gray
           break;
-        case Level::kDebug:
+        case LogLevel::kDebug:
           ss << "\033[36m" << GetLevelString(level) << "\033[0m ";  // Cyan
           break;
-        case Level::kInfo:
+        case LogLevel::kInfo:
           ss << "\033[32m" << GetLevelString(level) << "\033[0m ";  // Green
           break;
-        case Level::kWarning:
+        case LogLevel::kWarning:
           ss << "\033[33m" << GetLevelString(level) << "\033[0m ";  // Yellow
           break;
-        case Level::kError:
+        case LogLevel::kError:
           ss << "\033[31m" << GetLevelString(level) << "\033[0m ";  // Red
           break;
       }
     }
+
     // Add log content
     ss << msg.str();
 
@@ -104,60 +117,70 @@ class Logger {
   }
 
  private:
-  const char* GetLevelString(Level level) const {
+  const char* GetLevelString(LogLevel level) const {
     switch (level) {
-      case Level::kTrace:
+      case LogLevel::kTrace:
         return "[TRACE] ";
-      case Level::kDebug:
+      case LogLevel::kDebug:
         return "[DEBUG] ";
-      case Level::kInfo:
+      case LogLevel::kInfo:
         return "[INFO] ";
-      case Level::kWarning:
+      case LogLevel::kWarning:
         return "[WARNING] ";
-      case Level::kError:
+      case LogLevel::kError:
         return "[ERROR] ";
     }
     return "";
   }
 
-  Level level_;
+  LogLevel level_;
   std::mutex mutex_;
+  std::optional<std::function<void(LogLevel, std::string)>> m_log_sink{
+      std::nullopt};
   std::optional<std::ofstream> file_;
 };
 
 class LogStream : public std::stringstream {
  public:
-  LogStream(Logger::Level level) : m_level(level) {}
+  LogStream(LogLevel level) : m_level(level) {}
   virtual ~LogStream() {
     switch (m_level) {
-      case Logger::Level::kTrace:
+      case LogLevel::kTrace:
         Logger::Instance().trace(*this);
         break;
-      case Logger::Level::kDebug:
+      case LogLevel::kDebug:
         Logger::Instance().debug(*this);
         break;
-      case Logger::Level::kInfo:
+      case LogLevel::kInfo:
         Logger::Instance().info(*this);
         break;
-      case Logger::Level::kWarning:
+      case LogLevel::kWarning:
         Logger::Instance().warning(*this);
         break;
-      case Logger::Level::kError:
+      case LogLevel::kError:
         Logger::Instance().error(*this);
         break;
     }
   }
 
  private:
-  Logger::Level m_level{Logger::Level::kInfo};
+  LogLevel m_level{LogLevel::kInfo};
 };
 
-inline void LogLevel(Logger::Level level) {
+inline void SetLogLevel(LogLevel level) {
   Logger::Instance().SetLogLevel(level);
+}
+
+inline void SetLogFile(const std::string& filepath) {
+  Logger::Instance().SetLogFile(filepath);
+}
+
+inline void SetLogSink(std::function<void(LogLevel, std::string)> sink) {
+  Logger::Instance().SetLogSink(std::move(sink));
 }
 
 }  // namespace ollama
 
-using OLogLevel = ollama::Logger::Level;
+using OLogLevel = ollama::LogLevel;
 
 #define OLOG(level) ollama::LogStream(level)

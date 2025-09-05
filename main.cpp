@@ -127,9 +127,14 @@ std::string OpenFileInEditor(const ollama::json& args) {
 int main(int argc, char** argv) {
   auto args = ParseCommandLine(argc, argv);
   if (!args.log_file.empty()) {
-    ollama::Logger::Instance().SetLogFile(args.log_file);
+    ollama::SetLogFile(args.log_file);
   }
-  ollama::Logger::Instance().SetLogLevel(args.log_level);
+
+  ollama::SetLogSink([](ollama::LogLevel level, std::string msg) {
+    std::cout << msg << std::endl;
+  });
+
+  ollama::SetLogLevel(args.log_level);
   auto& ollama_manager = ollama::Manager::GetInstance();
 
   ollama_manager.GetFunctionTable().Add(
