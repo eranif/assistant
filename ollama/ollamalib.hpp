@@ -381,6 +381,8 @@ class response {
 
 }  // namespace ollama
 
+using on_respons_callback = std::function<bool(const ollama::response&, void*)>;
+
 class Ollama {
   using json = nlohmann::json;
 
@@ -443,29 +445,28 @@ class Ollama {
 
   bool generate(
       const std::string& model, const std::string& prompt,
-      ollama::response& context,
-      std::function<bool(const ollama::response&)> on_receive_token,
-      const json& options = nullptr,
+      ollama::response& context, on_respons_callback on_receive_token,
+      void* user_data, const json& options = nullptr,
       const std::vector<std::string>& images = std::vector<std::string>()) {
     ollama::request request(model, prompt, options, true, images);
     if (context.as_json().contains("context"))
       request["context"] = context.as_json()["context"];
-    return generate(request, on_receive_token);
+    return generate(request, on_receive_token, user_data);
   }
 
   bool generate(
       const std::string& model, const std::string& prompt,
-      std::function<bool(const ollama::response&)> on_receive_token,
+      on_respons_callback on_receive_token, void* user_data,
       const json& options = nullptr,
       const std::vector<std::string>& images = std::vector<std::string>()) {
     ollama::request request(model, prompt, options, true, images);
-    return generate(request, on_receive_token);
+    return generate(request, on_receive_token, user_data);
   }
 
   // Generate a streaming reply where a user-defined callback function is
   // invoked when each token is received.
-  bool generate(ollama::request& request,
-                std::function<bool(const ollama::response&)> on_receive_token) {
+  bool generate(ollama::request& request, on_respons_callback on_receive_token,
+                void* user_data) {
     request["stream"] = true;
 
     std::string request_string = request.dump();
@@ -474,7 +475,7 @@ class Ollama {
     std::shared_ptr<std::vector<std::string>> partial_responses =
         std::make_shared<std::vector<std::string>>();
 
-    auto stream_callback = [on_receive_token, partial_responses](
+    auto stream_callback = [on_receive_token, user_data, partial_responses](
                                const char* data, size_t data_length) -> bool {
       std::string message(data, data_length);
       bool continue_stream = true;
@@ -487,7 +488,7 @@ class Ollama {
                             partial_responses->end(), std::string(""));
         ollama::response response(total_response);
         partial_responses->clear();
-        continue_stream = on_receive_token(response);
+        continue_stream = on_receive_token(response, user_data);
       } catch (const ollama::invalid_json_exception&
                    e) { /* Partial response was received. Will do nothing and
                            attempt to concatenate with the next response. */
@@ -552,16 +553,16 @@ class Ollama {
   }
 
   bool chat(const std::string& model, const ollama::messages& messages,
-            std::function<bool(const ollama::response&)> on_receive_token,
+            on_respons_callback on_receive_token, void* user_data,
             const json& options = nullptr, const std::string& format = "json",
             const std::string& keep_alive_duration = "5m") {
     ollama::request request(model, messages, options, true, format,
                             keep_alive_duration);
-    return chat(request, on_receive_token);
+    return chat(request, on_receive_token, user_data);
   }
 
-  bool chat(ollama::request& request,
-            std::function<bool(const ollama::response&)> on_receive_token) {
+  bool chat(ollama::request& request, on_respons_callback on_receive_token,
+            void* user_data) {
     ollama::response response;
     request["stream"] = true;
 
@@ -571,7 +572,7 @@ class Ollama {
     std::shared_ptr<std::vector<std::string>> partial_responses =
         std::make_shared<std::vector<std::string>>();
 
-    auto stream_callback = [on_receive_token, partial_responses](
+    auto stream_callback = [on_receive_token, user_data, partial_responses](
                                const char* data, size_t data_length) -> bool {
       std::string message(data, data_length);
       bool continue_stream = true;
@@ -590,7 +591,7 @@ class Ollama {
             throw ollama::exception("Ollama response returned error: " +
                                     response.get_error());
         }
-        continue_stream = on_receive_token(response);
+        continue_stream = on_receive_token(response, user_data);
       } catch (const ollama::invalid_json_exception&
                    e) { /* Partial response was received. Will do nothing and
                            attempt to concatenate with the next response. */
@@ -1048,26 +1049,25 @@ inline ollama::response generate(ollama::request& request) {
 
 inline bool generate(
     const std::string& model, const std::string& prompt,
-    std::function<bool(const ollama::response&)> on_receive_response,
+    on_respons_callback on_receive_response, void* user_data,
     const json& options = nullptr,
     const std::vector<std::string>& images = std::vector<std::string>()) {
-  return ollama.generate(model, prompt, on_receive_response, options, images);
-}
-
-inline bool generate(
-    const std::string& model, const std::string& prompt,
-    ollama::response& context,
-    std::function<bool(const ollama::response&)> on_receive_response,
-    const json& options = nullptr,
-    const std::vector<std::string>& images = std::vector<std::string>()) {
-  return ollama.generate(model, prompt, context, on_receive_response, options,
+  return ollama.generate(model, prompt, on_receive_response, user_data, options,
                          images);
 }
 
 inline bool generate(
-    ollama::request& request,
-    std::function<bool(const ollama::response&)> on_receive_response) {
-  return ollama.generate(request, on_receive_response);
+    const std::string& model, const std::string& prompt,
+    ollama::response& context, on_respons_callback on_receive_response,
+    void* user_data, const json& options = nullptr,
+    const std::vector<std::string>& images = std::vector<std::string>()) {
+  return ollama.generate(model, prompt, context, on_receive_response, user_data,
+                         options, images);
+}
+
+inline bool generate(ollama::request& request,
+                     on_respons_callback on_receive_response, void* user_data) {
+  return ollama.generate(request, on_receive_response, user_data);
 }
 
 inline ollama::response chat(const std::string& model,
@@ -1082,19 +1082,18 @@ inline ollama::response chat(ollama::request& request) {
   return ollama.chat(request);
 }
 
-inline bool chat(
-    const std::string& model, const ollama::messages& messages,
-    std::function<bool(const ollama::response&)> on_receive_response,
-    const json& options = nullptr, const std::string& format = "json",
-    const std::string& keep_alive_duration = "5m") {
-  return ollama.chat(model, messages, on_receive_response, options, format,
-                     keep_alive_duration);
+inline bool chat(const std::string& model, const ollama::messages& messages,
+                 on_respons_callback on_receive_response, void* user_data,
+                 const json& options = nullptr,
+                 const std::string& format = "json",
+                 const std::string& keep_alive_duration = "5m") {
+  return ollama.chat(model, messages, on_receive_response, user_data, options,
+                     format, keep_alive_duration);
 }
 
-inline bool chat(
-    ollama::request& request,
-    std::function<bool(const ollama::response&)> on_receive_response) {
-  return ollama.chat(request, on_receive_response);
+inline bool chat(ollama::request& request,
+                 on_respons_callback on_receive_response, void* user_data) {
+  return ollama.chat(request, on_receive_response, user_data);
 }
 
 inline bool create(const std::string& modelName, const std::string& modelFile,

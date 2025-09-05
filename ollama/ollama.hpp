@@ -90,6 +90,9 @@ struct ChatContextQueue {
 
 class Manager {
  public:
+  Manager();
+  ~Manager();
+
   static Manager& GetInstance();
   void SetUrl(const std::string& url);
 
@@ -108,21 +111,21 @@ class Manager {
   inline bool IsRunning() const { return ollama::is_running(); }
 
   /// Return list of models available.
-  std::vector<std::string> List() const;
+  std::vector<std::string> List();
 
   /// Return list of models available using JSON format.
-  json ListJSON() const;
+  json ListJSON();
 
   /// Pull model from Ollama registry
   void AsyncPullModel(const std::string& name, OnResponseCallback cb);
 
-  std::optional<json> GetModelInfo(const std::string& model) const;
+  std::optional<json> GetModelInfo(const std::string& model);
   /// Return a bitwise operator model capabilities.
   std::optional<ModelCapabilities> GetModelCapabilities(
-      const std::string& model) const;
+      const std::string& model);
   /// Return model capabilities as array of strings.
   std::optional<std::vector<std::string>> GetModelCapabilitiesString(
-      const std::string& model) const;
+      const std::string& model);
 
   /// Set the number of messages to keep when chatting with the model. The
   /// implementation uses a FIFO.
@@ -143,17 +146,15 @@ class Manager {
   void Startup();
 
  private:
-  static bool OnResponse(const ollama::response& resp);
-  static void WorkerMain();
+  static bool OnResponse(const ollama::response& resp, void* user_data);
+  static void WorkerMain(Manager* manager);
   void ProcessContext(std::shared_ptr<ChatContext> context);
   void CreateAndPushContext(std::optional<ollama::message> msg,
                             OnResponseCallback cb, std::string model);
   void AddMessage(std::optional<ollama::message> msg);
   ollama::messages GetMessages() const;
 
-  Manager();
-  ~Manager();
-
+  Ollama m_ollama;
   FunctionTable m_function_table;
   ChatContextQueue m_queue;
   std::shared_ptr<std::thread> m_worker;
@@ -166,6 +167,7 @@ class Manager {
   bool m_preferCPU{false};
   /// Messages that were sent to the AI, will be placed here
   ollama::messages m_messages;
+  std::string m_current_response;
   friend struct ChatContext;
 };
 }  // namespace ollama

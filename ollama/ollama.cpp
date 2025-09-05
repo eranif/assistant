@@ -9,22 +9,23 @@
 namespace ollama {
 
 constexpr std::string_view kDefaultOllamaUrl = "http://127.0.0.1:11434";
+constexpr std::string_view kAssistantRole = "assistant";
 
-void Manager::WorkerMain() {
-  auto& queue = GetInstance().m_queue;
-  while (!GetInstance().m_shutdown_flag.load(std::memory_order_relaxed)) {
+void Manager::WorkerMain(Manager* manager) {
+  auto& queue = manager->m_queue;
+  while (!manager->m_shutdown_flag.load(std::memory_order_relaxed)) {
     if (queue.IsEmpty()) {
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
       continue;
     }
-    GetInstance().ProcessContext(queue.Top());
+    manager->ProcessContext(queue.Top());
     queue.Pop();
   }
 }
 
 void Manager::ProcessContext(std::shared_ptr<ChatContext> context) {
   try {
-    ollama::chat(context->request_, &Manager::OnResponse);
+    m_ollama.chat(context->request_, &Manager::OnResponse, this);
     if (!context->func_calls_.empty()) {
       context->InvokeTools(this);
     }
@@ -34,8 +35,9 @@ void Manager::ProcessContext(std::shared_ptr<ChatContext> context) {
   }
 }
 
-bool Manager::OnResponse(const ollama::response& resp) {
-  std::shared_ptr<ChatContext> req = GetInstance().m_queue.Top();
+bool Manager::OnResponse(const ollama::response& resp, void* user_data) {
+  Manager* manager = reinterpret_cast<Manager*>(user_data);
+  std::shared_ptr<ChatContext> req = manager->m_queue.Top();
   auto calls = ResponseParser::GetTools(resp);
   bool is_done = ResponseParser::IsDone(resp);
   if (calls.has_value() && !calls.value().empty()) {
@@ -51,10 +53,28 @@ bool Manager::OnResponse(const ollama::response& resp) {
     auto reason = (is_done && req->func_calls_.empty())
                       ? Reason::kDone
                       : Reason::kPartialResult;
+
     if (content.has_value()) {
       req->callback_(content.value(), reason);
     } else if (is_done) {
       req->callback_({}, reason);
+    }
+
+    if (content.has_value()) {
+      manager->m_current_response += content.value();
+    }
+
+    switch (reason) {
+      case Reason::kDone:
+      case Reason::kFatalError: {
+        // Store the AI response, as a message in our history.
+        ollama::message msg{std::string{kAssistantRole},
+                            manager->m_current_response};
+        manager->AddMessage(std::move(msg));
+        manager->m_current_response.clear();
+      } break;
+      default:
+        break;
     }
   }
   return !is_done;
@@ -69,11 +89,11 @@ Manager::Manager() {
   ollama::show_requests(false);
   ollama::show_replies(false);
   ollama::allow_exceptions(true);
-  ollama::setServerURL(
+  m_ollama.setServerURL(
       std::string{kDefaultOllamaUrl.data(), kDefaultOllamaUrl.size()});
   m_url = kDefaultOllamaUrl;
-  ollama::setReadTimeout(300);
-  ollama::setWriteTimeout(300);
+  m_ollama.setReadTimeout(300);
+  m_ollama.setWriteTimeout(300);
   mcp::set_log_level(mcp::log_level::error);
   Startup();
 }
@@ -98,18 +118,19 @@ void Manager::Shutdown() {
 void Manager::Startup() {
   Shutdown();
   m_shutdown_flag.store(false);
-  m_worker.reset(new std::thread(Manager::WorkerMain));
+  m_worker.reset(new std::thread(Manager::WorkerMain, this));
 }
 
 void Manager::SetUrl(const std::string& url) {
   m_url = url;
-  ollama::setServerURL(url);
+  m_ollama.setServerURL(url);
 }
 
 void Manager::Reset() {
   m_queue.Clear();
   m_function_table.Clear();
   m_messages.clear();
+  m_current_response.clear();
 }
 
 void Manager::ApplyConfig(const ollama::Config* conf) {
@@ -142,9 +163,7 @@ void Manager::CreateAndPushContext(std::optional<ollama::message> msg,
   auto history = GetMessages();
   ollama::request req{model, history, opts, true};
   OLOG(LogLevel::kDebug) << "Pushing message to the queue.";
-  for (const auto& msg : history) {
-    OLOG(LogLevel::kInfo) << msg;
-  }
+  OLOG(LogLevel::kInfo) << req;
 
   req["tools"] = m_function_table.ToJSON();
   ChatContext ctx = {
@@ -182,41 +201,41 @@ void ChatContext::InvokeTools(Manager* manager) {
   manager->CreateAndPushContext(std::nullopt, callback_, model_);
 }
 
-std::vector<std::string> Manager::List() const {
+std::vector<std::string> Manager::List() {
   if (!IsRunning()) {
     return {};
   }
   try {
-    return ollama::list_models();
+    return m_ollama.list_models();
   } catch (...) {
     return {};
   }
 }
 
-json Manager::ListJSON() const {
+json Manager::ListJSON() {
   if (!IsRunning()) {
     return {};
   }
   try {
-    return ollama::list_model_json();
+    return m_ollama.list_model_json();
   } catch (...) {
     return {};
   }
 }
 
-std::optional<json> Manager::GetModelInfo(const std::string& model) const {
+std::optional<json> Manager::GetModelInfo(const std::string& model) {
   if (!IsRunning()) {
     return std::nullopt;
   }
   try {
-    return ollama::show_model_info(model);
+    return m_ollama.show_model_info(model);
   } catch (std::exception& e) {
     return std::nullopt;
   }
 }
 
 std::optional<ModelCapabilities> Manager::GetModelCapabilities(
-    const std::string& model) const {
+    const std::string& model) {
   auto opt = GetModelInfo(model);
   if (!opt.has_value()) {
     return std::nullopt;
@@ -245,7 +264,7 @@ std::optional<ModelCapabilities> Manager::GetModelCapabilities(
   }
 }
 std::optional<std::vector<std::string>> Manager::GetModelCapabilitiesString(
-    const std::string& model) const {
+    const std::string& model) {
   auto opt = GetModelInfo(model);
   if (!opt.has_value()) {
     return std::nullopt;
@@ -284,13 +303,6 @@ void Manager::AsyncPullModel(const std::string& name, OnResponseCallback cb) {
       });
 }
 
-namespace {
-const std::string kContextSystemMessage =
-    "Use previous messages as context but only respond to the last user "
-    "message.";
-const std::string kSystemRole = "system";
-}  // namespace
-
 void Manager::AddMessage(std::optional<ollama::message> msg) {
   if (!msg.has_value()) {
     return;
@@ -302,20 +314,5 @@ void Manager::AddMessage(std::optional<ollama::message> msg) {
     m_messages.erase(m_messages.begin());
   }
 }
-ollama::messages ollama::Manager::GetMessages() const {
-  if (m_messages.empty()) {
-    return {};
-  }
-
-  if (m_messages.size() == 1) {
-    return m_messages;
-  }
-
-  ollama::messages h;
-  h.reserve(m_messages.size() + 1);
-  ollama::message system_message{kSystemRole, kContextSystemMessage};
-  h.push_back(std::move(system_message));
-  h.insert(h.end(), m_messages.begin(), m_messages.end());
-  return h;
-}
+ollama::messages ollama::Manager::GetMessages() const { return m_messages; }
 }  // namespace ollama

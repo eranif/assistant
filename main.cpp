@@ -130,13 +130,12 @@ int main(int argc, char** argv) {
     ollama::SetLogFile(args.log_file);
   }
 
-  ollama::SetLogSink([](ollama::LogLevel level, std::string msg) {
-    std::cout << msg << std::endl;
-  });
+  ollama::SetLogSink([]([[maybe_unused]] ollama::LogLevel level,
+                        [[maybe_unused]] std::string msg) {});
 
   ollama::SetLogLevel(args.log_level);
-  auto& ollama_manager = ollama::Manager::GetInstance();
 
+  ollama::Manager ollama_manager;
   ollama_manager.GetFunctionTable().Add(
       FunctionBuilder("Open file in editor")
           .SetDescription(
