@@ -138,10 +138,10 @@ void Manager::ApplyConfig(const ollama::Config* conf) {
     return;
   }
   m_url = conf->GetUrl();
-  m_preferCPU = !conf->IsUseGpu();
-  m_context_size = conf->GetContextSize();
   m_windows_size = conf->GetHistorySize();
   m_function_table.ReloadMCPServers(conf);
+  m_model_options = conf->GetModelOptionsMap();
+  m_default_model_options = conf->GetModelOptionsMap().find("default")->second;
 }
 
 void Manager::AsyncChat(std::string msg, OnResponseCallback cb,
@@ -153,23 +153,40 @@ void Manager::AsyncChat(std::string msg, OnResponseCallback cb,
 void Manager::CreateAndPushContext(std::optional<ollama::message> msg,
                                    OnResponseCallback cb, std::string model) {
   ollama::options opts;
-  opts["temperature"] = 0.0;
-  opts["num_ctx"] = GetContextSize();
-  if (GetPreferCPU()) {
-    opts["num_gpu"] = 0;
+
+  std::optional<bool> think;
+  auto where = m_model_options.find(model);
+  if (where == m_model_options.end()) {
+    // Can't fail. We always include the "default"
+    where = m_model_options.find("default");
   }
+
+  const auto& model_options = where->second;
+  for (const auto& [name, value] : model_options.options.items()) {
+    opts[name] = value;
+  }
+  think = model_options.think;
 
   AddMessage(msg);
   auto history = GetMessages();
+
+  // Build the request
   ollama::request req{model, history, opts, true};
+  if (think.has_value()) {
+    req["think"] = think.value();
+  }
+
   OLOG(LogLevel::kDebug) << "Pushing message to the queue.";
   OLOG(LogLevel::kInfo) << req;
 
-  req["tools"] = m_function_table.ToJSON();
+  if (ModelHasCapability(model, ModelCapabilities::kTooling)) {
+    req["tools"] = m_function_table.ToJSON();
+  }
+
   ChatContext ctx = {
       .callback_ = cb,
       .request_ = req,
-      .model_ = model,
+      .model_ = std::move(model),
   };
   m_queue.PushBack(std::make_shared<ChatContext>(ctx));
 }
@@ -314,5 +331,22 @@ void Manager::AddMessage(std::optional<ollama::message> msg) {
     m_messages.erase(m_messages.begin());
   }
 }
+
 ollama::messages ollama::Manager::GetMessages() const { return m_messages; }
+
+bool ollama::Manager::ModelHasCapability(const std::string& model_name,
+                                         ModelCapabilities c) {
+  if (m_model_capabilities.count(model_name) == 0) {
+    // Load the model capabilities
+    auto capabilities = GetModelCapabilities(model_name);
+    if (capabilities.has_value()) {
+      m_model_capabilities.insert({model_name, capabilities.value()});
+    } else {
+      m_model_capabilities.insert({model_name, ModelCapabilities::kNone});
+    }
+  }
+
+  auto flags = m_model_capabilities.find(model_name)->second;
+  return IsFlagSet(flags, c);
+}
 }  // namespace ollama

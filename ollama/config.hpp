@@ -1,8 +1,10 @@
 #pragma once
 
 #include <string>
+#include <unordered_map>
 
 #include "ollama/mcp_local_process.hpp"
+#include "ollama/model_options.hpp"
 
 namespace ollama {
 
@@ -29,21 +31,22 @@ class Config {
   }
 
   void SetUrl(const std::string& url) { m_url = url; }
-  void SetUseGpu(bool use_gpu) { m_use_gpu = use_gpu; }
   void SetHistorySize(size_t history_size) { m_history_size = history_size; }
-  void SetContextSize(size_t context_size) { m_context_size = context_size; }
   const std::string& GetUrl() const { return m_url; }
-  bool IsUseGpu() const { return m_use_gpu; }
   size_t GetHistorySize() const { return m_history_size; }
-  size_t GetContextSize() const { return m_context_size; }
+
+  inline const std::unordered_map<std::string, ModelOptions>&
+  GetModelOptionsMap() const {
+    return m_model_options_map;
+  }
 
  private:
   Config() = default;
 
   std::vector<MCPServerConfig> m_servers;
   std::string m_url{"http://127.0.0.1:11434"};
-  bool m_use_gpu{true};
-  size_t m_history_size{20};
-  size_t m_context_size{32768};
+  size_t m_history_size{50};
+  ModelOptions m_defaultModelOptions;
+  std::unordered_map<std::string, ModelOptions> m_model_options_map;
 };
 }  // namespace ollama

@@ -2,10 +2,12 @@
 
 #include <functional>
 #include <thread>
+#include <unordered_map>
 
 #include "macros.hpp"
 #include "ollama/function.hpp"
 #include "ollama/function_base.hpp"
+#include "ollama/model_options.hpp"
 #include "ollama/ollamalib.hpp"
 
 namespace ollama {
@@ -153,6 +155,7 @@ class Manager {
                             OnResponseCallback cb, std::string model);
   void AddMessage(std::optional<ollama::message> msg);
   ollama::messages GetMessages() const;
+  bool ModelHasCapability(const std::string& model_name, ModelCapabilities c);
 
   Ollama m_ollama;
   FunctionTable m_function_table;
@@ -167,6 +170,9 @@ class Manager {
   bool m_preferCPU{false};
   /// Messages that were sent to the AI, will be placed here
   ollama::messages m_messages;
+  std::unordered_map<std::string, ModelOptions> m_model_options;
+  ModelOptions m_default_model_options;
+  std::unordered_map<std::string, ModelCapabilities> m_model_capabilities;
   std::string m_current_response;
   friend struct ChatContext;
 };

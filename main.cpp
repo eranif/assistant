@@ -130,8 +130,9 @@ int main(int argc, char** argv) {
     ollama::SetLogFile(args.log_file);
   }
 
-  ollama::SetLogSink([]([[maybe_unused]] ollama::LogLevel level,
-                        [[maybe_unused]] std::string msg) {});
+  // Uncomment this to provide custom log sink.
+  //  ollama::SetLogSink([]([[maybe_unused]] ollama::LogLevel level,
+  //                        [[maybe_unused]] std::string msg) {});
 
   ollama::SetLogLevel(args.log_level);
 
