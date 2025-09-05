@@ -141,7 +141,11 @@ void Manager::ApplyConfig(const ollama::Config* conf) {
   m_windows_size = conf->GetHistorySize();
   m_function_table.ReloadMCPServers(conf);
   m_model_options = conf->GetModelOptionsMap();
-  m_default_model_options = conf->GetModelOptionsMap().find("default")->second;
+  m_default_model_options = Config::CreaetDefaultModelOptions();
+  auto iter = conf->GetModelOptionsMap().find("default");
+  if (iter != conf->GetModelOptionsMap().end()) {
+    m_default_model_options = iter->second;
+  }
 }
 
 void Manager::AsyncChat(std::string msg, OnResponseCallback cb,
@@ -161,7 +165,14 @@ void Manager::CreateAndPushContext(std::optional<ollama::message> msg,
     where = m_model_options.find("default");
   }
 
-  const auto& model_options = where->second;
+  ModelOptions model_options;
+  if (where == m_model_options.end()) {
+    OLOG(LogLevel::kWarning) << "Missing 'default' model setup in "
+                                "configuration file. Creating and using one.";
+    model_options = Config::CreaetDefaultModelOptions();
+  } else {
+    model_options = where->second;
+  }
   for (const auto& [name, value] : model_options.options.items()) {
     opts[name] = value;
   }

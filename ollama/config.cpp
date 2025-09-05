@@ -122,16 +122,8 @@ std::optional<Config> Config::FromContent(const std::string& content) {
 
       if (config.m_model_options_map.count("default") == 0) {
         // No default model options, add one.
-        using namespace nlohmann::literals;
-        ModelOptions mo;
-        mo.name = "default";
-        mo.options = R"(
-  {
-    "num_ctx": 32768,
-    "temperature": 0
-  }
-)"_json;
-        config.m_model_options_map.insert({mo.name, mo});
+        config.m_model_options_map.insert(
+            {"default", CreaetDefaultModelOptions()});
       }
     }
 
@@ -141,5 +133,18 @@ std::optional<Config> Config::FromContent(const std::string& content) {
                             << ". " << e.what();
     return std::nullopt;
   }
+}
+
+ModelOptions Config::CreaetDefaultModelOptions() {
+  using namespace nlohmann::literals;
+  ModelOptions mo;
+  mo.name = "default";
+  mo.options = R"(
+  {
+    "num_ctx": 32768,
+    "temperature": 0
+  }
+)"_json;
+  return mo;
 }
 }  // namespace ollama
