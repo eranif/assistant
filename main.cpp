@@ -150,8 +150,10 @@ int main(int argc, char** argv) {
           .SetCallback(WriteFileContent)
           .Build());
   if (!args.config_file.empty()) {
-    ollama::Config conf{args.config_file};
-    ollama_manager.ApplyConfig(&conf);
+    auto conf = ollama::Config::FromFile(args.config_file);
+    if (conf.has_value()) {
+      ollama_manager.ApplyConfig(&conf.value());
+    }
   }
 
   if (!ollama_manager.IsRunning()) {

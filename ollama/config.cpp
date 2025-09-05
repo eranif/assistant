@@ -34,14 +34,32 @@ T GetValueFromJsonWithDefault(const json& j, const std::string& name,
 }
 }  // namespace
 
-Config::Config(const std::string& filepath) {
+std::optional<Config> Config::FromFile(const std::string& filepath) {
   try {
     std::ifstream input_file(filepath);
     if (!input_file.is_open()) {
       OLOG(OLogLevel::kError) << "Failed to open file: " << filepath;
-      return;
+      return std::nullopt;
     }
-    json parsed_data = json::parse(input_file);
+
+    std::ostringstream buffer;
+    buffer << input_file.rdbuf();  // Read the entire file stream into the
+                                   // string stream
+    std::string file_content = buffer.str();  // Extract the
+    input_file.close();
+    return FromContent(file_content);
+  } catch (std::exception& e) {
+    OLOG(OLogLevel::kError)
+        << "Failed to parse configuration file: " << filepath << ". "
+        << e.what();
+    return std::nullopt;
+  }
+}
+
+std::optional<Config> Config::FromContent(const std::string& content) {
+  try {
+    Config config;
+    json parsed_data = json::parse(content);
     auto servers = parsed_data["servers"];
     for (const auto& server : servers) {
       MCPServerConfig server_config;
@@ -68,24 +86,25 @@ Config::Config(const std::string& filepath) {
         login.port = GetValueFromJson<int>(ssh, "port").value_or(22);
         server_config.ssh_login = std::move(login);
       }
-      m_servers.push_back(std::move(server_config));
+      config.m_servers.push_back(std::move(server_config));
     }
 
-    m_url = GetValueFromJsonWithDefault<std::string>(parsed_data, "server_url",
-                                                     "http://127.0.0.1:11434");
-    m_use_gpu = GetValueFromJsonWithDefault<bool>(parsed_data, "use_gpu", true);
-    m_history_size =
+    config.m_url = GetValueFromJsonWithDefault<std::string>(
+        parsed_data, "server_url", "http://127.0.0.1:11434");
+    config.m_use_gpu =
+        GetValueFromJsonWithDefault<bool>(parsed_data, "use_gpu", true);
+    config.m_history_size =
         GetValueFromJsonWithDefault<size_t>(parsed_data, "history_size", 20);
-    m_context_size =
+    config.m_context_size =
         GetValueFromJsonWithDefault<size_t>(parsed_data, "context_size", 32768);
 
-    OLOG(OLogLevel::kInfo) << "Successfully loaded " << m_servers.size()
+    OLOG(OLogLevel::kInfo) << "Successfully loaded " << config.m_servers.size()
                            << " configurations";
+    return config;
   } catch (std::exception& e) {
-    OLOG(OLogLevel::kError)
-        << "Failed to parse configuration file: " << filepath << ". "
-        << e.what();
+    OLOG(OLogLevel::kError) << "Failed to parse configuration JSON: " << content
+                            << ". " << e.what();
+    return std::nullopt;
   }
 }
-
 }  // namespace ollama

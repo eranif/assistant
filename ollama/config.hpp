@@ -20,8 +20,9 @@ struct MCPServerConfig {
 
 class Config {
  public:
-  Config(const std::string& filepath);
   ~Config() = default;
+  static std::optional<Config> FromFile(const std::string& filepath);
+  static std::optional<Config> FromContent(const std::string& json_content);
 
   inline const std::vector<MCPServerConfig>& GetServers() const {
     return m_servers;
@@ -37,6 +38,8 @@ class Config {
   size_t GetContextSize() const { return m_context_size; }
 
  private:
+  Config() = default;
+
   std::vector<MCPServerConfig> m_servers;
   std::string m_url{"http://127.0.0.1:11434"};
   bool m_use_gpu{true};
