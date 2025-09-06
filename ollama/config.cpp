@@ -97,6 +97,11 @@ std::optional<Config> Config::FromContent(const std::string& content) {
         parsed_data, "server_url", "http://127.0.0.1:11434");
     config.m_history_size =
         GetValueFromJsonWithDefault<size_t>(parsed_data, "history_size", 50);
+
+    auto log_level = GetValueFromJson<std::string>(parsed_data, "log_level");
+    if (log_level.has_value()) {
+      config.m_logLevel = Logger::FromString(log_level.value());
+    }
     OLOG(OLogLevel::kInfo) << "Successfully loaded " << config.m_servers.size()
                            << " configurations";
 

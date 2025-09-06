@@ -35,7 +35,7 @@ class Config {
   void SetHistorySize(size_t history_size) { m_history_size = history_size; }
   const std::string& GetUrl() const { return m_url; }
   size_t GetHistorySize() const { return m_history_size; }
-
+  LogLevel GetLogLevel() const { return m_logLevel; }
   inline const std::unordered_map<std::string, ModelOptions>&
   GetModelOptionsMap() const {
     return m_model_options_map;
@@ -49,5 +49,6 @@ class Config {
   size_t m_history_size{50};
   ModelOptions m_defaultModelOptions;
   std::unordered_map<std::string, ModelOptions> m_model_options_map;
+  LogLevel m_logLevel{LogLevel::kInfo};
 };
 }  // namespace ollama

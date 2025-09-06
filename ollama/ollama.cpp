@@ -25,6 +25,8 @@ void Manager::WorkerMain(Manager* manager) {
 
 void Manager::ProcessContext(std::shared_ptr<ChatContext> context) {
   try {
+    OLOG(LogLevel::kDebug) << "Calling /api/chat with request:";
+    OLOG(LogLevel::kDebug) << "==> " << context->request_;
     m_ollama.chat(context->request_, &Manager::OnResponse, this);
     if (!context->func_calls_.empty()) {
       context->InvokeTools(this);
@@ -70,6 +72,7 @@ bool Manager::OnResponse(const ollama::response& resp, void* user_data) {
         // Store the AI response, as a message in our history.
         ollama::message msg{std::string{kAssistantRole},
                             manager->m_current_response};
+        OLOG(LogLevel::kDebug) << "<== " << msg;
         manager->AddMessage(std::move(msg));
         manager->m_current_response.clear();
       } break;
@@ -146,6 +149,7 @@ void Manager::ApplyConfig(const ollama::Config* conf) {
   if (iter != conf->GetModelOptionsMap().end()) {
     m_default_model_options = iter->second;
   }
+  SetLogLevel(conf->GetLogLevel());
 }
 
 void Manager::AsyncChat(std::string msg, OnResponseCallback cb,
@@ -188,7 +192,6 @@ void Manager::CreateAndPushContext(std::optional<ollama::message> msg,
   }
 
   OLOG(LogLevel::kDebug) << "Pushing message to the queue.";
-  OLOG(LogLevel::kInfo) << req;
 
   if (ModelHasCapability(model, ModelCapabilities::kTooling)) {
     req["tools"] = m_function_table.ToJSON();
