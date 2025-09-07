@@ -161,6 +161,7 @@ int main(int argc, char** argv) {
     }
   }
 
+  OLOG(ollama::LogLevel::kInfo) << "Checking if ollama is running...";
   if (!ollama_manager.IsRunning()) {
     OLOG(OLogLevel::kError)
         << "Make sure ollama server is running and try again";
@@ -231,8 +232,7 @@ int main(int argc, char** argv) {
               std::cout << output;
               break;
             case ollama::Reason::kFatalError:
-              OLOG(OLogLevel::kError)
-                  << "** Fatal error occurred**: " << output;
+              OLOG(OLogLevel::kError) << output;
               done = true;
               break;
           }

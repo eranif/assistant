@@ -97,6 +97,7 @@ class Manager {
 
   static Manager& GetInstance();
   void SetUrl(const std::string& url);
+  void SetHeaders(const std::unordered_map<std::string, std::string>& headers);
 
   /// Clear the current session.
   void Reset();
@@ -110,7 +111,7 @@ class Manager {
   void ApplyConfig(const ollama::Config* conf);
 
   /// Return true if ollama server is running.
-  inline bool IsRunning() const { return ollama::is_running(); }
+  bool IsRunning();
 
   /// Return list of models available.
   std::vector<std::string> List();

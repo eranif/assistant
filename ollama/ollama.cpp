@@ -25,7 +25,6 @@ void Manager::WorkerMain(Manager* manager) {
 
 void Manager::ProcessContext(std::shared_ptr<ChatContext> context) {
   try {
-    OLOG(LogLevel::kDebug) << "Calling /api/chat with request:";
     OLOG(LogLevel::kDebug) << "==> " << context->request_;
     m_ollama.chat(context->request_, &Manager::OnResponse, this);
     if (!context->func_calls_.empty()) {
@@ -140,7 +139,7 @@ void Manager::ApplyConfig(const ollama::Config* conf) {
   if (!conf) {
     return;
   }
-  m_url = conf->GetUrl();
+  SetUrl(conf->GetUrl());
   m_windows_size = conf->GetHistorySize();
   m_function_table.ReloadMCPServers(conf);
   m_model_options = conf->GetModelOptionsMap();
@@ -150,6 +149,7 @@ void Manager::ApplyConfig(const ollama::Config* conf) {
     m_default_model_options = iter->second;
   }
   SetLogLevel(conf->GetLogLevel());
+  SetHeaders(conf->GetHeaders());
 }
 
 void Manager::AsyncChat(std::string msg, OnResponseCallback cb,
@@ -190,8 +190,6 @@ void Manager::CreateAndPushContext(std::optional<ollama::message> msg,
   if (think.has_value()) {
     req["think"] = think.value();
   }
-
-  OLOG(LogLevel::kDebug) << "Pushing message to the queue.";
 
   if (ModelHasCapability(model, ModelCapabilities::kTooling)) {
     req["tools"] = m_function_table.ToJSON();
@@ -259,6 +257,7 @@ std::optional<json> Manager::GetModelInfo(const std::string& model) {
     return std::nullopt;
   }
   try {
+    OLOG(LogLevel::kInfo) << "Fetching info for model: " << model;
     return m_ollama.show_model_info(model);
   } catch (std::exception& e) {
     return std::nullopt;
@@ -346,10 +345,15 @@ void Manager::AddMessage(std::optional<ollama::message> msg) {
   }
 }
 
-ollama::messages ollama::Manager::GetMessages() const { return m_messages; }
+ollama::messages Manager::GetMessages() const { return m_messages; }
 
-bool ollama::Manager::ModelHasCapability(const std::string& model_name,
-                                         ModelCapabilities c) {
+bool Manager::IsRunning() {
+  m_ollama.setServerURL(m_url);
+  return m_ollama.is_running();
+}
+
+bool Manager::ModelHasCapability(const std::string& model_name,
+                                 ModelCapabilities c) {
   if (m_model_capabilities.count(model_name) == 0) {
     // Load the model capabilities
     auto capabilities = GetModelCapabilities(model_name);
@@ -362,5 +366,15 @@ bool ollama::Manager::ModelHasCapability(const std::string& model_name,
 
   auto flags = m_model_capabilities.find(model_name)->second;
   return IsFlagSet(flags, c);
+}
+void Manager::SetHeaders(
+    const std::unordered_map<std::string, std::string>& headers) {
+  httplib::Headers h;
+  for (const auto& [header_name, header_value] : headers) {
+    OLOG(LogLevel::kInfo) << "Adding HTTP header: " << header_name << ": "
+                          << header_value;
+    h.insert({header_name, header_value});
+  }
+  m_ollama.setHttpHeaders(std::move(h));
 }
 }  // namespace ollama

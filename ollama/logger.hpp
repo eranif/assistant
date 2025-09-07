@@ -121,15 +121,15 @@ class Logger {
   const char* GetLevelString(LogLevel level) const {
     switch (level) {
       case LogLevel::kTrace:
-        return "[TRACE] ";
+        return "[TRACE]";
       case LogLevel::kDebug:
-        return "[DEBUG] ";
+        return "[DEBUG]";
       case LogLevel::kInfo:
-        return "[INFO] ";
+        return "[INFO]";
       case LogLevel::kWarning:
-        return "[WARNING] ";
+        return "[WARNING]";
       case LogLevel::kError:
-        return "[ERROR] ";
+        return "[ERROR]";
     }
     return "";
   }

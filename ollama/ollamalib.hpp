@@ -422,7 +422,7 @@ class Ollama {
     std::string request_string = request.dump();
     if (ollama::log_requests) std::cout << request_string << std::endl;
 
-    if (auto res = this->cli->Post("/api/generate", request_string,
+    if (auto res = this->cli->Post("/api/generate", headers_, request_string,
                                    "application/json")) {
       if (ollama::log_replies) std::cout << res->body << std::endl;
 
@@ -497,7 +497,7 @@ class Ollama {
       return continue_stream;
     };
 
-    if (auto res = this->cli->Post("/api/generate", request_string,
+    if (auto res = this->cli->Post("/api/generate", headers_, request_string,
                                    "application/json", stream_callback)) {
       return true;
     } else if (res.error() ==
@@ -531,8 +531,8 @@ class Ollama {
     std::string request_string = request.dump();
     if (ollama::log_requests) std::cout << request_string << std::endl;
 
-    if (auto res =
-            this->cli->Post("/api/chat", request_string, "application/json")) {
+    if (auto res = this->cli->Post("/api/chat", headers_, request_string,
+                                   "application/json")) {
       if (ollama::log_replies) std::cout << res->body << std::endl;
 
       response = ollama::response(res->body, ollama::message_type::chat);
@@ -600,7 +600,7 @@ class Ollama {
       return continue_stream;
     };
 
-    if (auto res = this->cli->Post("/api/chat", request_string,
+    if (auto res = this->cli->Post("/api/chat", headers_, request_string,
                                    "application/json", stream_callback)) {
       return true;
     } else if (res.error() ==
@@ -645,7 +645,7 @@ class Ollama {
 
     std::string response;
 
-    if (auto res = this->cli->Post("/api/create", request_string,
+    if (auto res = this->cli->Post("/api/create", headers_, request_string,
                                    "application/json")) {
       if (ollama::log_replies) std::cout << res->body << std::endl;
 
@@ -668,7 +668,7 @@ class Ollama {
 
     // Send a blank request with the model name to instruct ollama to load the
     // model into memory.
-    if (auto res = this->cli->Post("/api/generate", request_string,
+    if (auto res = this->cli->Post("/api/generate", headers_, request_string,
                                    "application/json")) {
       if (ollama::log_replies) std::cout << res->body << std::endl;
       json response = json::parse(res->body);
@@ -686,7 +686,7 @@ class Ollama {
   }
 
   bool is_running() {
-    auto res = cli->Get("/");
+    auto res = cli->Get("/", headers_);
     if (res)
       if (res->body == "Ollama is running") return true;
     return false;
@@ -694,7 +694,7 @@ class Ollama {
 
   json list_model_json() {
     json models;
-    if (auto res = cli->Get("/api/tags")) {
+    if (auto res = cli->Get("/api/tags", headers_)) {
       if (ollama::log_replies) std::cout << res->body << std::endl;
       models = json::parse(res->body);
     } else {
@@ -721,7 +721,7 @@ class Ollama {
 
   json running_model_json() {
     json models;
-    if (auto res = cli->Get("/api/ps")) {
+    if (auto res = cli->Get("/api/ps", headers_)) {
       if (ollama::log_replies) std::cout << res->body << std::endl;
       models = json::parse(res->body);
     } else {
@@ -761,7 +761,7 @@ class Ollama {
   }
 
   bool create_blob(const std::string& digest) {
-    if (auto res = cli->Post("/api/blobs/" + digest)) {
+    if (auto res = cli->Post("/api/blobs/" + digest, headers_)) {
       if (res->status == httplib::StatusCode::Created_201) return true;
       if (res->status == httplib::StatusCode::BadRequest_400) {
         if (ollama::use_exceptions)
@@ -787,7 +787,8 @@ class Ollama {
     std::string request_string = request.dump();
     if (ollama::log_requests) std::cout << request_string << std::endl;
 
-    if (auto res = cli->Post("/api/show", request_string, "application/json")) {
+    if (auto res = cli->Post("/api/show", headers_, request_string,
+                             "application/json")) {
       if (ollama::log_replies)
         std::cout << "Reply was " << res->body << std::endl;
       try {
@@ -817,7 +818,8 @@ class Ollama {
     std::string request_string = request.dump();
     if (ollama::log_requests) std::cout << request_string << std::endl;
 
-    if (auto res = cli->Post("/api/copy", request_string, "application/json")) {
+    if (auto res = cli->Post("/api/copy", headers_, request_string,
+                             "application/json")) {
       if (res->status == httplib::StatusCode::OK_200) return true;
       if (res->status == httplib::StatusCode::NotFound_404) {
         if (ollama::use_exceptions)
@@ -868,7 +870,8 @@ class Ollama {
     std::string request_string = request.dump();
     if (ollama::log_requests) std::cout << request_string << std::endl;
 
-    if (auto res = cli->Post("/api/pull", request_string, "application/json")) {
+    if (auto res = cli->Post("/api/pull", headers_, request_string,
+                             "application/json")) {
       if (res->status == httplib::StatusCode::OK_200) return true;
       if (res->status == httplib::StatusCode::NotFound_404) {
         if (ollama::use_exceptions)
@@ -904,7 +907,8 @@ class Ollama {
     std::string request_string = request.dump();
     if (ollama::log_requests) std::cout << request_string << std::endl;
 
-    if (auto res = cli->Post("/api/push", request_string, "application/json")) {
+    if (auto res = cli->Post("/api/push", headers_, request_string,
+                             "application/json")) {
       if (res->status == httplib::StatusCode::OK_200) return true;
       if (res->status == httplib::StatusCode::NotFound_404) {
         if (ollama::use_exceptions)
@@ -946,8 +950,8 @@ class Ollama {
     std::string request_string = request.dump();
     if (ollama::log_requests) std::cout << request_string << std::endl;
 
-    if (auto res =
-            cli->Post("/api/embed", request_string, "application/json")) {
+    if (auto res = cli->Post("/api/embed", headers_, request_string,
+                             "application/json")) {
       if (ollama::log_replies) std::cout << res->body << std::endl;
 
       if (res->status == httplib::StatusCode::OK_200) {
@@ -979,7 +983,7 @@ class Ollama {
   std::string get_version() {
     std::string version;
 
-    auto res = this->cli->Get("/api/version");
+    auto res = this->cli->Get("/api/version", headers_);
 
     if (res) {
       json response = json::parse(res->body);
@@ -999,11 +1003,16 @@ class Ollama {
   }
 
   void setReadTimeout(const int seconds) {
+    this->cli->set_connection_timeout(seconds);
     this->cli->set_read_timeout(seconds);
   }
 
   void setWriteTimeout(const int seconds) {
     this->cli->set_write_timeout(seconds);
+  }
+
+  void setHttpHeaders(httplib::Headers headers) {
+    headers_ = std::move(headers);
   }
 
  private:
@@ -1017,6 +1026,7 @@ class Ollama {
   */
 
   std::string server_url;
+  httplib::Headers headers_;
   httplib::Client* cli;
 };
 

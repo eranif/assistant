@@ -132,6 +132,12 @@ std::optional<Config> Config::FromContent(const std::string& content) {
       }
     }
 
+    if (parsed_data.contains("http_headers")) {
+      auto http_headers = parsed_data["http_headers"];
+      for (const auto& [name, value] : http_headers.items()) {
+        config.headers_.insert({name, value.get<std::string>()});
+      }
+    }
     return config;
   } catch (std::exception& e) {
     OLOG(OLogLevel::kError) << "Failed to parse configuration JSON: " << content

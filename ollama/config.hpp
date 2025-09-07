@@ -40,6 +40,9 @@ class Config {
   GetModelOptionsMap() const {
     return m_model_options_map;
   }
+  inline std::unordered_map<std::string, std::string> GetHeaders() const {
+    return headers_;
+  }
 
  private:
   Config() = default;
@@ -50,5 +53,6 @@ class Config {
   ModelOptions m_defaultModelOptions;
   std::unordered_map<std::string, ModelOptions> m_model_options_map;
   LogLevel m_logLevel{LogLevel::kInfo};
+  std::unordered_map<std::string, std::string> headers_;
 };
 }  // namespace ollama
