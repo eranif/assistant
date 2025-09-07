@@ -193,6 +193,9 @@ void Manager::CreateAndPushContext(std::optional<ollama::message> msg,
 
   if (ModelHasCapability(model, ModelCapabilities::kTooling)) {
     req["tools"] = m_function_table.ToJSON();
+  } else {
+    OLOG(LogLevel::kWarning)
+        << "The selected model: " << model << " does not support 'tools'";
   }
 
   ChatContext ctx = {
