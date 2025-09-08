@@ -31,7 +31,7 @@ ExternalFunction::ExternalFunction(ollama::MCPStdioClient* client, mcp::tool t)
   }
 }
 
-std::string ExternalFunction::Call(const json& args) const {
+FunctionResult ExternalFunction::Call(const json& args) const {
   return m_client->Call(m_tool, args);
 }
 }  // namespace ollama

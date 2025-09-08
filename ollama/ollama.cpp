@@ -220,13 +220,24 @@ void ChatContext::InvokeTools(Manager* manager) {
       for (const auto& [name, value] : args) {
         ss << std::setw(2) << "  " << name << " => " << value << "\n";
       }
+
       callback_(ss.str(), Reason::kLogNotice);
       auto result = manager->m_function_table.Call(func_call);
       ss = {};
       ss << "Tool output: " << result;
       callback_(ss.str(), Reason::kLogNotice);
+
+      ss = {};
       // Add the tool response
-      ollama::message msg{"tool", result};
+      if (result.isError) {
+        ss << "An error occurred while executing tool: '" << func_call.name
+           << "'. Reason: " << result.text;
+      } else {
+        ss << "Tool '" << func_call.name
+           << "' completed successfully. Output:\n"
+           << result.text;
+      }
+      ollama::message msg{"tool", ss.str()};
       manager->AddMessage(std::move(msg));
     }
   }

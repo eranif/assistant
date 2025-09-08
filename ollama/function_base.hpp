@@ -24,10 +24,11 @@ std::optional<ArgType> GetFunctionArg(const ollama::json& args,
   }
 }
 
-#define ASSIGN_FUNC_ARG_OR_RETURN(var, expr) \
-  if (!expr.has_value()) {                   \
-    return "Missing mandatory argument";     \
-  }                                          \
+#define ASSIGN_FUNC_ARG_OR_RETURN(var, expr)                             \
+  if (!expr.has_value()) {                                               \
+    return ollama::FunctionResult{.isError = true,                       \
+                                  .text = "Missing mandatory argument"}; \
+  }                                                                      \
   var = expr.value();
 
 class Param {
@@ -51,6 +52,18 @@ class Param {
   std::string m_type;
   bool m_required{true};
 };
+
+struct FunctionResult {
+  bool isError{false};
+  std::string text;
+};
+
+inline std::ostream& operator<<(std::ostream& os,
+                                const FunctionResult& result) {
+  os << "{ isError = " << result.isError << ", text = '" << result.text
+     << "' }";
+  return os;
+}
 
 class FunctionBase {
  public:
@@ -77,7 +90,7 @@ class FunctionBase {
     return j;
   }
 
-  virtual std::string Call(const json& params) const = 0;
+  virtual FunctionResult Call(const json& params) const = 0;
   inline const std::string& GetName() const { return m_name; }
 
  protected:
@@ -110,14 +123,21 @@ class FunctionTable {
   }
 
   void AddMCPServer(std::shared_ptr<MCPStdioClient> client);
-  std::string Call(const FunctionCall& func_call) const {
-    auto iter = m_functions.find(func_call.name);
-    if (iter == m_functions.end()) {
-      std::stringstream ss;
-      ss << "could not find tool: '" << func_call.name << "'";
-      return ss.str();
+  FunctionResult Call(const FunctionCall& func_call) const {
+    try {
+      auto iter = m_functions.find(func_call.name);
+      if (iter == m_functions.end()) {
+        std::stringstream ss;
+        ss << "could not find tool: '" << func_call.name << "'";
+        FunctionResult result{.isError = true, .text = ss.str()};
+        return result;
+      }
+      return iter->second->Call(func_call.args);
+
+    } catch (std::exception& e) {
+      FunctionResult result{.isError = true, .text = e.what()};
+      return result;
     }
-    return iter->second->Call(func_call.args);
   }
 
   void Clear() {

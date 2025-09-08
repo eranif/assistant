@@ -88,9 +88,12 @@ bool MCPStdioClient::Initialise() {
   }
 }
 
-std::string MCPStdioClient::Call(const mcp::tool& t, const json& args) const {
+FunctionResult MCPStdioClient::Call(const mcp::tool& t, const json& args) const {
   auto result = m_client->call_tool(t.name, args);
-  return result["content"][0]["text"];
+  FunctionResult call_result{
+      .isError = result["isError"].get<bool>(),
+      .text = result["content"][0]["text"].get<std::string>()};
+  return call_result;
 }
 
 std::vector<std::shared_ptr<FunctionBase>> MCPStdioClient::GetFunctions()

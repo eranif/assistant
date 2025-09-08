@@ -8,21 +8,26 @@
 
 namespace ollama {
 class MCPStdioClient;
+
+using FunctionSignature = std::function<FunctionResult(const json&)>;
+
 class InProcessFunction : public FunctionBase {
  public:
   InProcessFunction(const std::string& name, const std::string& desc)
       : FunctionBase(name, desc) {}
-  std::string Call(const json& args) const override { return m_callback(args); }
+  FunctionResult Call(const json& args) const override {
+    return m_callback(args);
+  }
 
  protected:
-  std::function<std::string(const json&)> m_callback;
+  FunctionSignature m_callback;
   friend class FunctionBuilder;
 };
 
 class ExternalFunction : public FunctionBase {
  public:
   ExternalFunction(ollama::MCPStdioClient* client, mcp::tool t);
-  std::string Call(const json& args) const override;
+  FunctionResult Call(const json& args) const override;
 
  protected:
   ollama::MCPStdioClient* m_client{nullptr};
@@ -56,7 +61,7 @@ class FunctionBuilder {
     return *this;
   }
 
-  FunctionBuilder& SetCallback(std::function<std::string(const json&)> func) {
+  FunctionBuilder& SetCallback(FunctionSignature func) {
     m_func = std::move(func);
     return *this;
   }
@@ -71,7 +76,7 @@ class FunctionBuilder {
  private:
   std::string m_name;
   std::string m_desc;
-  std::function<std::string(const json&)> m_func;
+  FunctionSignature m_func;
   std::vector<Param> m_params;
 };
 

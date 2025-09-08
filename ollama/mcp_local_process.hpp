@@ -27,7 +27,7 @@ class MCPStdioClient {
   bool Initialise();
   inline bool IsRemote() const { return m_ssh_login.has_value(); }
   inline const std::vector<mcp::tool>& GetTools() const { return m_tools; }
-  std::string Call(const mcp::tool& t, const json& args) const;
+  FunctionResult Call(const mcp::tool& t, const json& args) const;
   std::vector<std::shared_ptr<FunctionBase>> GetFunctions() const;
 
  private:

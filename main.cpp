@@ -79,10 +79,11 @@ Args ParseCommandLine(int argc, char** argv) {
   return args;
 }
 
-std::string WriteFileContent(const ollama::json& args) {
+ollama::FunctionResult WriteFileContent(const ollama::json& args) {
   std::stringstream ss;
   if (args.size() != 2) {
-    return "Invalid number of arguments";
+    return ollama::FunctionResult{.isError = true,
+                                  .text = "Invalid number of arguments"};
   }
 
   ASSIGN_FUNC_ARG_OR_RETURN(
@@ -108,20 +109,21 @@ std::string WriteFileContent(const ollama::json& args) {
       ss << "Error while writing file: '" << filepath << "' to disk.";
     }
   }
-  return ss.str();
+  return ollama::FunctionResult{.text = ss.str()};
 }
 
-std::string OpenFileInEditor(const ollama::json& args) {
+ollama::FunctionResult OpenFileInEditor(const ollama::json& args) {
   std::stringstream ss;
   if (args.size() != 1) {
-    return "invalid number of arguments";
+    return ollama::FunctionResult{.isError = true,
+                                  .text = "Invalid number of arguments"};
   }
 
   ASSIGN_FUNC_ARG_OR_RETURN(
       std::string file_name,
       ::ollama::GetFunctionArg<std::string>(args, "filepath"));
   ss << "file '" << file_name << "' successfully opened file in the editor.";
-  return ss.str();
+  return ollama::FunctionResult{.text = ss.str()};
 }
 
 int main(int argc, char** argv) {
