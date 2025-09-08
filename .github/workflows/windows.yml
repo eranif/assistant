@@ -1,0 +1,35 @@
+name: windows
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '**'
+      - '!.github/**'
+      - '.github/workflows/windows.yml'
+      - '!**.md'
+  pull_request:
+    paths:
+      - '**'
+      - '!.github/**'
+      - '.github/workflows/windows.yml'
+      - '!**.md'
+
+jobs:
+  windows:
+    runs-on: windows-latest
+
+    steps:
+
+    - name: Checkout CodeLite
+      uses: actions/checkout@v4
+
+    - name: cmake --version
+      run: cmake --version
+
+    - name: Build
+      run: |
+        mkdir build-release
+        cd build-release
+        cmake .. -DCMAKE_BUILD_TYPE=Release
+        cmake --build . --config Release --parallel $(nproc)
