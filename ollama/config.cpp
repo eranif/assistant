@@ -109,7 +109,7 @@ std::optional<Config> Config::FromContent(const std::string& content) {
     if (parsed_data.contains("models")) {
       auto models = parsed_data["models"];
       for (const auto& [model_name, j] : models.items()) {
-        ModelOptions mo{.name = model_name};
+        ModelOptions mo{/*.name =*/ model_name};
         if (j.contains("options")) {
           mo.options = j["options"];
         }
