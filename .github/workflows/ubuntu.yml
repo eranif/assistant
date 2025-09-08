@@ -1,0 +1,35 @@
+name: ubuntu
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '**'
+      - '!.github/**'
+      - '.github/workflows/ubuntu.yml'
+      - '!**.md'
+  pull_request:
+    paths:
+      - '**'
+      - '!.github/**'
+      - '.github/workflows/ubuntu.yml'
+      - '!**.md'
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+
+    steps:
+
+    - name: Checkout CodeLite
+      uses: actions/checkout@v4
+
+    - name: cmake --version
+      run: cmake --version
+
+    - name: Build
+      run: |
+        mkdir build-release
+        cd build-release
+        cmake .. -DCMAKE_BUILD_TYPE=Release
+        cmake --build . --config Release --parallel $(nproc)
