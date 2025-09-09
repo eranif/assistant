@@ -133,6 +133,7 @@ void Manager::Reset() {
   m_function_table.Clear();
   m_messages.clear();
   m_current_response.clear();
+  ClearSystemMessages();
 }
 
 void Manager::ApplyConfig(const ollama::Config* conf) {
@@ -359,7 +360,18 @@ void Manager::AddMessage(std::optional<ollama::message> msg) {
   }
 }
 
-ollama::messages Manager::GetMessages() const { return m_messages; }
+ollama::messages Manager::GetMessages() const {
+  ollama::messages msgs;
+  msgs.reserve(m_system_messages.size() + m_messages.size());
+
+  if (!m_system_messages.empty()) {
+    msgs.insert(msgs.end(), m_system_messages.begin(), m_system_messages.end());
+  }
+  if (!m_messages.empty()) {
+    msgs.insert(msgs.end(), m_messages.begin(), m_messages.end());
+  }
+  return msgs;
+}
 
 bool Manager::IsRunning() {
   m_ollama.setServerURL(m_url);
@@ -391,4 +403,10 @@ void Manager::SetHeaders(
   }
   m_ollama.setHttpHeaders(std::move(h));
 }
+
+void Manager::AddSystemMessage(const std::string& msg) {
+  m_system_messages.push_back(ollama::message{"system", msg});
+}
+
+void Manager::ClearSystemMessages() { m_system_messages.clear(); }
 }  // namespace ollama

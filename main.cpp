@@ -178,6 +178,11 @@ int main(int argc, char** argv) {
     std::cout << "- " << func_obj["function"]["name"] << std::endl;
   }
 
+  ollama_manager.AddSystemMessage("Your name is CodeLite.");
+  ollama_manager.AddSystemMessage(
+      "Always try to use tools, do not ask for permission in order to do "
+      "this.");
+
   auto models = ollama_manager.List();
   std::cout << "Available models:" << std::endl;
   std::cout << "=================" << std::endl;

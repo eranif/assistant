@@ -99,6 +99,13 @@ class Manager {
   void SetUrl(const std::string& url);
   void SetHeaders(const std::unordered_map<std::string, std::string>& headers);
 
+  /// Add system message to the prompt. System messages are always sent as part
+  /// of the prompt
+  void AddSystemMessage(const std::string& msg);
+
+  /// Clear all system messages.
+  void ClearSystemMessages();
+
   /// Clear the current session.
   void Reset();
 
@@ -171,6 +178,7 @@ class Manager {
   bool m_preferCPU{false};
   /// Messages that were sent to the AI, will be placed here
   ollama::messages m_messages;
+  ollama::messages m_system_messages;
   std::unordered_map<std::string, ModelOptions> m_model_options;
   ModelOptions m_default_model_options;
   std::unordered_map<std::string, ModelCapabilities> m_model_capabilities;
