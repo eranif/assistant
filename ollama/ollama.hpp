@@ -23,6 +23,8 @@ enum class Reason {
   kLogNotice,
   /// Log messages - DEBUG
   kLogDebug,
+  /// Request cancelled by the user.
+  kCancelled,
 };
 
 enum class ModelCapabilities {
@@ -168,6 +170,7 @@ class Manager {
 
   void Shutdown();
   void Startup();
+  void Interrupt() { m_interrupt.store(true, std::memory_order_relaxed); }
 
  private:
   static bool OnResponse(const ollama::response& resp, void* user_data);
@@ -185,7 +188,7 @@ class Manager {
   FunctionTable m_function_table;
   ChatContextQueue m_queue;
   std::shared_ptr<std::thread> m_worker;
-  std::shared_ptr<std::thread> m_puller_thread;
+  std::shared_ptr<std::thread> m_model_puller_thread;
   std::atomic_bool m_shutdown_flag{false};
   std::atomic_bool m_puller_busy{false};
   std::string m_url;
@@ -199,6 +202,7 @@ class Manager {
   ModelOptions m_default_model_options;
   std::unordered_map<std::string, ModelCapabilities> m_model_capabilities;
   std::string m_current_response;
+  std::atomic_bool m_interrupt{false};
   friend struct ChatContext;
 };
 }  // namespace ollama

@@ -262,6 +262,10 @@ int main(int argc, char** argv) {
               OLOG(OLogLevel::kError) << output;
               done = true;
               break;
+            case ollama::Reason::kCancelled:
+              OLOG(OLogLevel::kWarning) << output;
+              done = true;
+              break;
           }
         },
         model_name);

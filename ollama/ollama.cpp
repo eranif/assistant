@@ -56,6 +56,12 @@ void Manager::ProcessContext(std::shared_ptr<ChatContext> context) {
 bool Manager::HandleResponse(const ollama::response& resp,
                              ChatUserData& chat_user_data) {
   std::shared_ptr<ChatContext> req = m_queue.Top();
+  if (m_interrupt.load(std::memory_order_relaxed)) {
+    m_interrupt.store(false, std::memory_order_relaxed);
+    req->callback_("Request cancelled by user", ollama::Reason::kCancelled,
+                   false);
+    return false;
+  }
   auto calls = ResponseParser::GetTools(resp);
   bool is_done = ResponseParser::IsDone(resp);
   if (calls.has_value() && !calls.value().empty()) {
@@ -142,23 +148,24 @@ Manager::~Manager() { Shutdown(); }
 
 void Manager::Shutdown() {
   m_queue.Clear();
+  m_interrupt.store(true, std::memory_order_relaxed);
   m_shutdown_flag.store(true);
   if (m_worker) {
     m_worker->join();
   }
 
-  if (m_puller_thread) {
-    m_puller_thread->join();
+  if (m_model_puller_thread) {
+    m_model_puller_thread->join();
   }
   m_puller_busy.store(false);
   m_worker.reset();
-  m_puller_thread.reset();
+  m_model_puller_thread.reset();
 }
 
 void Manager::Startup() {
-  Shutdown();
   m_shutdown_flag.store(false);
   m_worker.reset(new std::thread(Manager::WorkerMain, this));
+  m_interrupt.store(false, std::memory_order_relaxed);
 }
 
 void Manager::SetUrl(const std::string& url) {
@@ -176,6 +183,7 @@ void Manager::Reset() {
   SoftReset();
   m_function_table.Clear();
   ClearSystemMessages();
+  m_interrupt.store(false, std::memory_order_relaxed);
 }
 
 void Manager::ApplyConfig(const ollama::Config* conf) {
@@ -383,7 +391,7 @@ void Manager::AsyncPullModel(const std::string& name, OnResponseCallback cb) {
     return;
   }
   std::string url = m_url;
-  m_puller_thread =
+  m_model_puller_thread =
       std::make_shared<std::thread>([this, name, cb = std::move(cb), url]() {
         try {
           Ollama ol;
