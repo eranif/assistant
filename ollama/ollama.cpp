@@ -168,6 +168,11 @@ void Manager::Startup() {
   m_interrupt.store(false, std::memory_order_relaxed);
 }
 
+void Manager::Interrupt() {
+  m_interrupt.store(true, std::memory_order_relaxed);
+  m_ollama.interrupt();
+}
+
 void Manager::SetUrl(const std::string& url) {
   m_url = url;
   m_ollama.setServerURL(url);

@@ -170,7 +170,7 @@ class Manager {
 
   void Shutdown();
   void Startup();
-  void Interrupt() { m_interrupt.store(true, std::memory_order_relaxed); }
+  void Interrupt();
 
  private:
   static bool OnResponse(const ollama::response& resp, void* user_data);
