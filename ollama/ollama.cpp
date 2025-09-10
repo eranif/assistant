@@ -217,6 +217,7 @@ void Manager::CreateAndPushContext(std::optional<ollama::message> msg,
     OLOG(LogLevel::kWarning) << "Missing 'default' model setup in "
                                 "configuration file. Creating and using one.";
     model_options = Config::CreaetDefaultModelOptions();
+    m_model_options.insert({model, model_options});
   } else {
     model_options = where->second;
   }

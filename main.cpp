@@ -14,13 +14,21 @@ using FunctionBuilder = ollama::FunctionBuilder;
 using ResponseParser = ollama::ResponseParser;
 
 namespace {
+
 const std::string_view kCyan = "\033[36m";
 const std::string_view kReset = "\033[0m";
 const std::string_view kYellow = "\033[33m";
+const std::string_view kGray = "\033[37m";
 
 std::string Cyan(std::string_view word) {
   std::stringstream ss;
   ss << kCyan << word << kReset;
+  return ss.str();
+}
+
+std::string Gray(std::string_view word) {
+  std::stringstream ss;
+  ss << kGray << word << kReset;
   return ss.str();
 }
 
@@ -177,7 +185,6 @@ int main(int argc, char** argv) {
   for (const auto& func_obj : tools_json) {
     std::cout << "- " << func_obj["function"]["name"] << std::endl;
   }
-
   ollama_manager.AddSystemMessage("Your name is CodeLite.");
 
   auto models = ollama_manager.List();
@@ -216,20 +223,20 @@ int main(int argc, char** argv) {
 
     std::atomic_bool done{false};
     std::atomic_bool saved_thinking_state{false};
-    size_t thinking_tokens_count{0};
     ollama_manager.AsyncChat(
         prompt,
-        [&done, &saved_thinking_state, &thinking_tokens_count](
-            std::string output, ollama::Reason reason, bool thinking) {
+        [&done, &saved_thinking_state](std::string output,
+                                       ollama::Reason reason, bool thinking) {
           if (saved_thinking_state != thinking) {
             // we switched state
             if (thinking) {
               // the new state is "thinking"
-              std::cout << Cyan("Thinking...") << std::endl;
+              std::cout << Cyan("Thinking... ") << std::endl;
             } else {
-              std::cout << Cyan(" ... done thinking") << std::endl;
+              std::cout << Cyan("... done thinking") << std::endl;
             }
           }
+
           saved_thinking_state = thinking;
           switch (reason) {
             case ollama::Reason::kDone:
@@ -244,15 +251,12 @@ int main(int argc, char** argv) {
               OLOG(OLogLevel::kDebug) << output;
               break;
             case ollama::Reason::kPartialResult:
-              if (thinking && false) {
-                thinking_tokens_count++;
-                std::cout << "\r\033[K";
-                std::cout << Cyan("Thinking ") << " tokens: ("
-                          << thinking_tokens_count << ")";
+              if (thinking) {
+                std::cout << Gray(output);
               } else {
                 std::cout << output;
               }
-	      std::cout.flush();
+              std::cout.flush();
               break;
             case ollama::Reason::kFatalError:
               OLOG(OLogLevel::kError) << output;
