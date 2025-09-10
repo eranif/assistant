@@ -24,11 +24,11 @@ std::optional<ArgType> GetFunctionArg(const ollama::json& args,
   }
 }
 
-#define ASSIGN_FUNC_ARG_OR_RETURN(var, expr)                             \
-  if (!expr.has_value()) {                                               \
-    return ollama::FunctionResult{.isError = true,                       \
-                                  .text = "Missing mandatory argument"}; \
-  }                                                                      \
+#define ASSIGN_FUNC_ARG_OR_RETURN(var, expr)                                 \
+  if (!expr.has_value()) {                                                   \
+    return ollama::FunctionResult{/*.isError =*/ true,                       \
+                                  /*.text =*/ "Missing mandatory argument"}; \
+  }                                                                          \
   var = expr.value();
 
 class Param {
@@ -129,13 +129,13 @@ class FunctionTable {
       if (iter == m_functions.end()) {
         std::stringstream ss;
         ss << "could not find tool: '" << func_call.name << "'";
-        FunctionResult result{.isError = true, .text = ss.str()};
+        FunctionResult result{/*.isError =*/ true, /*.text =*/ ss.str()};
         return result;
       }
       return iter->second->Call(func_call.args);
 
     } catch (std::exception& e) {
-      FunctionResult result{.isError = true, .text = e.what()};
+      FunctionResult result{/*.isError =*/ true, /*.text =*/ e.what()};
       return result;
     }
   }

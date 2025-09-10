@@ -248,9 +248,9 @@ void Manager::CreateAndPushContext(std::optional<ollama::message> msg,
   }
 
   ChatContext ctx = {
-      .callback_ = cb,
-      .request_ = req,
-      .model_ = std::move(model),
+      /*.callback_ =*/ cb,
+      /*.request_ =*/ req,
+      /*.model_ =*/ std::move(model),
   };
   m_queue.PushBack(std::make_shared<ChatContext>(ctx));
 }
@@ -369,7 +369,7 @@ std::optional<std::vector<std::string>> Manager::GetModelCapabilitiesString(
 
   auto& j = opt.value();
   try {
-    return j["capabilities"];
+    return std::vector<std::string>{j["capabilities"]};
   } catch (...) {
     return std::nullopt;
   }
