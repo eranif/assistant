@@ -224,7 +224,7 @@ std::optional<Config> Config::FromContent(const std::string& content) {
       if (config.m_model_options_map.count("default") == 0) {
         // No default model options, add one.
         config.m_model_options_map.insert(
-            {"default", CreaetDefaultModelOptions()});
+            {"default", CreateDefaultModelOptions()});
       }
     }
     return config;
@@ -235,7 +235,7 @@ std::optional<Config> Config::FromContent(const std::string& content) {
   }
 }
 
-ModelOptions Config::CreaetDefaultModelOptions() {
+ModelOptions Config::CreateDefaultModelOptions() {
   using namespace nlohmann::literals;
   ModelOptions mo;
   mo.name = "default";

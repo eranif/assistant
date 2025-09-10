@@ -257,7 +257,7 @@ void ClientBase::ApplyConfig(const assistant::Config* conf) {
   m_windows_size.store(conf->GetHistorySize());
   m_function_table.ReloadMCPServers(conf);
   m_model_options.set_value(conf->GetModelOptionsMap());
-  m_default_model_options.set_value(Config::CreaetDefaultModelOptions());
+  m_default_model_options.set_value(Config::CreateDefaultModelOptions());
   m_http_headers.set_value(endpoint->GetHeaders());
   m_server_timeout.set_value(conf->GetServerTimeoutSettings());
   auto iter = conf->GetModelOptionsMap().find("default");

@@ -91,7 +91,7 @@ class Config {
   ~Config() = default;
   static std::optional<Config> FromFile(const std::string& filepath);
   static std::optional<Config> FromContent(const std::string& json_content);
-  static ModelOptions CreaetDefaultModelOptions();
+  static ModelOptions CreateDefaultModelOptions();
 
   inline const std::vector<MCPServerConfig>& GetServers() const {
     return m_servers;
