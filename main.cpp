@@ -179,7 +179,6 @@ int main(int argc, char** argv) {
   }
 
   ollama_manager.AddSystemMessage("Your name is CodeLite.");
-  ollama_manager.AddSystemMessage("When thinking, do not exceed 256 tokens.");
 
   auto models = ollama_manager.List();
   std::cout << "Available models:" << std::endl;
@@ -253,6 +252,7 @@ int main(int argc, char** argv) {
               } else {
                 std::cout << output;
               }
+	      std::cout.flush();
               break;
             case ollama::Reason::kFatalError:
               OLOG(OLogLevel::kError) << output;
