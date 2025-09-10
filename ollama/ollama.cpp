@@ -26,19 +26,36 @@ void Manager::WorkerMain(Manager* manager) {
 void Manager::ProcessContext(std::shared_ptr<ChatContext> context) {
   try {
     OLOG(LogLevel::kDebug) << "==> " << context->request_;
-    m_ollama.chat(context->request_, &Manager::OnResponse, this);
+
+    std::string model_name = context->request_["model"].get<std::string>();
+
+    // Prepare chat user data.
+    ChatUserData user_data{.manager = this, .model = model_name};
+    user_data.model_can_think =
+        ModelHasCapability(model_name, ModelCapabilities::kThinking);
+    if (user_data.model_can_think) {
+      auto iter = m_model_options.find(model_name);
+      if (iter != m_model_options.end()) {
+        const auto& mo = iter->second;
+        user_data.thinking_start_tag = mo.think_start_tag;
+        user_data.thinking_end_tag = mo.think_end_tag;
+      }
+    }
+
+    m_ollama.chat(context->request_, &Manager::OnResponse,
+                  static_cast<void*>(&user_data));
     if (!context->func_calls_.empty()) {
       context->InvokeTools(this);
     }
   } catch (std::exception& e) {
-    context->callback_(e.what(), Reason::kFatalError);
-    m_queue.Clear();
+    context->callback_(e.what(), Reason::kFatalError, false);
+    SoftReset();
   }
 }
 
-bool Manager::OnResponse(const ollama::response& resp, void* user_data) {
-  Manager* manager = reinterpret_cast<Manager*>(user_data);
-  std::shared_ptr<ChatContext> req = manager->m_queue.Top();
+bool Manager::HandleResponse(const ollama::response& resp,
+                             ChatUserData& chat_user_data) {
+  std::shared_ptr<ChatContext> req = m_queue.Top();
   auto calls = ResponseParser::GetTools(resp);
   bool is_done = ResponseParser::IsDone(resp);
   if (calls.has_value() && !calls.value().empty()) {
@@ -55,31 +72,52 @@ bool Manager::OnResponse(const ollama::response& resp, void* user_data) {
                       ? Reason::kDone
                       : Reason::kPartialResult;
 
-    if (content.has_value()) {
-      req->callback_(content.value(), reason);
-    } else if (is_done) {
-      req->callback_({}, reason);
+    bool token_is_part_of_thinking_process = chat_user_data.thinking;
+    if (chat_user_data.model_can_think && content.has_value()) {
+      if (chat_user_data.thinking &&
+          content.value() == chat_user_data.thinking_end_tag) {
+        // we change the inner state to "not thinking"
+        // but we want this token to be reported as "thinking" to the caller.
+        chat_user_data.thinking = false;
+        token_is_part_of_thinking_process = true;
+      } else if (!chat_user_data.thinking &&
+                 content.value() == chat_user_data.thinking_start_tag) {
+        // Thinking process started.
+        chat_user_data.thinking = true;
+        token_is_part_of_thinking_process = true;
+      }
     }
 
     if (content.has_value()) {
-      manager->m_current_response += content.value();
+      req->callback_(content.value(), reason,
+                     token_is_part_of_thinking_process);
+    } else if (is_done) {
+      req->callback_({}, reason, token_is_part_of_thinking_process);
+    }
+
+    if (content.has_value()) {
+      m_current_response += content.value();
     }
 
     switch (reason) {
       case Reason::kDone:
       case Reason::kFatalError: {
         // Store the AI response, as a message in our history.
-        ollama::message msg{std::string{kAssistantRole},
-                            manager->m_current_response};
+        ollama::message msg{std::string{kAssistantRole}, m_current_response};
         OLOG(LogLevel::kDebug) << "<== " << msg;
-        manager->AddMessage(std::move(msg));
-        manager->m_current_response.clear();
+        AddMessage(std::move(msg));
+        m_current_response.clear();
       } break;
       default:
         break;
     }
   }
   return !is_done;
+}
+
+bool Manager::OnResponse(const ollama::response& resp, void* user_data) {
+  ChatUserData* cud = reinterpret_cast<ChatUserData*>(user_data);
+  return cud->manager->HandleResponse(resp, *cud);
 }
 
 Manager& Manager::GetInstance() {
@@ -128,11 +166,15 @@ void Manager::SetUrl(const std::string& url) {
   m_ollama.setServerURL(url);
 }
 
-void Manager::Reset() {
+void Manager::SoftReset() {
   m_queue.Clear();
-  m_function_table.Clear();
   m_messages.clear();
   m_current_response.clear();
+}
+
+void Manager::Reset() {
+  SoftReset();
+  m_function_table.Clear();
   ClearSystemMessages();
 }
 
@@ -163,7 +205,7 @@ void Manager::CreateAndPushContext(std::optional<ollama::message> msg,
                                    OnResponseCallback cb, std::string model) {
   ollama::options opts;
 
-  std::optional<bool> think;
+  std::optional<bool> think, hidethinking;
   auto where = m_model_options.find(model);
   if (where == m_model_options.end()) {
     // Can't fail. We always include the "default"
@@ -182,6 +224,7 @@ void Manager::CreateAndPushContext(std::optional<ollama::message> msg,
     opts[name] = value;
   }
   think = model_options.think;
+  hidethinking = model_options.hidethinking;
 
   AddMessage(msg);
   auto history = GetMessages();
@@ -190,6 +233,10 @@ void Manager::CreateAndPushContext(std::optional<ollama::message> msg,
   ollama::request req{model, history, opts, true};
   if (think.has_value()) {
     req["think"] = think.value();
+  }
+
+  if (hidethinking.has_value()) {
+    req["hidethinking"] = hidethinking.value();
   }
 
   if (ModelHasCapability(model, ModelCapabilities::kTooling)) {
@@ -222,11 +269,11 @@ void ChatContext::InvokeTools(Manager* manager) {
         ss << std::setw(2) << "  " << name << " => " << value << "\n";
       }
 
-      callback_(ss.str(), Reason::kLogNotice);
+      callback_(ss.str(), Reason::kLogNotice, false);
       auto result = manager->m_function_table.Call(func_call);
       ss = {};
       ss << "Tool output: " << result;
-      callback_(ss.str(), Reason::kLogNotice);
+      callback_(ss.str(), Reason::kLogNotice, false);
 
       ss = {};
       // Add the tool response
@@ -287,6 +334,10 @@ std::optional<ModelCapabilities> Manager::GetModelCapabilities(
   }
 
   auto& j = opt.value();
+  OLOG(LogLevel::kTrace) << "Model info:";
+  OLOG(LogLevel::kTrace) << std::setw(2) << j["capabilities"];
+  OLOG(LogLevel::kTrace) << std::setw(2) << j["model_info"];
+
   ModelCapabilities flags{ModelCapabilities::kNone};
   try {
     std::vector<std::string> capabilities = j["capabilities"];
@@ -327,7 +378,7 @@ void Manager::AsyncPullModel(const std::string& name, OnResponseCallback cb) {
   bool expected{false};
   // If m_puller_busy is == "expected", change it to "true" and return true.
   if (!m_puller_busy.compare_exchange_strong(expected, true)) {
-    cb("Server is busy pulling another model", Reason::kFatalError);
+    cb("Server is busy pulling another model", Reason::kFatalError, false);
     return;
   }
   std::string url = m_url;
@@ -338,12 +389,12 @@ void Manager::AsyncPullModel(const std::string& name, OnResponseCallback cb) {
           std::stringstream ss;
           ol.setServerURL(url);
           ss << "Pulling model: " << name;
-          cb(ss.str(), Reason::kLogNotice);
+          cb(ss.str(), Reason::kLogNotice, false);
           ol.pull_model(name, true);
-          cb("Model successfully pulled.", Reason::kDone);
+          cb("Model successfully pulled.", Reason::kDone, false);
           m_puller_busy.store(false);
         } catch (std::exception& e) {
-          cb(e.what(), Reason::kFatalError);
+          cb(e.what(), Reason::kFatalError, false);
         }
       });
 }

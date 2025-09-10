@@ -179,9 +179,7 @@ int main(int argc, char** argv) {
   }
 
   ollama_manager.AddSystemMessage("Your name is CodeLite.");
-  ollama_manager.AddSystemMessage(
-      "Always try to use tools, do not ask for permission in order to do "
-      "this.");
+  ollama_manager.AddSystemMessage("When thinking, do not exceed 256 tokens.");
 
   auto models = ollama_manager.List();
   std::cout << "Available models:" << std::endl;
@@ -212,17 +210,28 @@ int main(int argc, char** argv) {
       break;
     } else if (prompt == "clear" || prompt == "reset") {
       // Clear the session
-      ollama_manager.Reset();
+      ollama_manager.SoftReset();
       std::cout << "Session cleared." << std::endl;
       continue;
     }
 
     std::atomic_bool done{false};
+    std::atomic_bool saved_thinking_state{false};
+    size_t thinking_tokens_count{0};
     ollama_manager.AsyncChat(
         prompt,
-        [&done](std::string output, ollama::Reason reason) {
-          OLOG(OLogLevel::kTrace)
-              << "Chat callback called: reason: " << static_cast<int>(reason);
+        [&done, &saved_thinking_state, &thinking_tokens_count](
+            std::string output, ollama::Reason reason, bool thinking) {
+          if (saved_thinking_state != thinking) {
+            // we switched state
+            if (thinking) {
+              // the new state is "thinking"
+              std::cout << Cyan("Thinking...") << std::endl;
+            } else {
+              std::cout << Cyan(" ... done thinking") << std::endl;
+            }
+          }
+          saved_thinking_state = thinking;
           switch (reason) {
             case ollama::Reason::kDone:
               std::cout << std::endl;
@@ -236,7 +245,14 @@ int main(int argc, char** argv) {
               OLOG(OLogLevel::kDebug) << output;
               break;
             case ollama::Reason::kPartialResult:
-              std::cout << output;
+              if (thinking && false) {
+                thinking_tokens_count++;
+                std::cout << "\r\033[K";
+                std::cout << Cyan("Thinking ") << " tokens: ("
+                          << thinking_tokens_count << ")";
+              } else {
+                std::cout << output;
+              }
               break;
             case ollama::Reason::kFatalError:
               OLOG(OLogLevel::kError) << output;

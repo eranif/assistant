@@ -116,13 +116,17 @@ std::optional<Config> Config::FromContent(const std::string& content) {
         if (j.contains("think") && j["think"].is_boolean()) {
           mo.think = j["think"];
         }
+        if (j.contains("hidethinking") && j["hidethinking"].is_boolean()) {
+          mo.hidethinking = j["hidethinking"];
+        }
+        if (j.contains("think_start_tag")) {
+          mo.think_start_tag = j["think_start_tag"].get<std::string>();
+        }
+        if (j.contains("think_end_tag")) {
+          mo.think_end_tag = j["think_end_tag"].get<std::string>();
+        }
         config.m_model_options_map.insert({mo.name, mo});
-        OLOG(LogLevel::kInfo)
-            << "Loaded options for model: " << mo.name << " => " << mo.options
-            << ", think: "
-            << (mo.think.has_value() ? (mo.think.value() ? std::string{"true"}
-                                                         : std::string{"false"})
-                                     : std::string{"null"});
+        OLOG(LogLevel::kInfo) << mo;
       }
 
       if (config.m_model_options_map.count("default") == 0) {

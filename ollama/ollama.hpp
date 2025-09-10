@@ -35,7 +35,7 @@ enum class ModelCapabilities {
 
 ENUM_CLASS_BITWISE_OPERATOS(ModelCapabilities);
 
-using OnResponseCallback = std::function<void(std::string, Reason)>;
+using OnResponseCallback = std::function<void(std::string, Reason, bool)>;
 
 const std::string kDefaultModel = "qwen2.5:7b";
 
@@ -50,6 +50,16 @@ struct ChatContext {
   std::vector<std::pair<ollama::message, std::vector<FunctionCall>>>
       func_calls_;
   void InvokeTools(Manager* manager);
+};
+
+/// We pass this struct to provide context in the callback.
+struct ChatUserData {
+  Manager* manager{nullptr};
+  std::string model;
+  bool thinking{false};
+  bool model_can_think{false};
+  std::string thinking_start_tag{"<think>"};
+  std::string thinking_end_tag{"</think>"};
 };
 
 struct ChatContextQueue {
@@ -106,8 +116,12 @@ class Manager {
   /// Clear all system messages.
   void ClearSystemMessages();
 
-  /// Clear the current session.
+  /// Perform a hard reset - this clears everything:
+  /// Function table, history, buffered messages etc.
   void Reset();
+
+  /// Clear the current session.
+  void SoftReset();
 
   /// Start a chat. All responses will be directed to the `cb`. Note that `cb`
   /// might get called from a different thread.
@@ -158,6 +172,8 @@ class Manager {
  private:
   static bool OnResponse(const ollama::response& resp, void* user_data);
   static void WorkerMain(Manager* manager);
+  bool HandleResponse(const ollama::response& resp,
+                      ChatUserData& chat_user_data);
   void ProcessContext(std::shared_ptr<ChatContext> context);
   void CreateAndPushContext(std::optional<ollama::message> msg,
                             OnResponseCallback cb, std::string model);
