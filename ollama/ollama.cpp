@@ -56,6 +56,10 @@ void Manager::ProcessContext(std::shared_ptr<ChatContext> context) {
 bool Manager::HandleResponse(const ollama::response& resp,
                              ChatUserData& chat_user_data) {
   std::shared_ptr<ChatContext> req = m_queue.Top();
+  if (req == nullptr) {
+    OLOG(LogLevel::kError) << "No matching request for the current response!";
+    return false;
+  }
   if (m_interrupt.load(std::memory_order_relaxed)) {
     m_interrupt.store(false, std::memory_order_relaxed);
     req->callback_("Request cancelled by user", ollama::Reason::kCancelled,
