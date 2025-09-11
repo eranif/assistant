@@ -17,6 +17,10 @@ if (OLLAMALIB_WITH_OPENSSL)
   target_link_libraries(mcp-cpp PUBLIC OpenSSL::SSL OpenSSL::Crypto)
 endif ()
 
+if (UNIX OR APPLE)
+  set_target_properties(mcp-cpp PROPERTIES POSITION_INDEPENDENT_CODE ON)
+endif ()
+
 if (CMAKE_CXX_COMPILER_ID
     MATCHES
     "Clang"

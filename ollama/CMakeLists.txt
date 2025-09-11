@@ -36,6 +36,10 @@ if (OLLAMALIB_WITH_OPENSSL)
   endif ()
 endif ()
 
+if (UNIX OR APPLE)
+  set_target_properties(ollamalib PROPERTIES POSITION_INDEPENDENT_CODE ON)
+endif ()
+
 if (WIN32)
   target_link_libraries(ollamalib PUBLIC Ws2_32)
 endif ()
