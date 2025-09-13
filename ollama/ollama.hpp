@@ -60,46 +60,24 @@ struct ChatUserData {
   std::string model;
   bool thinking{false};
   bool model_can_think{false};
+  std::shared_ptr<ChatContext> chat_context{nullptr};
   std::string thinking_start_tag{"<think>"};
   std::string thinking_end_tag{"</think>"};
 };
 
-struct ChatContextQueue {
+struct ChatContextQueue : public std::vector<std::shared_ptr<ChatContext>> {
  public:
-  inline std::shared_ptr<ChatContext> Pop() { return Top(true); }
-  inline std::shared_ptr<ChatContext> Top() { return Top(false); }
-  inline void PushBack(std::shared_ptr<ChatContext> context) {
-    std::unique_lock lk{m_mutex};
-    m_vec.push_back(context);
-  }
+  ChatContextQueue() = default;
+  ~ChatContextQueue() = default;
 
-  inline void Clear() {
-    std::unique_lock lk{m_mutex};
-    m_vec.clear();
-  }
-
-  inline size_t GetSize() const {
-    std::unique_lock lk{m_mutex};
-    return m_vec.size();
-  }
-
-  inline bool IsEmpty() const { return GetSize() == 0; }
-
- private:
-  inline std::shared_ptr<ChatContext> Top(bool pop_it) {
-    std::unique_lock lk{m_mutex};
-    if (m_vec.empty()) {
+  inline std::shared_ptr<ChatContext> pop_front_and_return() {
+    if (empty()) {
       return nullptr;
     }
-    auto p = m_vec.front();
-    if (pop_it) {
-      m_vec.erase(m_vec.begin());
-    }
-    return p;
+    auto fr = front();
+    erase(begin());
+    return fr;
   }
-
-  mutable std::mutex m_mutex;
-  std::vector<std::shared_ptr<ChatContext>> m_vec;
 };
 
 class Manager {
@@ -126,9 +104,8 @@ class Manager {
   void SoftReset();
 
   /// Start a chat. All responses will be directed to the `cb`. Note that `cb`
-  /// might get called from a different thread.
-  void AsyncChat(std::string msg, OnResponseCallback cb,
-                 std::string model = kDefaultModel);
+  void Chat(std::string msg, OnResponseCallback cb,
+            std::string model = kDefaultModel);
 
   /// Load configuration object into the manager.
   void ApplyConfig(const ollama::Config* conf);
@@ -143,7 +120,7 @@ class Manager {
   json ListJSON();
 
   /// Pull model from Ollama registry
-  void AsyncPullModel(const std::string& name, OnResponseCallback cb);
+  void PullModel(const std::string& name, OnResponseCallback cb);
 
   std::optional<json> GetModelInfo(const std::string& model);
   /// Return a bitwise operator model capabilities.
@@ -170,11 +147,12 @@ class Manager {
 
   void Shutdown();
   void Startup();
+  /// This method should be called from another thread.
   void Interrupt();
 
  private:
   static bool OnResponse(const ollama::response& resp, void* user_data);
-  static void WorkerMain(Manager* manager);
+  void ProcessQueue();
   bool HandleResponse(const ollama::response& resp,
                       ChatUserData& chat_user_data);
   void ProcessContext(std::shared_ptr<ChatContext> context);
@@ -187,10 +165,6 @@ class Manager {
   Ollama m_ollama;
   FunctionTable m_function_table;
   ChatContextQueue m_queue;
-  std::shared_ptr<std::thread> m_worker;
-  std::shared_ptr<std::thread> m_model_puller_thread;
-  std::atomic_bool m_shutdown_flag{false};
-  std::atomic_bool m_puller_busy{false};
   std::string m_url;
   size_t m_windows_size{20};
   size_t m_context_size{32 * 1024};

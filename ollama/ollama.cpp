@@ -11,15 +11,13 @@ namespace ollama {
 constexpr std::string_view kDefaultOllamaUrl = "http://127.0.0.1:11434";
 constexpr std::string_view kAssistantRole = "assistant";
 
-void Manager::WorkerMain(Manager* manager) {
-  auto& queue = manager->m_queue;
-  while (!manager->m_shutdown_flag.load(std::memory_order_relaxed)) {
-    if (queue.IsEmpty()) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
-      continue;
+void Manager::ProcessQueue() {
+  while (!m_queue.empty()) {
+    if (m_interrupt) {
+      SoftReset();
+      break;
     }
-    manager->ProcessContext(queue.Top());
-    queue.Pop();
+    ProcessContext(m_queue.pop_front_and_return());
   }
 }
 
@@ -30,7 +28,8 @@ void Manager::ProcessContext(std::shared_ptr<ChatContext> context) {
     std::string model_name = context->request_["model"].get<std::string>();
 
     // Prepare chat user data.
-    ChatUserData user_data{.manager = this, .model = model_name};
+    ChatUserData user_data{
+        .manager = this, .model = model_name, .chat_context = context};
     user_data.model_can_think =
         ModelHasCapability(model_name, ModelCapabilities::kThinking);
     if (user_data.model_can_think) {
@@ -55,15 +54,12 @@ void Manager::ProcessContext(std::shared_ptr<ChatContext> context) {
 
 bool Manager::HandleResponse(const ollama::response& resp,
                              ChatUserData& chat_user_data) {
-  std::shared_ptr<ChatContext> req = m_queue.Top();
-  if (req == nullptr) {
-    OLOG(LogLevel::kError) << "No matching request for the current response!";
-    return false;
-  }
-  if (m_interrupt.load(std::memory_order_relaxed)) {
-    m_interrupt.store(false, std::memory_order_relaxed);
+  std::shared_ptr<ChatContext> req = chat_user_data.chat_context;
+  if (m_interrupt) {
+    m_interrupt = false;
     req->callback_("Request cancelled by user", ollama::Reason::kCancelled,
                    false);
+    SoftReset();
     return false;
   }
   auto calls = ResponseParser::GetTools(resp);
@@ -150,30 +146,12 @@ Manager::Manager() {
 
 Manager::~Manager() { Shutdown(); }
 
-void Manager::Shutdown() {
-  m_queue.Clear();
-  m_interrupt.store(true, std::memory_order_relaxed);
-  m_shutdown_flag.store(true);
-  if (m_worker) {
-    m_worker->join();
-  }
+void Manager::Shutdown() { m_queue.clear(); }
 
-  if (m_model_puller_thread) {
-    m_model_puller_thread->join();
-  }
-  m_puller_busy.store(false);
-  m_worker.reset();
-  m_model_puller_thread.reset();
-}
-
-void Manager::Startup() {
-  m_shutdown_flag.store(false);
-  m_worker.reset(new std::thread(Manager::WorkerMain, this));
-  m_interrupt.store(false, std::memory_order_relaxed);
-}
+void Manager::Startup() { m_interrupt = false; }
 
 void Manager::Interrupt() {
-  m_interrupt.store(true, std::memory_order_relaxed);
+  m_interrupt = true;
   m_ollama.interrupt();
 }
 
@@ -183,16 +161,17 @@ void Manager::SetUrl(const std::string& url) {
 }
 
 void Manager::SoftReset() {
-  m_queue.Clear();
+  m_queue.clear();
   m_messages.clear();
   m_current_response.clear();
+  m_interrupt = false;
 }
 
 void Manager::Reset() {
   SoftReset();
   m_function_table.Clear();
   ClearSystemMessages();
-  m_interrupt.store(false, std::memory_order_relaxed);
+  m_interrupt = false;
 }
 
 void Manager::ApplyConfig(const ollama::Config* conf) {
@@ -212,10 +191,10 @@ void Manager::ApplyConfig(const ollama::Config* conf) {
   SetHeaders(conf->GetHeaders());
 }
 
-void Manager::AsyncChat(std::string msg, OnResponseCallback cb,
-                        std::string model) {
+void Manager::Chat(std::string msg, OnResponseCallback cb, std::string model) {
   ollama::message ollama_message{"user", msg};
   CreateAndPushContext(ollama_message, cb, model);
+  ProcessQueue();
 }
 
 void Manager::CreateAndPushContext(std::optional<ollama::message> msg,
@@ -269,7 +248,7 @@ void Manager::CreateAndPushContext(std::optional<ollama::message> msg,
       .request_ = req,
       .model_ = std::move(model),
   };
-  m_queue.PushBack(std::make_shared<ChatContext>(ctx));
+  m_queue.push_back(std::make_shared<ChatContext>(ctx));
 }
 
 void ChatContext::InvokeTools(Manager* manager) {
@@ -278,8 +257,14 @@ void ChatContext::InvokeTools(Manager* manager) {
   }
 
   for (auto [msg, calls] : func_calls_) {
+    if (manager->m_interrupt) {
+      return;
+    }
     manager->AddMessage(std::move(msg));
     for (auto func_call : calls) {
+      if (manager->m_interrupt) {
+        return;
+      }
       std::stringstream ss;
       ss << "Invoking tool: '" << func_call.name << "', args:\n";
       auto args = func_call.args.items();
@@ -392,29 +377,18 @@ std::optional<std::vector<std::string>> Manager::GetModelCapabilitiesString(
   }
 }
 
-void Manager::AsyncPullModel(const std::string& name, OnResponseCallback cb) {
-  bool expected{false};
-  // If m_puller_busy is == "expected", change it to "true" and return true.
-  if (!m_puller_busy.compare_exchange_strong(expected, true)) {
-    cb("Server is busy pulling another model", Reason::kFatalError, false);
-    return;
+void Manager::PullModel(const std::string& name, OnResponseCallback cb) {
+  try {
+    Ollama ol;
+    std::stringstream ss;
+    ol.setServerURL(m_url);
+    ss << "Pulling model: " << name;
+    cb(ss.str(), Reason::kLogNotice, false);
+    ol.pull_model(name, true);
+    cb("Model successfully pulled.", Reason::kDone, false);
+  } catch (std::exception& e) {
+    cb(e.what(), Reason::kFatalError, false);
   }
-  std::string url = m_url;
-  m_model_puller_thread =
-      std::make_shared<std::thread>([this, name, cb = std::move(cb), url]() {
-        try {
-          Ollama ol;
-          std::stringstream ss;
-          ol.setServerURL(url);
-          ss << "Pulling model: " << name;
-          cb(ss.str(), Reason::kLogNotice, false);
-          ol.pull_model(name, true);
-          cb("Model successfully pulled.", Reason::kDone, false);
-          m_puller_busy.store(false);
-        } catch (std::exception& e) {
-          cb(e.what(), Reason::kFatalError, false);
-        }
-      });
 }
 
 void Manager::AddMessage(std::optional<ollama::message> msg) {

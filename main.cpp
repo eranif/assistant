@@ -223,7 +223,7 @@ int main(int argc, char** argv) {
 
     std::atomic_bool done{false};
     std::atomic_bool saved_thinking_state{false};
-    ollama_manager.AsyncChat(
+    ollama_manager.Chat(
         prompt,
         [&done, &saved_thinking_state](std::string output,
                                        ollama::Reason reason, bool thinking) {
@@ -269,9 +269,6 @@ int main(int argc, char** argv) {
           }
         },
         model_name);
-    while (!done.load(std::memory_order_relaxed)) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
   }
   return 0;
 }
