@@ -6,6 +6,7 @@ add_library(
   mcp_tool.cpp
   mcp_stdio_client.cpp
   mcp_sse_client.cpp)
+target_compile_options(mcp-cpp PRIVATE -fPIC)
 
 target_compile_options(mcp-cpp PUBLIC -Wall)
 target_link_libraries(mcp-cpp PUBLIC ${CMAKE_THREAD_LIBS_INIT})

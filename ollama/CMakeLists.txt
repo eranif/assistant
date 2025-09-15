@@ -24,6 +24,8 @@ add_library(
   ${CMAKE_CURRENT_LIST_DIR}/config.hpp)
 
 target_compile_options(ollamalib PUBLIC -Wall)
+target_compile_options(ollamalib PRIVATE -fPIC)
+
 target_include_directories(ollamalib PUBLIC ${OLLAMLIB_ROOT})
 target_include_directories(ollamalib PRIVATE ${CMAKE_CURRENT_LIST_DIR})
 target_link_libraries(ollamalib PUBLIC mcp-cpp)
