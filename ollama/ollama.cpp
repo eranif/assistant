@@ -371,7 +371,7 @@ std::optional<std::vector<std::string>> Manager::GetModelCapabilitiesString(
 
   auto& j = opt.value();
   try {
-    return j["capabilities"];
+    return std::vector<std::string>{j["capabilities"]};
   } catch (...) {
     return std::nullopt;
   }
