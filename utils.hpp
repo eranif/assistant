@@ -2,6 +2,7 @@
 
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -56,6 +57,22 @@ inline size_t GetChoiceFromUser(const std::vector<std::string>& choices) {
     }
     return num;
   }
+}
+
+Result<std::string, std::string> ReadFileContent(const std::string& path) {
+  std::ifstream file(path, std::ios::binary);  // open in binary mode
+  if (!file) {
+    std::stringstream ss;
+    ss << "Error: could not open file '" << path << "'\n";
+    return Err(ss.str());
+  }
+
+  // Read the file into a stringstream
+  std::ostringstream buffer;
+  buffer << file.rdbuf();  // read the whole stream
+
+  // Return the string
+  return buffer.str();
 }
 
 inline std::string GetTextFromUser(const std::string& prompt) {

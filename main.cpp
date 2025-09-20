@@ -208,17 +208,44 @@ int main(int argc, char** argv) {
             << " or " << Cyan("exit") << " to exit." << std::endl;
   std::cout << Yellow("#") << " Type " << Cyan("clear") << " or "
             << Cyan("reset") << " to clear the session." << std::endl;
+  std::cout << Yellow("#") << " Type " << Cyan("/info")
+            << " to get model information." << std::endl;
+  std::cout << Yellow("#") << " To read prompt from a file, use " << Cyan("@")
+            << "filename followed by ENTER" << std::endl;
   std::cout << "" << std::endl;
 
   while (true) {
     std::string prompt = GetTextFromUser("Ask me anything");
     if (prompt == "q" || prompt == "exit" || prompt == "quit") {
       break;
+    } else if (prompt == "/info") {
+      auto model_options = ollama_manager.GetModelInfo(model_name);
+      if (model_options.has_value()) {
+        std::cout << std::setw(2) << model_options.value()["capabilities"]
+                  << std::endl;
+        std::cout << std::setw(2) << model_options.value()["model_info"]
+                  << std::endl;
+      } else {
+        std::cerr << "Could not loading information for model: " << model_name
+                  << std::endl;
+      }
+      continue;
     } else if (prompt == "clear" || prompt == "reset") {
       // Clear the session
       ollama_manager.SoftReset();
       std::cout << "Session cleared." << std::endl;
       continue;
+    }
+
+    if (prompt.starts_with("@")) {
+      auto content = ReadFileContent(prompt.substr(1));
+      if (!content.IsOk()) {
+        std::cerr << "Error reading prompt. " << content.GetError()
+                  << std::endl;
+        continue;
+      } else {
+        prompt = content.GetValue();
+      }
     }
 
     std::atomic_bool done{false};
