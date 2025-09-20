@@ -33,6 +33,7 @@ enum class ModelCapabilities {
   kTooling = (1 << 1),
   kCompletion = (1 << 2),
   kInsert = (1 << 3),
+  kVision = (1 << 4),
 };
 
 ENUM_CLASS_BITWISE_OPERATOS(ModelCapabilities);

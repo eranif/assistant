@@ -353,6 +353,8 @@ std::optional<ModelCapabilities> Manager::GetModelCapabilities(
         flags |= ModelCapabilities::kThinking;
       } else if (c == "insert") {
         flags |= ModelCapabilities::kInsert;
+      } else if (c == "vision") {
+        flags |= ModelCapabilities::kVision;
       } else {
         std::cerr << "unknown capability: " << c << std::endl;
       }
