@@ -178,7 +178,12 @@ void Manager::ApplyConfig(const ollama::Config* conf) {
   if (!conf) {
     return;
   }
-  SetUrl(conf->GetUrl());
+  auto endpoint = conf->GetEndpoint();
+  if (!endpoint) {
+    OLOG(LogLevel::kError) << "No endpoint is found!";
+    return;
+  }
+  SetUrl(endpoint->GetUrl());
   m_windows_size = conf->GetHistorySize();
   m_function_table.ReloadMCPServers(conf);
   m_model_options = conf->GetModelOptionsMap();
@@ -188,7 +193,7 @@ void Manager::ApplyConfig(const ollama::Config* conf) {
     m_default_model_options = iter->second;
   }
   SetLogLevel(conf->GetLogLevel());
-  SetHeaders(conf->GetHeaders());
+  SetHeaders(endpoint->GetHeaders());
 }
 
 void Manager::Chat(std::string msg, OnResponseCallback cb, std::string model) {

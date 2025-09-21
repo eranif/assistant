@@ -60,10 +60,10 @@ std::optional<Config> Config::FromContent(const std::string& content) {
   try {
     Config config;
     json parsed_data = json::parse(content);
-    if (parsed_data.contains("servers")) {
+    if (parsed_data.contains("mcp_servers")) {
       // MCP servers
-      auto servers = parsed_data["servers"];
-      for (const auto& [name, server] : servers.items()) {
+      auto mcp_servers = parsed_data["mcp_servers"];
+      for (const auto& [name, server] : mcp_servers.items()) {
         MCPServerConfig server_config;
         server_config.name = name;
         server_config.enabled =
@@ -92,9 +92,64 @@ std::optional<Config> Config::FromContent(const std::string& content) {
       }
     }
 
+    if (parsed_data.contains("endpoints")) {
+      OLOG(LogLevel::kDebug) << "Parsing endpoints...";
+      auto endpoints = parsed_data["endpoints"];
+      for (const auto& [endpoint_url, endpoint_json] : endpoints.items()) {
+        config.endpoints_.push_back(std::make_shared<Endpoint>());
+        auto endpoint = config.endpoints_.back();
+        endpoint->url_ = endpoint_url;
+        if (endpoint_json.contains("http_headers")) {
+          auto http_headers = endpoint_json["http_headers"];
+          for (const auto& [header_name, value] : http_headers.items()) {
+            endpoint->headers_.insert({header_name, value.get<std::string>()});
+          }
+        }
+        if (endpoint_json.contains("type") &&
+            endpoint_json["type"].is_string()) {
+          endpoint->type_ = endpoint_json["type"].get<std::string>();
+        }
+        if (endpoint_json.contains("active") &&
+            endpoint_json["active"].is_boolean()) {
+          endpoint->active_ = endpoint_json["active"].get<bool>();
+        }
+      }
+    }
+
+    // Always ensure that we have at least 1 endpoint.
+    if (config.endpoints_.empty()) {
+      config.endpoints_.push_back(std::make_shared<Endpoint>());
+      auto endpoint = config.endpoints_.back();
+      endpoint->active_ = true;
+      endpoint->url_ = "http://127.0.0.1:11434";
+      endpoint->headers_.insert({"Host", "127.0.0.1"});
+      endpoint->type_ = "ollama";
+    }
+
+    // Make sure we have exactly 1 active endpoint.
+    bool found_active{false};
+    for (auto endpoint : config.endpoints_) {
+      if (!found_active) {
+        if (endpoint->active_) {
+          found_active = true;
+        }
+      } else {
+        // we already have an active one.
+        endpoint->active_ = false;
+      }
+    }
+
+    if (!found_active) {
+      // Make the first endpoint active.
+      config.endpoints_.front()->active_ = true;
+    }
+
+    // print the endpoints.
+    for (auto endpoint : config.endpoints_) {
+      OLOG(LogLevel::kInfo) << *endpoint;
+    }
+
     // Global setup
-    config.m_url = GetValueFromJsonWithDefault<std::string>(
-        parsed_data, "server_url", "http://127.0.0.1:11434");
     config.m_history_size =
         GetValueFromJsonWithDefault<size_t>(parsed_data, "history_size", 50);
 
@@ -133,13 +188,6 @@ std::optional<Config> Config::FromContent(const std::string& content) {
         // No default model options, add one.
         config.m_model_options_map.insert(
             {"default", CreaetDefaultModelOptions()});
-      }
-    }
-
-    if (parsed_data.contains("http_headers")) {
-      auto http_headers = parsed_data["http_headers"];
-      for (const auto& [name, value] : http_headers.items()) {
-        config.headers_.insert({name, value.get<std::string>()});
       }
     }
     return config;
