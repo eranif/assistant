@@ -1,184 +1,54 @@
 #pragma once
 
 #include <functional>
-#include <thread>
 #include <unordered_map>
 
-#include "macros.hpp"
-#include "ollama/function.hpp"
-#include "ollama/function_base.hpp"
-#include "ollama/helpers.hpp"
-#include "ollama/model_options.hpp"
-#include "ollama/ollamalib.hpp"
+#include "ollama/client_base.hpp"
 
 namespace ollama {
 
-enum class Reason {
-  /// The current reason completed successfully.
-  kDone,
-  /// More data to come.
-  kPartialResult,
-  /// A non recoverable error.
-  kFatalError,
-  /// Log messages - NOTICE
-  kLogNotice,
-  /// Log messages - DEBUG
-  kLogDebug,
-  /// Request cancelled by the user.
-  kCancelled,
-};
-
-enum class ModelCapabilities {
-  kNone = (0),
-  kThinking = (1 << 0),
-  kTooling = (1 << 1),
-  kCompletion = (1 << 2),
-  kInsert = (1 << 3),
-  kVision = (1 << 4),
-};
-
-ENUM_CLASS_BITWISE_OPERATOS(ModelCapabilities);
-
-using OnResponseCallback = std::function<void(std::string, Reason, bool)>;
-
-const std::string kDefaultModel = "qwen2.5:7b";
-
-class Manager;
-struct ChatContext {
-  OnResponseCallback callback_;
-  ollama::request request_;
-  std::string model_;
-  /// If a tool(s) invocation is required, it will be placed here. Once we
-  /// invoke the tool and push the tool response + the request to the history
-  /// and remove it from here.
-  std::vector<std::pair<ollama::message, std::vector<FunctionCall>>>
-      func_calls_;
-  void InvokeTools(Manager* manager);
-};
-
-/// We pass this struct to provide context in the callback.
-struct ChatUserData {
-  Manager* manager{nullptr};
-  std::string model;
-  bool thinking{false};
-  bool model_can_think{false};
-  std::shared_ptr<ChatContext> chat_context{nullptr};
-  std::string thinking_start_tag{"<think>"};
-  std::string thinking_end_tag{"</think>"};
-};
-
-struct ChatContextQueue : public std::vector<std::shared_ptr<ChatContext>> {
+class Client : public ClientBase {
  public:
-  ChatContextQueue() = default;
-  ~ChatContextQueue() = default;
-
-  inline std::shared_ptr<ChatContext> pop_front_and_return() {
-    if (empty()) {
-      return nullptr;
-    }
-    auto fr = front();
-    erase(begin());
-    return fr;
-  }
-};
-
-class Manager {
- public:
-  Manager();
-  ~Manager();
-
-  static Manager& GetInstance();
-  void SetUrl(const std::string& url);
-  void SetHeaders(const std::unordered_map<std::string, std::string>& headers);
-
-  /// Add system message to the prompt. System messages are always sent as part
-  /// of the prompt
-  void AddSystemMessage(const std::string& msg);
-
-  /// Clear all system messages.
-  void ClearSystemMessages();
-
-  /// Perform a hard reset - this clears everything:
-  /// Function table, history, buffered messages etc.
-  void Reset();
-
-  /// Clear the current session.
-  void SoftReset();
+  Client(const std::string& url,
+         const std::unordered_map<std::string, std::string>& headers);
+  ~Client() override;
 
   /// Start a chat. All responses will be directed to the `cb`. Note that `cb`
-  void Chat(std::string msg, OnResponseCallback cb,
-            std::string model = kDefaultModel);
+  void ChatImpl(
+      ollama::request& request,
+      std::function<bool(const ollama::response& resp, void* user_data)>
+          on_response,
+      void* user_data) override;
 
   /// Load configuration object into the manager.
-  void ApplyConfig(const ollama::Config* conf);
+  void ApplyConfig(const ollama::Config* conf) override;
 
   /// Return true if ollama server is running.
-  bool IsRunning();
+  bool IsRunning() override;
 
   /// Return list of models available.
-  std::vector<std::string> List();
+  std::vector<std::string> List() override;
 
   /// Return list of models available using JSON format.
-  json ListJSON();
+  json ListJSON() override;
 
   /// Pull model from Ollama registry
-  void PullModel(const std::string& name, OnResponseCallback cb);
+  void PullModel(const std::string& name, OnResponseCallback cb) override;
 
-  std::optional<json> GetModelInfo(const std::string& model);
+  std::optional<json> GetModelInfo(const std::string& model) override;
   /// Return a bitwise operator model capabilities.
   std::optional<ModelCapabilities> GetModelCapabilities(
-      const std::string& model);
-  /// Return model capabilities as array of strings.
-  std::optional<std::vector<std::string>> GetModelCapabilitiesString(
-      const std::string& model);
+      const std::string& model) override;
 
-  /// Set the number of messages to keep when chatting with the model. The
-  /// implementation uses a FIFO.
-  inline void SetHistorySize(size_t count) { m_windows_size = count; }
-  inline size_t GetHistorySize() const { return m_windows_size; }
-
-  /// Define the context size, default is 32K.
-  inline void SetContextSize(size_t context_size) {
-    m_context_size = context_size;
-  }
-  inline size_t GetContextSize() const { return m_context_size; }
-  inline void SetPreferCPU(bool b) { m_preferCPU = b; }
-  inline bool GetPreferCPU() const { return m_preferCPU; }
-  const FunctionTable& GetFunctionTable() const { return m_function_table; }
-  FunctionTable& GetFunctionTable() { return m_function_table; }
-
-  void Shutdown();
-  void Startup();
   /// This method should be called from another thread.
-  void Interrupt();
+  void Interrupt() override;
 
  private:
-  static bool OnResponse(const ollama::response& resp, void* user_data);
-  void ProcessQueue();
-  bool HandleResponse(const ollama::response& resp,
-                      ChatUserData& chat_user_data);
-  void ProcessContext(std::shared_ptr<ChatContext> context);
-  void CreateAndPushContext(std::optional<ollama::message> msg,
-                            OnResponseCallback cb, std::string model);
-  void AddMessage(std::optional<ollama::message> msg);
-  ollama::messages GetMessages() const;
+  void SetHeadersInternal(
+      const std::unordered_map<std::string, std::string>& headers);
   bool ModelHasCapability(const std::string& model_name, ModelCapabilities c);
 
   Ollama m_ollama;
-  FunctionTable m_function_table;
-  ChatContextQueue m_queue;
-  std::string m_url;
-  size_t m_windows_size{20};
-  size_t m_context_size{32 * 1024};
-  bool m_preferCPU{false};
-  /// Messages that were sent to the AI, will be placed here
-  ollama::messages m_messages;
-  ollama::messages m_system_messages;
-  std::unordered_map<std::string, ModelOptions> m_model_options;
-  ModelOptions m_default_model_options;
-  std::unordered_map<std::string, ModelCapabilities> m_model_capabilities;
-  std::string m_current_response;
-  std::atomic_bool m_interrupt{false};
   friend struct ChatContext;
 };
 }  // namespace ollama

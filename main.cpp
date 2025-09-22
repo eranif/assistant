@@ -145,9 +145,9 @@ int main(int argc, char** argv) {
   //                        [[maybe_unused]] std::string msg) {});
 
   ollama::SetLogLevel(args.log_level);
+  ollama::Client cli("http://127.0.0.1:11434", {});
 
-  ollama::Manager ollama_manager;
-  ollama_manager.GetFunctionTable().Add(
+  cli.GetFunctionTable().Add(
       FunctionBuilder("Open file in editor")
           .SetDescription(
               "Given a file path, open it inside the editor for editing.")
@@ -155,7 +155,7 @@ int main(int argc, char** argv) {
                             "string")
           .SetCallback(OpenFileInEditor)
           .Build());
-  ollama_manager.GetFunctionTable().Add(
+  cli.GetFunctionTable().Add(
       FunctionBuilder("Write file content to disk at a given path")
           .SetDescription("Write file content to disk at a given path. Create "
                           "the file if it does not exist.")
@@ -167,12 +167,12 @@ int main(int argc, char** argv) {
   if (!args.config_file.empty()) {
     auto conf = ollama::Config::FromFile(args.config_file);
     if (conf.has_value()) {
-      ollama_manager.ApplyConfig(&conf.value());
+      cli.ApplyConfig(&conf.value());
     }
   }
 
   OLOG(ollama::LogLevel::kInfo) << "Checking if ollama is running...";
-  if (!ollama_manager.IsRunning()) {
+  if (!cli.IsRunning()) {
     OLOG(OLogLevel::kError)
         << "Make sure ollama server is running and try again";
     return 1;
@@ -181,13 +181,13 @@ int main(int argc, char** argv) {
   std::cout << "Available functions:" << std::endl;
   std::cout << "====================" << std::endl;
 
-  ollama::json tools_json = ollama_manager.GetFunctionTable().ToJSON();
+  ollama::json tools_json = cli.GetFunctionTable().ToJSON();
   for (const auto& func_obj : tools_json) {
     std::cout << "- " << func_obj["function"]["name"] << std::endl;
   }
-  ollama_manager.AddSystemMessage("Your name is CodeLite.");
+  cli.AddSystemMessage("Your name is CodeLite.");
 
-  auto models = ollama_manager.List();
+  auto models = cli.List();
   std::cout << "Available models:" << std::endl;
   std::cout << "=================" << std::endl;
   for (size_t i = 0; i < models.size(); ++i) {
@@ -219,7 +219,7 @@ int main(int argc, char** argv) {
     if (prompt == "q" || prompt == "exit" || prompt == "quit") {
       break;
     } else if (prompt == "/info") {
-      auto model_options = ollama_manager.GetModelInfo(model_name);
+      auto model_options = cli.GetModelInfo(model_name);
       if (model_options.has_value()) {
         std::cout << std::setw(2) << model_options.value()["capabilities"]
                   << std::endl;
@@ -232,7 +232,7 @@ int main(int argc, char** argv) {
       continue;
     } else if (prompt == "clear" || prompt == "reset") {
       // Clear the session
-      ollama_manager.SoftReset();
+      cli.SoftReset();
       std::cout << "Session cleared." << std::endl;
       continue;
     }
@@ -250,7 +250,7 @@ int main(int argc, char** argv) {
 
     std::atomic_bool done{false};
     std::atomic_bool saved_thinking_state{false};
-    ollama_manager.Chat(
+    cli.Chat(
         prompt,
         [&done, &saved_thinking_state](std::string output,
                                        ollama::Reason reason, bool thinking) {
