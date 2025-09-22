@@ -687,8 +687,9 @@ class Ollama {
 
   bool is_running() {
     auto res = cli->Get("/", headers_);
-    if (res)
-      if (res->body == "Ollama is running") return true;
+    if (res && res->body == "Ollama is running") {
+      return true;
+    }
     return false;
   }
 

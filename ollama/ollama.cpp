@@ -19,11 +19,56 @@ Client::Client(const std::string& url,
   m_ollama.setReadTimeout(300);
   m_ollama.setWriteTimeout(300);
   mcp::set_log_level(mcp::log_level::error);
-  SetHeadersInternal(headers);
+  SetHeadersInternal(m_ollama, headers);
   Startup();
 }
 
 Client::~Client() { Shutdown(); }
+
+void Client::IsAliveThreadMain(
+    std::string server_url,
+    std::unordered_map<std::string, std::string> headers) {
+  OLOG(LogLevel::kInfo) << "Ollama 'is alive' thread started.";
+  while (!m_shutdown_flag.load()) {
+    Ollama client;
+    client.setServerURL(server_url);
+    SetHeadersInternal(client, headers);
+
+    m_is_running_flag.store(client.is_running());
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+  }
+  OLOG(LogLevel::kInfo) << "Ollama 'is alive' thread exited.";
+}
+
+void Client::StartIsAliveThread() {
+  std::string server_url = m_url;
+  auto t = new std::thread(
+      [](Client* c, std::string server_url,
+         std::unordered_map<std::string, std::string> headers) {
+        c->IsAliveThreadMain(std::move(server_url), std::move(headers));
+      },
+      this, m_url, m_http_headers);
+  m_isAliveThread.reset(t);
+}
+
+void Client::StopIsAliveThread() {
+  m_shutdown_flag.store(true);
+  if (m_isAliveThread) {
+    m_isAliveThread->join();
+    m_isAliveThread.reset();
+  }
+  m_shutdown_flag.store(false);
+}
+
+void Client::Startup() {
+  ClientBase::Startup();
+  StartIsAliveThread();
+}
+
+void Client::Shutdown() {
+  ClientBase::Shutdown();
+  StopIsAliveThread();
+}
 
 void Client::Interrupt() {
   ClientBase::Interrupt();
@@ -41,7 +86,12 @@ void Client::ChatImpl(
 void Client::ApplyConfig(const ollama::Config* conf) {
   ClientBase::ApplyConfig(conf);
   m_ollama.setServerURL(m_url);
-  SetHeadersInternal(m_http_headers);
+
+  // Restart the "Is Alive" thread
+  StopIsAliveThread();
+  StartIsAliveThread();
+
+  SetHeadersInternal(m_ollama, m_http_headers);
 }
 
 std::vector<std::string> Client::List() {
@@ -128,35 +178,15 @@ void Client::PullModel(const std::string& name, OnResponseCallback cb) {
   }
 }
 
-bool Client::IsRunning() {
-  m_ollama.setServerURL(m_url);
-  return m_ollama.is_running();
-}
-
-bool Client::ModelHasCapability(const std::string& model_name,
-                                ModelCapabilities c) {
-  if (m_model_capabilities.count(model_name) == 0) {
-    // Load the model capabilities
-    auto capabilities = GetModelCapabilities(model_name);
-    if (capabilities.has_value()) {
-      m_model_capabilities.insert({model_name, capabilities.value()});
-    } else {
-      m_model_capabilities.insert({model_name, ModelCapabilities::kNone});
-    }
-  }
-
-  auto flags = m_model_capabilities.find(model_name)->second;
-  return IsFlagSet(flags, c);
-}
+bool Client::IsRunning() { return m_is_running_flag.load(); }
 
 void Client::SetHeadersInternal(
+    Ollama& client,
     const std::unordered_map<std::string, std::string>& headers) {
   httplib::Headers h;
   for (const auto& [header_name, header_value] : headers) {
-    OLOG(LogLevel::kInfo) << "Adding HTTP header: " << header_name << ": "
-                          << header_value;
     h.insert({header_name, header_value});
   }
-  m_ollama.setHttpHeaders(std::move(h));
+  client.setHttpHeaders(std::move(h));
 }
 }  // namespace ollama

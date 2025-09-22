@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <functional>
 #include <unordered_map>
 
@@ -42,13 +43,22 @@ class Client : public ClientBase {
 
   /// This method should be called from another thread.
   void Interrupt() override;
+  void Shutdown() override;
+  void Startup() override;
 
  private:
   void SetHeadersInternal(
+      Ollama& client,
       const std::unordered_map<std::string, std::string>& headers);
-  bool ModelHasCapability(const std::string& model_name, ModelCapabilities c);
+
+  void StartIsAliveThread();
+  void StopIsAliveThread();
+  void IsAliveThreadMain(std::string server_url,
+                         std::unordered_map<std::string, std::string> headers);
 
   Ollama m_ollama;
-  friend struct ChatContext;
+  std::atomic_bool m_is_running_flag{false};
+  std::atomic_bool m_shutdown_flag{false};
+  std::unique_ptr<std::thread> m_isAliveThread;
 };
 }  // namespace ollama
