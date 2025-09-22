@@ -88,6 +88,10 @@ std::optional<Config> Config::FromContent(const std::string& content) {
           login.port = GetValueFromJson<int>(ssh, "port").value_or(22);
           server_config.ssh_login = std::move(login);
         }
+
+        if (server.contains("env")) {
+          server_config.env = server["env"];
+        }
         config.m_servers.push_back(std::move(server_config));
       }
     }
@@ -157,8 +161,10 @@ std::optional<Config> Config::FromContent(const std::string& content) {
     if (log_level.has_value()) {
       config.m_logLevel = Logger::FromString(log_level.value());
     }
-    OLOG(OLogLevel::kInfo) << "Successfully loaded " << config.m_servers.size()
-                           << " configurations";
+
+    for (const auto& mcp_server : config.m_servers) {
+      OLOG(OLogLevel::kInfo) << "Loaded MCP server: " << mcp_server;
+    }
 
     // Per model configuration
     if (parsed_data.contains("models")) {

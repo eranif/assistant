@@ -36,15 +36,20 @@ void FunctionTable::ReloadMCPServers(const Config* config) {
     if (!s.enabled) {
       continue;
     }
+    OLOG(LogLevel::kInfo) << "Starting MCP server: " << s.name;
     if (s.type == ollama::kServerKindStdio) {
       std::shared_ptr<MCPStdioClient> client{nullptr};
       if (s.IsRemote()) {
-        client = std::make_shared<MCPStdioClient>(s.ssh_login.value(), s.args);
+        client = std::make_shared<MCPStdioClient>(s.ssh_login.value(), s.args,
+                                                  s.env);
       } else {
-        client = std::make_shared<MCPStdioClient>(s.args);
+        client = std::make_shared<MCPStdioClient>(s.args, s.env);
       }
       if (client->Initialise()) {
         AddMCPServer(client);
+      } else {
+        OLOG(LogLevel::kWarning)
+            << "Failed to initialise client for MCP server: " << s.name;
       }
     } else {
       OLOG(OLogLevel::kWarning)

@@ -33,12 +33,14 @@ void EscapeDoubleQuotes(std::string& str) {
 }
 }  // namespace
 
-MCPStdioClient::MCPStdioClient(const std::vector<std::string>& args)
-    : m_args(args) {}
+MCPStdioClient::MCPStdioClient(const std::vector<std::string>& args,
+                               std::optional<ollama::json> env)
+    : m_args(args), m_env(std::move(env)) {}
 
 MCPStdioClient::MCPStdioClient(const SSHLogin& ssh_login,
-                               const std::vector<std::string>& args)
-    : m_args(args), m_ssh_login(ssh_login) {}
+                               const std::vector<std::string>& args,
+                               std::optional<ollama::json> env)
+    : m_args(args), m_ssh_login(ssh_login), m_env(std::move(env)) {}
 
 bool MCPStdioClient::Initialise() {
   try {
@@ -77,18 +79,26 @@ bool MCPStdioClient::Initialise() {
       command = ss.str();
     }
 
-    m_client.reset(new mcp::stdio_client(command));
+    OLOG(LogLevel::kInfo) << "Starting MCP server: " << command;
+    // Pass the environment variables
+    auto env = (m_env.has_value() && m_env.value().is_object())
+                   ? m_env.value()
+                   : ollama::json::object();
 
+    m_client.reset(new mcp::stdio_client(command, env));
     m_client->initialize("assistant", "1.0");
     m_client->ping();
     m_tools = m_client->get_tools();
+    OLOG(LogLevel::kInfo) << "Success!";
     return true;
   } catch (std::exception& e) {
+    OLOG(LogLevel::kWarning) << e.what();
     return false;
   }
 }
 
-FunctionResult MCPStdioClient::Call(const mcp::tool& t, const json& args) const {
+FunctionResult MCPStdioClient::Call(const mcp::tool& t,
+                                    const json& args) const {
   auto result = m_client->call_tool(t.name, args);
   FunctionResult call_result{
       .isError = result["isError"].get<bool>(),

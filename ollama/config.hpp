@@ -4,6 +4,7 @@
 #include <string>
 #include <unordered_map>
 
+#include "ollama/helpers.hpp"
 #include "ollama/mcp_local_process.hpp"
 #include "ollama/model_options.hpp"
 
@@ -16,10 +17,18 @@ struct MCPServerConfig {
   std::string name;
   std::vector<std::string> args;
   std::optional<SSHLogin> ssh_login;
+  std::optional<ollama::json> env;
   bool enabled{true};
   std::string type{kServerKindStdio};
   inline bool IsRemote() const { return ssh_login.has_value(); }
 };
+
+inline std::ostream& operator<<(std::ostream& os, const MCPServerConfig& mcp) {
+  os << "MCPServerConfig {name: " << mcp.name << ", command: " << mcp.args
+     << ", env: "
+     << (mcp.env.has_value() ? mcp.env.value() : ollama::json::object()) << "}";
+  return os;
+}
 
 struct Endpoint {
   std::string url_;
