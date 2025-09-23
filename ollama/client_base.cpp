@@ -122,8 +122,8 @@ void ClientBase::ProcessContext(std::shared_ptr<ChatContext> context) {
 }
 
 void ClientBase::CreateAndPushContext(std::optional<ollama::message> msg,
-                                      OnResponseCallback cb,
-                                      std::string model) {
+                                      OnResponseCallback cb, std::string model,
+                                      ChatOptions chat_options) {
   ollama::options opts;
 
   std::optional<bool> think, hidethinking;
@@ -161,7 +161,10 @@ void ClientBase::CreateAndPushContext(std::optional<ollama::message> msg,
     req["hidethinking"] = hidethinking.value();
   }
 
-  if (ModelHasCapability(model, ModelCapabilities::kTooling)) {
+  if (IsFlagSet(chat_options, ChatOptions::kNoTools)) {
+    OLOG(LogLevel::kInfo) << "The 'tools' are disabled for the model: '"
+                          << model << "' (per user request).";
+  } else if (ModelHasCapability(model, ModelCapabilities::kTooling)) {
     req["tools"] = m_function_table.ToJSON();
   } else {
     OLOG(LogLevel::kWarning)
@@ -176,10 +179,10 @@ void ClientBase::CreateAndPushContext(std::optional<ollama::message> msg,
   m_queue.push_back(std::make_shared<ChatContext>(ctx));
 }
 
-void ClientBase::Chat(std::string msg, OnResponseCallback cb,
-                      std::string model) {
+void ClientBase::Chat(std::string msg, OnResponseCallback cb, std::string model,
+                      ChatOptions chat_options) {
   ollama::message ollama_message{"user", msg};
-  CreateAndPushContext(ollama_message, cb, model);
+  CreateAndPushContext(ollama_message, cb, model, chat_options);
   ProcessQueue();
 }
 
@@ -278,7 +281,8 @@ void ChatContext::InvokeTools(ClientBase* client) {
       client->AddMessage(std::move(msg));
     }
   }
-  client->CreateAndPushContext(std::nullopt, callback_, model_);
+  client->CreateAndPushContext(std::nullopt, callback_, model_,
+                               ChatOptions::kDefault);
 }
 
 bool ClientBase::ModelHasCapability(const std::string& model_name,

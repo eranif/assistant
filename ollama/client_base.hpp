@@ -7,7 +7,7 @@
 #include <unordered_map>
 
 #include "ollama/config.hpp"
-#include "ollama/macros.hpp"
+#include "ollama/helpers.hpp"
 
 namespace ollama {
 
@@ -36,6 +36,12 @@ enum class ModelCapabilities {
   kCompletion = (1 << 2),
   kInsert = (1 << 3),
   kVision = (1 << 4),
+};
+
+/// Options passed to the "Chat()" API call.
+enum class ChatOptions {
+  kDefault = (0),
+  kNoTools = (1 << 0),
 };
 
 using OnResponseCallback = std::function<void(std::string, Reason, bool)>;
@@ -116,7 +122,13 @@ class ClientBase {
   /// Client API - END
   ///===---------------------------
 
-  virtual void Chat(std::string msg, OnResponseCallback cb, std::string model);
+  /// Start a chat. Some options of the chat can be controlled via the
+  /// ChatOptions flags. For example, use may disable "tools" even though the
+  /// model support them.
+  virtual void Chat(std::string msg, OnResponseCallback cb, std::string model,
+                    ChatOptions chat_options  // bitwise OR'ed ChatOptions
+  );
+
   virtual void ApplyConfig(const ollama::Config* conf);
   virtual void Startup() { m_interrupt = false; }
   virtual void Shutdown() { m_queue.clear(); }
@@ -163,7 +175,8 @@ class ClientBase {
                       ChatUserData& chat_user_data);
   void ProcessContext(std::shared_ptr<ChatContext> context);
   void CreateAndPushContext(std::optional<ollama::message> msg,
-                            OnResponseCallback cb, std::string model);
+                            OnResponseCallback cb, std::string model,
+                            ChatOptions chat_options);
   void AddMessage(std::optional<ollama::message> msg);
   ollama::messages GetMessages() const;
   bool ModelHasCapability(const std::string& model_name, ModelCapabilities c);

@@ -219,12 +219,25 @@ int main(int argc, char** argv) {
             << " to get model information." << std::endl;
   std::cout << Yellow("#") << " To read prompt from a file, use " << Cyan("@")
             << "filename followed by ENTER" << std::endl;
+  std::cout << Yellow("#") << " Use " << Cyan("/no_tools")
+            << " to disable tool calls." << std::endl;
+  std::cout << Yellow("#") << " Use " << Cyan("/chat_defaults")
+            << " to restore chat options to default." << std::endl;
   std::cout << "" << std::endl;
 
+  ollama::ChatOptions options{ollama::ChatOptions::kDefault};
   while (true) {
     std::string prompt = GetTextFromUser("Ask me anything");
     if (prompt == "q" || prompt == "exit" || prompt == "quit") {
       break;
+    } else if (prompt == "/no_tools") {
+      ollama::AddFlagSet(options, ollama::ChatOptions::kNoTools);
+      std::cout << "Tools are disabled" << std::endl;
+      continue;
+    } else if (prompt == "/chat_defaults") {
+      options = ollama::ChatOptions::kDefault;
+      std::cout << "Chat options restored to defaults." << std::endl;
+      continue;
     } else if (prompt == "/info") {
       auto model_options = cli.GetModelInfo(model_name);
       if (model_options.has_value()) {
@@ -302,7 +315,7 @@ int main(int argc, char** argv) {
               break;
           }
         },
-        model_name);
+        model_name, options);
   }
   return 0;
 }

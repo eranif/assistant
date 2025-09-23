@@ -2,8 +2,8 @@
 
 #include "ollama/config.hpp"
 #include "ollama/cpp-mcp/mcp_logger.h"
+#include "ollama/helpers.hpp"
 #include "ollama/logger.hpp"
-#include "ollama/macros.hpp"
 #include "ollama/ollamalib.hpp"
 
 namespace ollama {
