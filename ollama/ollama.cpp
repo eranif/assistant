@@ -142,7 +142,7 @@ std::optional<ModelCapabilities> Client::GetModelCapabilities(
 
   ModelCapabilities flags{ModelCapabilities::kNone};
   try {
-    std::vector<std::string> capabilities = j["capabilities"];
+    auto capabilities = j["capabilities"].get<std::vector<std::string>>();
     for (const auto& c : capabilities) {
       if (c == "completion") {
         AddFlagSet(flags, ModelCapabilities::kCompletion);
