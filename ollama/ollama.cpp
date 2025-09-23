@@ -34,7 +34,7 @@ void Client::IsAliveThreadMain(
     client.setServerURL(server_url);
     SetHeadersInternal(client, headers);
 
-    m_is_running_flag.store(client.is_running());
+    m_is_running_flag.store(IsRunningInternal(client));
     std::this_thread::sleep_for(std::chrono::seconds(1));
   }
   OLOG(LogLevel::kInfo) << "Ollama 'is alive' thread exited.";
@@ -95,7 +95,7 @@ void Client::ApplyConfig(const ollama::Config* conf) {
 }
 
 std::vector<std::string> Client::List() {
-  if (!IsRunning()) {
+  if (!IsRunningInternal(m_ollama)) {
     return {};
   }
   try {
@@ -106,7 +106,7 @@ std::vector<std::string> Client::List() {
 }
 
 json Client::ListJSON() {
-  if (!IsRunning()) {
+  if (!IsRunningInternal(m_ollama)) {
     return {};
   }
   try {
@@ -117,7 +117,7 @@ json Client::ListJSON() {
 }
 
 std::optional<json> Client::GetModelInfo(const std::string& model) {
-  if (!IsRunning()) {
+  if (!IsRunningInternal(m_ollama)) {
     return std::nullopt;
   }
   try {
@@ -190,3 +190,11 @@ void Client::SetHeadersInternal(
   client.setHttpHeaders(std::move(h));
 }
 }  // namespace ollama
+
+bool ollama::Client::IsRunningInternal(Ollama& client) const {
+  try {
+    return client.is_running();
+  } catch ([[maybe_unused]] std::exception& e) {
+    return false;
+  }
+}

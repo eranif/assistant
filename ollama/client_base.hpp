@@ -154,6 +154,8 @@ class ClientBase {
   /// Clear all system messages.
   void ClearSystemMessages();
 
+  inline const std::string& GetUrl() const { return m_url; }
+
  protected:
   static bool OnResponse(const ollama::response& resp, void* user_data);
   void ProcessQueue();

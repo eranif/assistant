@@ -2,7 +2,9 @@
 #ifdef __WIN32
 #include <winsock2.h>
 #endif
+#include <chrono>
 #include <iostream>
+#include <thread>
 
 #include "ollama/config.hpp"
 #include "ollama/ollama.hpp"
@@ -171,11 +173,16 @@ int main(int argc, char** argv) {
     }
   }
 
-  OLOG(ollama::LogLevel::kInfo) << "Checking if ollama is running...";
-  if (!cli.IsRunning()) {
-    OLOG(OLogLevel::kError)
-        << "Make sure ollama server is running and try again";
-    return 1;
+  OLOG(ollama::LogLevel::kInfo)
+      << "Waiting for ollama server to become available...";
+
+  while (true) {
+    if (cli.IsRunning()) {
+      OLOG(OLogLevel::kInfo)
+          << "Ollama server: " << cli.GetUrl() << " is running!";
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
 
   std::cout << "Available functions:" << std::endl;

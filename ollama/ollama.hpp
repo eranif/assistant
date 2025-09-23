@@ -56,6 +56,10 @@ class Client : public ClientBase {
   void IsAliveThreadMain(std::string server_url,
                          std::unordered_map<std::string, std::string> headers);
 
+  /// Check if the server is running. This method does not rely on the cached
+  /// "m_is_running_flag" variable.
+  bool IsRunningInternal(Ollama& client) const;
+
   Ollama m_ollama;
   std::atomic_bool m_is_running_flag{false};
   std::atomic_bool m_shutdown_flag{false};
