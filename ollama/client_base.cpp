@@ -137,7 +137,7 @@ void ClientBase::CreateAndPushContext(std::optional<ollama::message> msg,
   if (where == m_model_options.end()) {
     OLOG(LogLevel::kWarning) << "Missing 'default' model setup in "
                                 "configuration file. Creating and using one.";
-    model_options = Config::CreaetDefaultModelOptions();
+    model_options = Config::CreateDefaultModelOptions();
     m_model_options.insert({model, model_options});
   } else {
     model_options = where->second;
@@ -228,7 +228,7 @@ void ClientBase::ApplyConfig(const ollama::Config* conf) {
   m_windows_size = conf->GetHistorySize();
   m_function_table.ReloadMCPServers(conf);
   m_model_options = conf->GetModelOptionsMap();
-  m_default_model_options = Config::CreaetDefaultModelOptions();
+  m_default_model_options = Config::CreateDefaultModelOptions();
   m_http_headers = endpoint->GetHeaders();
   auto iter = conf->GetModelOptionsMap().find("default");
   if (iter != conf->GetModelOptionsMap().end()) {
