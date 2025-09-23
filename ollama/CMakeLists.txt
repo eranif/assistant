@@ -1,6 +1,5 @@
 project(ollamalib)
 
-set(CMAKE_CXX_STANDARD 17)
 if (OLLAMALIB_WITH_OPENSSL)
   find_package(
     OpenSSL
