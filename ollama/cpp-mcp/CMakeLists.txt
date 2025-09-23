@@ -6,7 +6,6 @@ add_library(
   mcp_tool.cpp
   mcp_stdio_client.cpp
   mcp_sse_client.cpp)
-target_compile_options(mcp-cpp PRIVATE -fPIC)
 
 target_compile_options(mcp-cpp PUBLIC -Wall)
 target_link_libraries(mcp-cpp PUBLIC ${CMAKE_THREAD_LIBS_INIT})
@@ -16,6 +15,10 @@ target_include_directories(mcp-cpp PRIVATE ${CMAKE_CURRENT_LIST_DIR})
 if (OLLAMALIB_WITH_OPENSSL)
   target_compile_options(mcp-cpp PUBLIC -DCPPHTTPLIB_OPENSSL_SUPPORT=1)
   target_link_libraries(mcp-cpp PUBLIC OpenSSL::SSL OpenSSL::Crypto)
+endif ()
+
+if (UNIX OR APPLE)
+  set_target_properties(mcp-cpp PROPERTIES POSITION_INDEPENDENT_CODE ON)
 endif ()
 
 if (CMAKE_CXX_COMPILER_ID
