@@ -25,7 +25,6 @@ add_library(
   ${CMAKE_CURRENT_LIST_DIR}/config.hpp)
 
 target_compile_options(ollamalib PUBLIC -Wall)
-target_compile_options(ollamalib PRIVATE -fPIC)
 
 target_include_directories(ollamalib PUBLIC ${OLLAMLIB_ROOT})
 target_include_directories(ollamalib PRIVATE ${CMAKE_CURRENT_LIST_DIR})
@@ -37,6 +36,10 @@ if (OLLAMALIB_WITH_OPENSSL)
   if (WIN32)
     target_link_libraries(ollamalib PUBLIC Crypt32)
   endif ()
+endif ()
+
+if (UNIX OR APPLE)
+  set_target_properties(ollamalib PROPERTIES POSITION_INDEPENDENT_CODE ON)
 endif ()
 
 if (WIN32)
