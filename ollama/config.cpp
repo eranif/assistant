@@ -162,6 +162,14 @@ std::optional<Config> Config::FromContent(const std::string& content) {
       config.m_logLevel = Logger::FromString(log_level.value());
     }
 
+    if (parsed_data.contains("keep_alive") &&
+        parsed_data["keep_alive"].is_string()) {
+      config.m_keep_alive = parsed_data["keep_alive"].get<std::string>();
+    }
+    if (parsed_data.contains("stream") && parsed_data["stream"].is_boolean()) {
+      config.m_stream = parsed_data["stream"].get<bool>();
+    }
+
     for (const auto& mcp_server : config.m_servers) {
       OLOG(OLogLevel::kInfo) << "Loaded MCP server: " << mcp_server;
     }
@@ -175,15 +183,15 @@ std::optional<Config> Config::FromContent(const std::string& content) {
           mo.options = j["options"];
         }
         if (j.contains("think") && j["think"].is_boolean()) {
-          mo.think = j["think"];
+          mo.think = j["think"].get<bool>();
         }
         if (j.contains("hidethinking") && j["hidethinking"].is_boolean()) {
           mo.hidethinking = j["hidethinking"];
         }
-        if (j.contains("think_start_tag")) {
+        if (j.contains("think_start_tag") && j["think_start_tag"].is_string()) {
           mo.think_start_tag = j["think_start_tag"].get<std::string>();
         }
-        if (j.contains("think_end_tag")) {
+        if (j.contains("think_end_tag") && j["think_end_tag"].is_string()) {
           mo.think_end_tag = j["think_end_tag"].get<std::string>();
         }
         config.m_model_options_map.insert({mo.name, mo});
@@ -210,7 +218,7 @@ ModelOptions Config::CreaetDefaultModelOptions() {
   mo.name = "default";
   mo.options = R"(
   {
-    "num_ctx": 32768,
+    "num_ctx": 10240,
     "temperature": 0
   }
 )"_json;

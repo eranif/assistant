@@ -152,7 +152,7 @@ void ClientBase::CreateAndPushContext(std::optional<ollama::message> msg,
   auto history = GetMessages();
 
   // Build the request
-  ollama::request req{model, history, opts, true};
+  ollama::request req{model, history, opts, m_stream, "json", m_keep_alive};
   if (think.has_value()) {
     req["think"] = think.value();
   }
@@ -237,6 +237,8 @@ void ClientBase::ApplyConfig(const ollama::Config* conf) {
   if (iter != conf->GetModelOptionsMap().end()) {
     m_default_model_options = iter->second;
   }
+  m_keep_alive = conf->GetKeepAlive();
+  m_stream = conf->IsStream();
   SetLogLevel(conf->GetLogLevel());
 }
 
@@ -252,6 +254,7 @@ void ChatContext::InvokeTools(ClientBase* client) {
     client->AddMessage(std::move(msg));
     for (auto func_call : calls) {
       if (client->m_interrupt) {
+        OLOG(LogLevel::kWarning) << "User interrupted.";
         return;
       }
       std::stringstream ss;
@@ -272,10 +275,12 @@ void ChatContext::InvokeTools(ClientBase* client) {
       if (result.isError) {
         ss << "An error occurred while executing tool: '" << func_call.name
            << "'. Reason: " << result.text;
+        OLOG(LogLevel::kWarning) << ss.str();
       } else {
         ss << "Tool '" << func_call.name
            << "' completed successfully. Output:\n"
            << result.text;
+        OLOG(LogLevel::kInfo) << ss.str();
       }
       ollama::message msg{"tool", ss.str()};
       client->AddMessage(std::move(msg));

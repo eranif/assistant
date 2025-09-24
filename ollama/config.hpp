@@ -84,6 +84,9 @@ class Config {
     return nullptr;
   }
 
+  const std::string& GetKeepAlive() const { return m_keep_alive; }
+  bool IsStream() const { return m_stream; }
+
  private:
   Config() = default;
 
@@ -92,6 +95,8 @@ class Config {
   ModelOptions m_defaultModelOptions;
   std::unordered_map<std::string, ModelOptions> m_model_options_map;
   LogLevel m_logLevel{LogLevel::kInfo};
+  std::string m_keep_alive{"5m"};
+  bool m_stream{true};
   std::vector<std::shared_ptr<Endpoint>> endpoints_;
 };
 }  // namespace ollama

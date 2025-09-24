@@ -194,6 +194,8 @@ class ClientBase {
   std::unordered_map<std::string, ModelCapabilities> m_model_capabilities;
   std::string m_current_response;
   std::atomic_bool m_interrupt{false};
+  bool m_stream{true};
+  std::string m_keep_alive{"5m"};
   friend struct ChatContext;
 };
 }  // namespace ollama
