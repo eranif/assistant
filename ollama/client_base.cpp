@@ -57,15 +57,28 @@ bool ClientBase::HandleResponse(const ollama::response& resp,
       }
     }
 
+    bool cb_result{true};
     if (content.has_value()) {
-      req->callback_(content.value(), reason,
-                     token_is_part_of_thinking_process);
+      cb_result = req->callback_(content.value(), reason,
+                                 token_is_part_of_thinking_process);
     } else if (is_done) {
-      req->callback_({}, reason, token_is_part_of_thinking_process);
+      cb_result = req->callback_({}, reason, token_is_part_of_thinking_process);
     }
 
     if (content.has_value()) {
       m_current_response += content.value();
+    }
+
+    if (cb_result == false) {
+      // Store the AI response, as a message in our history.
+      ollama::message msg{std::string{kAssistantRole}, m_current_response};
+      OLOG(LogLevel::kWarning)
+          << "User cancelled response processing (callback returned false)."
+          << msg;
+      OLOG(LogLevel::kInfo) << "<== " << msg;
+      AddMessage(std::move(msg));
+      m_current_response.clear();
+      return false;
     }
 
     switch (reason) {

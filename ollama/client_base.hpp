@@ -44,7 +44,7 @@ enum class ChatOptions {
   kNoTools = (1 << 0),
 };
 
-using OnResponseCallback = std::function<void(std::string, Reason, bool)>;
+using OnResponseCallback = std::function<bool(std::string, Reason, bool)>;
 
 class ClientBase;
 struct ChatContext {

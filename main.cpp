@@ -272,8 +272,8 @@ int main(int argc, char** argv) {
     std::atomic_bool saved_thinking_state{false};
     cli.Chat(
         prompt,
-        [&done, &saved_thinking_state](std::string output,
-                                       ollama::Reason reason, bool thinking) {
+        [&done, &saved_thinking_state](
+            std::string output, ollama::Reason reason, bool thinking) -> bool {
           if (saved_thinking_state != thinking) {
             // we switched state
             if (thinking) {
@@ -314,6 +314,8 @@ int main(int argc, char** argv) {
               done = true;
               break;
           }
+          // continue
+          return true;
         },
         model_name, options);
   }
