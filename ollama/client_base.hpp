@@ -1,13 +1,14 @@
 #pragma once
 
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 
+#include "ollama/attributes.hpp"
 #include "ollama/config.hpp"
-#include "ollama/helpers.hpp"
 
 namespace ollama {
 
@@ -47,7 +48,7 @@ enum class ChatOptions {
 using OnResponseCallback = std::function<bool(std::string, Reason, bool)>;
 
 class ClientBase;
-struct ChatContext {
+struct ChatRequest {
   OnResponseCallback callback_;
   ollama::request request_;
   std::string model_;
@@ -60,29 +61,51 @@ struct ChatContext {
 };
 
 /// We pass this struct to provide context in the callback.
-struct ChatUserData {
+struct ChatContext {
   ClientBase* client{nullptr};
   std::string model;
   bool thinking{false};
   bool model_can_think{false};
-  std::shared_ptr<ChatContext> chat_context{nullptr};
+  std::shared_ptr<ChatRequest> chat_context{nullptr};
   std::string thinking_start_tag{"<think>"};
   std::string thinking_end_tag{"</think>"};
+  std::string current_response;
 };
 
-struct ChatContextQueue : public std::vector<std::shared_ptr<ChatContext>> {
+struct ChatRequestQueue {
  public:
-  ChatContextQueue() = default;
-  ~ChatContextQueue() = default;
+  ChatRequestQueue() = default;
+  ~ChatRequestQueue() = default;
 
-  inline std::shared_ptr<ChatContext> pop_front_and_return() {
-    if (empty()) {
+  inline std::shared_ptr<ChatRequest> pop_front_and_return() {
+    std::scoped_lock lk{m_mutex};
+    if (m_vec.empty()) {
       return nullptr;
     }
-    auto fr = front();
-    erase(begin());
+    auto fr = m_vec.front();
+    m_vec.erase(m_vec.begin());
     return fr;
   }
+
+  inline bool empty() const { return size() == 0; }
+  inline void push_back(std::shared_ptr<ChatRequest> c) {
+    std::scoped_lock lk{m_mutex};
+    m_vec.push_back(c);
+  }
+
+  inline void clear() {
+    std::scoped_lock lk{m_mutex};
+    m_vec.clear();
+  }
+
+  inline size_t size() const {
+    std::scoped_lock lk{m_mutex};
+    return m_vec.size();
+  }
+
+ private:
+  mutable std::mutex m_mutex;
+  std::vector<std::shared_ptr<ChatRequest>> m_vec GUARDED_BY(m_mutex);
 };
 
 class ClientBase {
@@ -130,50 +153,55 @@ class ClientBase {
   );
 
   virtual void ApplyConfig(const ollama::Config* conf);
-  virtual void Startup() { m_interrupt = false; }
-  virtual void Shutdown() { m_queue.clear(); }
-  virtual void Interrupt() { m_interrupt = true; }
-
-  /// Perform a hard reset - this clears everything:
-  /// Function table, history, buffered messages etc.
-  virtual void Reset() {
-    SoftReset();
-    m_function_table.Clear();
+  virtual void Startup() { m_interrupt.store(false); }
+  virtual void Shutdown() {
+    Interrupt();
+    ClearMessageQueue();
     ClearSystemMessages();
-    m_interrupt = false;
+    ClearHistoryMessages();
+    ClearFunctionTable();
   }
 
-  /// Clear the current session.
-  virtual void SoftReset() {
-    m_queue.clear();
-    m_messages.clear();
-    m_current_response.clear();
-    m_interrupt = false;
-  }
+  virtual void Interrupt() { m_interrupt.store(true); }
+  inline bool IsInterrupted() const { return m_interrupt.load(); }
 
   /// Set the number of messages to keep when chatting with the model. The
   /// implementation uses a FIFO.
-  inline void SetHistorySize(size_t count) { m_windows_size = count; }
-  inline size_t GetHistorySize() const { return m_windows_size; }
+  inline void SetHistorySize(size_t count) { m_windows_size.store(count); }
+  inline size_t GetHistorySize() const { return m_windows_size.load(); }
 
   const FunctionTable& GetFunctionTable() const { return m_function_table; }
   FunctionTable& GetFunctionTable() { return m_function_table; }
 
+  void ClearFunctionTable() { m_function_table.Clear(); }
+  void ClearMessageQueue() { m_queue.clear(); }
+
   /// Add system message to the prompt. System messages are always sent as part
   /// of the prompt
-  void AddSystemMessage(const std::string& msg);
+  void AddSystemMessage(const std::string& msg) {
+    m_system_messages.with_mut([&msg](ollama::messages& msgs) {
+      msgs.push_back(ollama::message{"system", msg});
+    });
+  }
 
   /// Clear all system messages.
-  void ClearSystemMessages();
+  void ClearSystemMessages() {
+    m_system_messages.with_mut([](ollama::messages& msgs) { msgs.clear(); });
+  }
 
-  inline const std::string& GetUrl() const { return m_url; }
+  /// Clear all history messages.
+  void ClearHistoryMessages() {
+    m_system_messages.with_mut([](ollama::messages& msgs) { msgs.clear(); });
+  }
+
+  inline std::string GetUrl() const { return m_url.get_value(); }
 
  protected:
   static bool OnResponse(const ollama::response& resp, void* user_data);
   void ProcessQueue();
   bool HandleResponse(const ollama::response& resp,
-                      ChatUserData& chat_user_data);
-  void ProcessContext(std::shared_ptr<ChatContext> context);
+                      ChatContext& chat_user_data);
+  void ProcessContext(std::shared_ptr<ChatRequest> context);
   void CreateAndPushContext(std::optional<ollama::message> msg,
                             OnResponseCallback cb, std::string model,
                             ChatOptions chat_options);
@@ -182,20 +210,20 @@ class ClientBase {
   bool ModelHasCapability(const std::string& model_name, ModelCapabilities c);
 
   FunctionTable m_function_table;
-  ChatContextQueue m_queue;
-  std::string m_url;
-  size_t m_windows_size{20};
+  ChatRequestQueue m_queue;
+  Locker<std::string> m_url;
+  std::atomic_size_t m_windows_size{20};
   /// Messages that were sent to the AI, will be placed here
-  ollama::messages m_messages;
-  ollama::messages m_system_messages;
-  std::unordered_map<std::string, ModelOptions> m_model_options;
-  std::unordered_map<std::string, std::string> m_http_headers;
-  ModelOptions m_default_model_options;
-  std::unordered_map<std::string, ModelCapabilities> m_model_capabilities;
-  std::string m_current_response;
+  Locker<ollama::messages> m_messages;
+  Locker<ollama::messages> m_system_messages;
+  Locker<std::unordered_map<std::string, ModelOptions>> m_model_options;
+  Locker<std::unordered_map<std::string, std::string>> m_http_headers;
+  Locker<ModelOptions> m_default_model_options;
+  Locker<std::unordered_map<std::string, ModelCapabilities>>
+      m_model_capabilities;
   std::atomic_bool m_interrupt{false};
-  bool m_stream{true};
-  std::string m_keep_alive{"5m"};
-  friend struct ChatContext;
+  std::atomic_bool m_stream{true};
+  Locker<std::string> m_keep_alive{"5m"};
+  friend struct ChatRequest;
 };
 }  // namespace ollama

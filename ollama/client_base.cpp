@@ -7,8 +7,7 @@ namespace ollama {
 
 void ClientBase::ProcessQueue() {
   while (!m_queue.empty()) {
-    if (m_interrupt) {
-      SoftReset();
+    if (m_interrupt.load()) {
       break;
     }
     ProcessContext(m_queue.pop_front_and_return());
@@ -16,13 +15,11 @@ void ClientBase::ProcessQueue() {
 }
 
 bool ClientBase::HandleResponse(const ollama::response& resp,
-                                ChatUserData& chat_user_data) {
-  std::shared_ptr<ChatContext> req = chat_user_data.chat_context;
-  if (m_interrupt) {
-    m_interrupt = false;
+                                ChatContext& chat_user_data) {
+  std::shared_ptr<ChatRequest> req = chat_user_data.chat_context;
+  if (m_interrupt.load()) {
     req->callback_("Request cancelled by user", ollama::Reason::kCancelled,
                    false);
-    SoftReset();
     return false;
   }
   auto calls = ResponseParser::GetTools(resp);
@@ -66,18 +63,18 @@ bool ClientBase::HandleResponse(const ollama::response& resp,
     }
 
     if (content.has_value()) {
-      m_current_response += content.value();
+      chat_user_data.current_response += content.value();
     }
 
     if (cb_result == false) {
       // Store the AI response, as a message in our history.
-      ollama::message msg{std::string{kAssistantRole}, m_current_response};
+      ollama::message msg{std::string{kAssistantRole},
+                          chat_user_data.current_response};
       OLOG(LogLevel::kWarning)
           << "User cancelled response processing (callback returned false)."
           << msg;
       OLOG(LogLevel::kInfo) << "<== " << msg;
       AddMessage(std::move(msg));
-      m_current_response.clear();
       return false;
     }
 
@@ -85,10 +82,10 @@ bool ClientBase::HandleResponse(const ollama::response& resp,
       case Reason::kDone:
       case Reason::kFatalError: {
         // Store the AI response, as a message in our history.
-        ollama::message msg{std::string{kAssistantRole}, m_current_response};
+        ollama::message msg{std::string{kAssistantRole},
+                            chat_user_data.current_response};
         OLOG(LogLevel::kDebug) << "<== " << msg;
         AddMessage(std::move(msg));
-        m_current_response.clear();
       } break;
       default:
         break;
@@ -98,39 +95,45 @@ bool ClientBase::HandleResponse(const ollama::response& resp,
 }
 
 bool ClientBase::OnResponse(const ollama::response& resp, void* user_data) {
-  ChatUserData* cud = reinterpret_cast<ChatUserData*>(user_data);
+  ChatContext* cud = reinterpret_cast<ChatContext*>(user_data);
   return cud->client->HandleResponse(resp, *cud);
 }
 
-void ClientBase::ProcessContext(std::shared_ptr<ChatContext> context) {
+void ClientBase::ProcessContext(std::shared_ptr<ChatRequest> chat_request) {
   try {
-    OLOG(LogLevel::kDebug) << "==> " << context->request_;
+    OLOG(LogLevel::kDebug) << "==> " << chat_request->request_;
 
-    std::string model_name = context->request_["model"].get<std::string>();
+    std::string model_name = chat_request->request_["model"].get<std::string>();
 
     // Prepare chat user data.
-    ChatUserData user_data{
-        .client = this, .model = model_name, .chat_context = context};
+    ChatContext user_data{
+        .client = this, .model = model_name, .chat_context = chat_request};
     user_data.model_can_think =
         ModelHasCapability(model_name, ModelCapabilities::kThinking);
     if (user_data.model_can_think) {
-      auto iter = m_model_options.find(model_name);
-      if (iter != m_model_options.end()) {
-        const auto& mo = iter->second;
-        user_data.thinking_start_tag = mo.think_start_tag;
-        user_data.thinking_end_tag = mo.think_end_tag;
-      }
+      m_model_options.with(
+          [&user_data,
+           &model_name](const std::unordered_map<std::string, ModelOptions>&
+                            model_options) {
+            auto iter = model_options.find(model_name);
+            if (iter == model_options.end()) {
+              return;
+            }
+            const auto& mo = iter->second;
+            user_data.thinking_start_tag = mo.think_start_tag;
+            user_data.thinking_end_tag = mo.think_end_tag;
+          });
     }
 
-    ChatImpl(context->request_, &ClientBase::OnResponse,
+    ChatImpl(chat_request->request_, &ClientBase::OnResponse,
              static_cast<void*>(&user_data));
 
-    if (!context->func_calls_.empty()) {
-      context->InvokeTools(this);
+    if (!chat_request->func_calls_.empty()) {
+      chat_request->InvokeTools(this);
     }
   } catch (std::exception& e) {
-    context->callback_(e.what(), Reason::kFatalError, false);
-    SoftReset();
+    chat_request->callback_(e.what(), Reason::kFatalError, false);
+    Shutdown();
   }
 }
 
@@ -140,21 +143,19 @@ void ClientBase::CreateAndPushContext(std::optional<ollama::message> msg,
   ollama::options opts;
 
   std::optional<bool> think, hidethinking;
-  auto where = m_model_options.find(model);
-  if (where == m_model_options.end()) {
-    // Can't fail. We always include the "default"
-    where = m_model_options.find("default");
-  }
-
   ModelOptions model_options;
-  if (where == m_model_options.end()) {
-    OLOG(LogLevel::kWarning) << "Missing 'default' model setup in "
-                                "configuration file. Creating and using one.";
-    model_options = Config::CreaetDefaultModelOptions();
-    m_model_options.insert({model, model_options});
-  } else {
-    model_options = where->second;
-  }
+  m_model_options.with([&model_options, &model](const auto& m) {
+    auto where = m.find(model);
+    if (where == m.end()) {
+      // Can't fail. We always include the "default"
+      OLOG(LogLevel::kWarning) << "Missing 'default' model setup in "
+                                  "configuration file. Creating and using one.";
+      model_options = m.find("default")->second;
+    } else {
+      model_options = where->second;
+    }
+  });
+
   for (const auto& [name, value] : model_options.options.items()) {
     opts[name] = value;
   }
@@ -165,7 +166,8 @@ void ClientBase::CreateAndPushContext(std::optional<ollama::message> msg,
   auto history = GetMessages();
 
   // Build the request
-  ollama::request req{model, history, opts, m_stream, "json", m_keep_alive};
+  ollama::request req{model,    history, opts,
+                      m_stream, "json",  m_keep_alive.get_value()};
   if (think.has_value()) {
     req["think"] = think.value();
   }
@@ -184,12 +186,12 @@ void ClientBase::CreateAndPushContext(std::optional<ollama::message> msg,
         << "The selected model: " << model << " does not support 'tools'";
   }
 
-  ChatContext ctx = {
+  ChatRequest ctx = {
       .callback_ = cb,
       .request_ = req,
       .model_ = std::move(model),
   };
-  m_queue.push_back(std::make_shared<ChatContext>(ctx));
+  m_queue.push_back(std::make_shared<ChatRequest>(ctx));
 }
 
 void ClientBase::Chat(std::string msg, OnResponseCallback cb, std::string model,
@@ -200,35 +202,38 @@ void ClientBase::Chat(std::string msg, OnResponseCallback cb, std::string model,
 }
 
 void ClientBase::AddMessage(std::optional<ollama::message> msg) {
-  if (!msg.has_value()) {
-    return;
-  }
-
-  m_messages.push_back(std::move(*msg));
-  // truncate the history to fit the window size
-  if (m_messages.size() >= m_windows_size) {
-    m_messages.erase(m_messages.begin());
-  }
+  m_messages.with_mut([msg = std::move(msg), this](ollama::messages& msgs) {
+    if (!msg.has_value()) {
+      return;
+    }
+    msgs.push_back(std::move(*msg));
+    // truncate the history to fit the window size
+    if (msgs.size() >= m_windows_size) {
+      msgs.erase(msgs.begin());
+    }
+  });
 }
 
 ollama::messages ClientBase::GetMessages() const {
   ollama::messages msgs;
-  msgs.reserve(m_system_messages.size() + m_messages.size());
+  m_system_messages.with([&msgs](const ollama::messages& sysmsgs) {
+    msgs.insert(msgs.end(), sysmsgs.begin(), sysmsgs.end());
+  });
+  m_system_messages.with([&msgs](const ollama::messages& m) {
+    if (m.empty()) {
+      return;
+    }
+    msgs.insert(msgs.end(), m.begin(), m.end());
+  });
 
-  if (!m_system_messages.empty()) {
-    msgs.insert(msgs.end(), m_system_messages.begin(), m_system_messages.end());
-  }
-  if (!m_messages.empty()) {
-    msgs.insert(msgs.end(), m_messages.begin(), m_messages.end());
-  }
+  m_messages.with([&msgs](const ollama::messages& m) {
+    if (m.empty()) {
+      return;
+    }
+    msgs.insert(msgs.end(), m.begin(), m.end());
+  });
   return msgs;
 }
-
-void ClientBase::AddSystemMessage(const std::string& msg) {
-  m_system_messages.push_back(ollama::message{"system", msg});
-}
-
-void ClientBase::ClearSystemMessages() { m_system_messages.clear(); }
 
 void ClientBase::ApplyConfig(const ollama::Config* conf) {
   if (!conf) {
@@ -240,33 +245,33 @@ void ClientBase::ApplyConfig(const ollama::Config* conf) {
     return;
   }
 
-  m_url = endpoint->GetUrl();
-  m_windows_size = conf->GetHistorySize();
+  m_url.set_value(endpoint->GetUrl());
+  m_windows_size.store(conf->GetHistorySize());
   m_function_table.ReloadMCPServers(conf);
-  m_model_options = conf->GetModelOptionsMap();
-  m_default_model_options = Config::CreaetDefaultModelOptions();
-  m_http_headers = endpoint->GetHeaders();
+  m_model_options.set_value(conf->GetModelOptionsMap());
+  m_default_model_options.set_value(Config::CreaetDefaultModelOptions());
+  m_http_headers.set_value(endpoint->GetHeaders());
   auto iter = conf->GetModelOptionsMap().find("default");
   if (iter != conf->GetModelOptionsMap().end()) {
-    m_default_model_options = iter->second;
+    m_default_model_options.set_value(iter->second);
   }
-  m_keep_alive = conf->GetKeepAlive();
+  m_keep_alive.set_value(conf->GetKeepAlive());
   m_stream = conf->IsStream();
   SetLogLevel(conf->GetLogLevel());
 }
 
-void ChatContext::InvokeTools(ClientBase* client) {
+void ChatRequest::InvokeTools(ClientBase* client) {
   if (func_calls_.empty()) {
     return;
   }
 
   for (auto [msg, calls] : func_calls_) {
-    if (client->m_interrupt) {
+    if (client->m_interrupt.load()) {
       return;
     }
     client->AddMessage(std::move(msg));
     for (auto func_call : calls) {
-      if (client->m_interrupt) {
+      if (client->IsInterrupted()) {
         OLOG(LogLevel::kWarning) << "User interrupted.";
         return;
       }
@@ -278,7 +283,7 @@ void ChatContext::InvokeTools(ClientBase* client) {
       }
 
       callback_(ss.str(), Reason::kLogNotice, false);
-      auto result = client->m_function_table.Call(func_call);
+      auto result = client->GetFunctionTable().Call(func_call);
       ss = {};
       ss << "Tool output: " << result;
       callback_(ss.str(), Reason::kLogNotice, false);
@@ -305,17 +310,20 @@ void ChatContext::InvokeTools(ClientBase* client) {
 
 bool ClientBase::ModelHasCapability(const std::string& model_name,
                                     ModelCapabilities c) {
-  if (m_model_capabilities.count(model_name) == 0) {
-    // Load the model capabilities
-    auto capabilities = GetModelCapabilities(model_name);
-    if (capabilities.has_value()) {
-      m_model_capabilities.insert({model_name, capabilities.value()});
-    } else {
-      m_model_capabilities.insert({model_name, ModelCapabilities::kNone});
+  bool found{false};
+  m_model_capabilities.with_mut([&found, &model_name, c, this](auto& map) {
+    if (map.count(model_name) == 0) {
+      // Load the model capabilities
+      auto capabilities = GetModelCapabilities(model_name);
+      if (capabilities.has_value()) {
+        map.insert({model_name, capabilities.value()});
+      } else {
+        map.insert({model_name, ModelCapabilities::kNone});
+      }
     }
-  }
-
-  auto flags = m_model_capabilities.find(model_name)->second;
-  return IsFlagSet(flags, c);
+    auto flags = map.find(model_name)->second;
+    found = IsFlagSet(flags, c);
+  });
+  return found;
 }
 }  // namespace ollama

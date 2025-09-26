@@ -4,6 +4,7 @@
 #include <functional>
 #include <unordered_map>
 
+#include "ollama/attributes.hpp"
 #include "ollama/client_base.hpp"
 
 namespace ollama {
@@ -60,7 +61,8 @@ class Client : public ClientBase {
   /// "m_is_running_flag" variable.
   bool IsRunningInternal(Ollama& client) const;
 
-  Ollama m_ollama;
+  std::mutex m_ollama_mutex;
+  Ollama m_ollama GUARDED_BY(m_ollama_mutex);
   std::atomic_bool m_is_running_flag{false};
   std::atomic_bool m_shutdown_flag{false};
   std::unique_ptr<std::thread> m_isAliveThread;

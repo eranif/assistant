@@ -6,6 +6,7 @@
 
 namespace ollama {
 void FunctionTable::AddMCPServer(std::shared_ptr<MCPStdioClient> client) {
+  std::lock_guard lk{m_mutex};
   m_clients.push_back(client);
   auto functions = client->GetFunctions();
   for (auto func : functions) {
@@ -18,6 +19,7 @@ void FunctionTable::ReloadMCPServers(const Config* config) {
     return;
   }
 
+  std::lock_guard lk{m_mutex};
   // Clear all current MCP servers and their functions.
   std::vector<std::string> names;
   for (const auto& [funcname, func] : m_functions) {

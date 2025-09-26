@@ -11,8 +11,8 @@ add_subdirectory(cpp-mcp)
 
 add_library(
   ollamalib STATIC
-  ${CMAKE_CURRENT_LIST_DIR}/ollama.cpp
-  ${CMAKE_CURRENT_LIST_DIR}/ollama.hpp
+  ${CMAKE_CURRENT_LIST_DIR}/client.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/client.hpp
   ${CMAKE_CURRENT_LIST_DIR}/mcp_local_process.cpp
   ${CMAKE_CURRENT_LIST_DIR}/mcp_local_process.hpp
   ${CMAKE_CURRENT_LIST_DIR}/function.cpp

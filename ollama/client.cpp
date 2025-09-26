@@ -1,4 +1,4 @@
-#include "ollama/ollama.hpp"
+#include "ollama/client.hpp"
 
 #include "ollama/config.hpp"
 #include "ollama/cpp-mcp/mcp_logger.h"
@@ -10,8 +10,9 @@ namespace ollama {
 
 Client::Client(const std::string& url,
                const std::unordered_map<std::string, std::string>& headers) {
-  m_url = url;
-  m_http_headers = headers;
+  m_url.set_value(url);
+  m_http_headers.set_value(headers);
+
   ollama::show_requests(false);
   ollama::show_replies(false);
   ollama::allow_exceptions(true);
@@ -41,13 +42,13 @@ void Client::IsAliveThreadMain(
 }
 
 void Client::StartIsAliveThread() {
-  std::string server_url = m_url;
+  std::string server_url = m_url.get_value();
   auto t = new std::thread(
       [](Client* c, std::string server_url,
          std::unordered_map<std::string, std::string> headers) {
         c->IsAliveThreadMain(std::move(server_url), std::move(headers));
       },
-      this, m_url, m_http_headers);
+      this, m_url.get_value(), m_http_headers.get_value());
   m_isAliveThread.reset(t);
 }
 
@@ -67,12 +68,19 @@ void Client::Startup() {
 
 void Client::Shutdown() {
   ClientBase::Shutdown();
+  std::scoped_lock lk{m_ollama_mutex};
   StopIsAliveThread();
 }
 
 void Client::Interrupt() {
   ClientBase::Interrupt();
-  m_ollama.interrupt();
+  std::scoped_lock lk{m_ollama_mutex};
+  try {
+    m_ollama.interrupt();
+  } catch (std::exception& e) {
+    OLOG(LogLevel::kWarning)
+        << "an error occured while interrupting client. " << e.what();
+  }
 }
 
 void Client::ChatImpl(
@@ -80,21 +88,29 @@ void Client::ChatImpl(
     std::function<bool(const ollama::response& resp, void* user_data)>
         on_response,
     void* user_data) {
+  std::scoped_lock lk{m_ollama_mutex};
   m_ollama.chat(request, on_response, user_data);
 }
 
 void Client::ApplyConfig(const ollama::Config* conf) {
   ClientBase::ApplyConfig(conf);
-  m_ollama.setServerURL(m_url);
+  {
+    std::scoped_lock lk{m_ollama_mutex};
+    m_ollama.setServerURL(m_url.get_value());
+  }
 
   // Restart the "Is Alive" thread
   StopIsAliveThread();
   StartIsAliveThread();
 
-  SetHeadersInternal(m_ollama, m_http_headers);
+  {
+    std::scoped_lock lk{m_ollama_mutex};
+    SetHeadersInternal(m_ollama, m_http_headers.get_value());
+  }
 }
 
 std::vector<std::string> Client::List() {
+  std::scoped_lock lk{m_ollama_mutex};
   if (!IsRunningInternal(m_ollama)) {
     return {};
   }
@@ -106,6 +122,7 @@ std::vector<std::string> Client::List() {
 }
 
 json Client::ListJSON() {
+  std::scoped_lock lk{m_ollama_mutex};
   if (!IsRunningInternal(m_ollama)) {
     return {};
   }
@@ -117,6 +134,7 @@ json Client::ListJSON() {
 }
 
 std::optional<json> Client::GetModelInfo(const std::string& model) {
+  std::scoped_lock lk{m_ollama_mutex};
   if (!IsRunningInternal(m_ollama)) {
     return std::nullopt;
   }
@@ -168,7 +186,7 @@ void Client::PullModel(const std::string& name, OnResponseCallback cb) {
   try {
     Ollama ol;
     std::stringstream ss;
-    ol.setServerURL(m_url);
+    ol.setServerURL(m_url.get_value());
     ss << "Pulling model: " << name;
     cb(ss.str(), Reason::kLogNotice, false);
     ol.pull_model(name, true);
@@ -189,12 +207,12 @@ void Client::SetHeadersInternal(
   }
   client.setHttpHeaders(std::move(h));
 }
-}  // namespace ollama
 
-bool ollama::Client::IsRunningInternal(Ollama& client) const {
+bool Client::IsRunningInternal(Ollama& client) const {
   try {
     return client.is_running();
   } catch ([[maybe_unused]] std::exception& e) {
     return false;
   }
 }
+}  // namespace ollama

@@ -1006,6 +1006,7 @@ class Ollama {
   void interrupt() {
     // Close the socket to force any lingering thread to exit.
     httplib::detail::shutdown_socket(this->cli->socket());
+    httplib::detail::close_socket(this->cli->socket());
   }
 
   void setReadTimeout(const int seconds) {

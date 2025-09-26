@@ -6,8 +6,8 @@
 #include <iostream>
 #include <thread>
 
+#include "ollama/client.hpp"
 #include "ollama/config.hpp"
-#include "ollama/ollama.hpp"
 #include "ollama/tool.hpp"
 #include "utils.hpp"
 
@@ -38,6 +38,31 @@ std::string Yellow(std::string_view word) {
   std::stringstream ss;
   ss << kYellow << word << kReset;
   return ss.str();
+}
+
+std::mutex prompt_queue_mutex;
+std::vector<std::pair<std::string, ollama::ChatOptions>> prompt_queue;
+std::condition_variable cv;
+
+/// Push prompt to the queue
+void PushPrompt(std::string prompt, ollama::ChatOptions options) {
+  std::unique_lock lk{prompt_queue_mutex};
+  prompt_queue.push_back({std::move(prompt), std::move(options)});
+  cv.notify_one();
+}
+
+/// Get prompt from the queue
+std::optional<std::pair<std::string, ollama::ChatOptions>> PopPrompt() {
+  std::unique_lock lk{prompt_queue_mutex};
+  auto res = cv.wait_for(lk, std::chrono::milliseconds(500),
+                         []() { return !prompt_queue.empty(); });
+  if (!res || prompt_queue.empty()) {
+    return std::nullopt;
+  }
+
+  auto item = std::move(prompt_queue.front());
+  prompt_queue.erase(prompt_queue.begin());
+  return item;
 }
 
 }  // namespace
@@ -147,9 +172,11 @@ int main(int argc, char** argv) {
   //                        [[maybe_unused]] std::string msg) {});
 
   ollama::SetLogLevel(args.log_level);
-  ollama::Client cli("http://127.0.0.1:11434", {});
+  std::shared_ptr<ollama::Client> cli = std::make_shared<ollama::Client>(
+      std::string{"http://127.0.0.1:11434"},
+      std::unordered_map<std::string, std::string>{});
 
-  cli.GetFunctionTable().Add(
+  cli->GetFunctionTable().Add(
       FunctionBuilder("Open file in editor")
           .SetDescription(
               "Given a file path, open it inside the editor for editing.")
@@ -157,7 +184,7 @@ int main(int argc, char** argv) {
                             "string")
           .SetCallback(OpenFileInEditor)
           .Build());
-  cli.GetFunctionTable().Add(
+  cli->GetFunctionTable().Add(
       FunctionBuilder("Write file content to disk at a given path")
           .SetDescription("Write file content to disk at a given path. Create "
                           "the file if it does not exist.")
@@ -169,7 +196,7 @@ int main(int argc, char** argv) {
   if (!args.config_file.empty()) {
     auto conf = ollama::Config::FromFile(args.config_file);
     if (conf.has_value()) {
-      cli.ApplyConfig(&conf.value());
+      cli->ApplyConfig(&conf.value());
     }
   }
 
@@ -177,9 +204,9 @@ int main(int argc, char** argv) {
       << "Waiting for ollama server to become available...";
 
   while (true) {
-    if (cli.IsRunning()) {
+    if (cli->IsRunning()) {
       OLOG(OLogLevel::kInfo)
-          << "Ollama server: " << cli.GetUrl() << " is running!";
+          << "Ollama server: " << cli->GetUrl() << " is running!";
       break;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -188,13 +215,12 @@ int main(int argc, char** argv) {
   std::cout << "Available functions:" << std::endl;
   std::cout << "====================" << std::endl;
 
-  ollama::json tools_json = cli.GetFunctionTable().ToJSON();
+  ollama::json tools_json = cli->GetFunctionTable().ToJSON();
   for (const auto& func_obj : tools_json) {
     std::cout << "- " << func_obj["function"]["name"] << std::endl;
   }
-  cli.AddSystemMessage("Your name is CodeLite.");
 
-  auto models = cli.List();
+  auto models = cli->List();
   std::cout << "Available models:" << std::endl;
   std::cout << "=================" << std::endl;
   for (size_t i = 0; i < models.size(); ++i) {
@@ -223,7 +249,80 @@ int main(int argc, char** argv) {
             << " to disable tool calls." << std::endl;
   std::cout << Yellow("#") << " Use " << Cyan("/chat_defaults")
             << " to restore chat options to default." << std::endl;
+  std::cout << Yellow("#") << " Use " << Cyan("/int")
+            << " to interrupt the connection." << std::endl;
   std::cout << "" << std::endl;
+
+  std::thread chat_thread([cli, model_name]() {
+    while (true) {
+      std::string prompt;
+      ollama::ChatOptions options{ollama::ChatOptions::kDefault};
+      auto item = PopPrompt();
+      if (cli->IsInterrupted()) {
+        std::cout << "Worker Thread: client interrupted." << std::endl;
+        break;
+      }
+      if (!item.has_value()) {
+        continue;
+      } else {
+        prompt = std::move(item.value().first);
+        options = std::move(item.value().second);
+      }
+      std::cout << "Thread: " << prompt << std::endl;
+
+      std::atomic_bool done{false};
+      std::atomic_bool saved_thinking_state{false};
+      cli->Chat(
+          prompt,
+          [&done, &saved_thinking_state](std::string output,
+                                         ollama::Reason reason,
+                                         bool thinking) -> bool {
+            if (saved_thinking_state != thinking) {
+              // we switched state
+              if (thinking) {
+                // the new state is "thinking"
+                std::cout << Cyan("Thinking... ") << std::endl;
+              } else {
+                std::cout << Cyan("... done thinking") << std::endl;
+              }
+            }
+
+            saved_thinking_state = thinking;
+            switch (reason) {
+              case ollama::Reason::kDone:
+                std::cout << std::endl;
+                OLOG(OLogLevel::kInfo) << "Completed!";
+                done = true;
+                break;
+              case ollama::Reason::kLogNotice:
+                OLOG(OLogLevel::kInfo) << output;
+                break;
+              case ollama::Reason::kLogDebug:
+                OLOG(OLogLevel::kDebug) << output;
+                break;
+              case ollama::Reason::kPartialResult:
+                if (thinking) {
+                  std::cout << Gray(output);
+                } else {
+                  std::cout << output;
+                }
+                std::cout.flush();
+                break;
+              case ollama::Reason::kFatalError:
+                OLOG(OLogLevel::kError) << output;
+                done = true;
+                break;
+              case ollama::Reason::kCancelled:
+                OLOG(OLogLevel::kWarning) << output;
+                done = true;
+                break;
+            }
+            // continue
+            return true;
+          },
+          model_name, options);
+    }
+  });
 
   ollama::ChatOptions options{ollama::ChatOptions::kDefault};
   while (true) {
@@ -234,12 +333,16 @@ int main(int argc, char** argv) {
       ollama::AddFlagSet(options, ollama::ChatOptions::kNoTools);
       std::cout << "Tools are disabled" << std::endl;
       continue;
+    } else if (prompt == "/int") {
+      cli->Interrupt();
+      std::cout << "Main Thread: Interrupted" << std::endl;
+      break;
     } else if (prompt == "/chat_defaults") {
       options = ollama::ChatOptions::kDefault;
       std::cout << "Chat options restored to defaults." << std::endl;
       continue;
     } else if (prompt == "/info") {
-      auto model_options = cli.GetModelInfo(model_name);
+      auto model_options = cli->GetModelInfo(model_name);
       if (model_options.has_value()) {
         std::cout << std::setw(2) << model_options.value()["capabilities"]
                   << std::endl;
@@ -252,7 +355,7 @@ int main(int argc, char** argv) {
       continue;
     } else if (prompt == "clear" || prompt == "reset") {
       // Clear the session
-      cli.SoftReset();
+      cli->Shutdown();
       std::cout << "Session cleared." << std::endl;
       continue;
     }
@@ -267,57 +370,9 @@ int main(int argc, char** argv) {
         prompt = content.GetValue();
       }
     }
-
-    std::atomic_bool done{false};
-    std::atomic_bool saved_thinking_state{false};
-    cli.Chat(
-        prompt,
-        [&done, &saved_thinking_state](
-            std::string output, ollama::Reason reason, bool thinking) -> bool {
-          if (saved_thinking_state != thinking) {
-            // we switched state
-            if (thinking) {
-              // the new state is "thinking"
-              std::cout << Cyan("Thinking... ") << std::endl;
-            } else {
-              std::cout << Cyan("... done thinking") << std::endl;
-            }
-          }
-
-          saved_thinking_state = thinking;
-          switch (reason) {
-            case ollama::Reason::kDone:
-              std::cout << std::endl;
-              OLOG(OLogLevel::kInfo) << "Completed!";
-              done = true;
-              break;
-            case ollama::Reason::kLogNotice:
-              OLOG(OLogLevel::kInfo) << output;
-              break;
-            case ollama::Reason::kLogDebug:
-              OLOG(OLogLevel::kDebug) << output;
-              break;
-            case ollama::Reason::kPartialResult:
-              if (thinking) {
-                std::cout << Gray(output);
-              } else {
-                std::cout << output;
-              }
-              std::cout.flush();
-              break;
-            case ollama::Reason::kFatalError:
-              OLOG(OLogLevel::kError) << output;
-              done = true;
-              break;
-            case ollama::Reason::kCancelled:
-              OLOG(OLogLevel::kWarning) << output;
-              done = true;
-              break;
-          }
-          // continue
-          return true;
-        },
-        model_name, options);
+    // push the prompt
+    PushPrompt(std::move(prompt), options);
   }
+  chat_thread.join();
   return 0;
 }

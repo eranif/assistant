@@ -2,6 +2,7 @@
 
 #include <string>
 
+#include "ollama/attributes.hpp"
 #include "ollama/logger.hpp"
 #include "ollama/ollamalib.hpp"
 
@@ -108,6 +109,7 @@ struct FunctionCall {
 class FunctionTable {
  public:
   json ToJSON() const {
+    std::scoped_lock lk{m_mutex};
     std::vector<json> v;
     for (const auto& [_, f] : m_functions) {
       v.push_back(f->ToJSON());
@@ -117,6 +119,7 @@ class FunctionTable {
   }
 
   void Add(std::shared_ptr<FunctionBase> f) {
+    std::scoped_lock lk{m_mutex};
     if (!m_functions.insert({f->GetName(), f}).second) {
       OLOG(OLogLevel::kWarning) << "Duplicate function found: " << f->GetName();
     }
@@ -125,6 +128,7 @@ class FunctionTable {
   void AddMCPServer(std::shared_ptr<MCPStdioClient> client);
   FunctionResult Call(const FunctionCall& func_call) const {
     try {
+      std::scoped_lock lk{m_mutex};
       auto iter = m_functions.find(func_call.name);
       if (iter == m_functions.end()) {
         std::stringstream ss;
@@ -141,6 +145,7 @@ class FunctionTable {
   }
 
   void Clear() {
+    std::scoped_lock lk{m_mutex};
     m_functions.clear();
     m_clients.clear();
   }
@@ -148,8 +153,10 @@ class FunctionTable {
   void ReloadMCPServers(const Config* config);
 
  private:
-  std::map<std::string, std::shared_ptr<FunctionBase>> m_functions;
-  std::vector<std::shared_ptr<MCPStdioClient>> m_clients;
+  mutable std::mutex m_mutex;
+  std::map<std::string, std::shared_ptr<FunctionBase>> m_functions
+      GUARDED_BY(m_mutex);
+  std::vector<std::shared_ptr<MCPStdioClient>> m_clients GUARDED_BY(m_mutex);
 };
 
 }  // namespace ollama

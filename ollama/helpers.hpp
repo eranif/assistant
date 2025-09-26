@@ -1,9 +1,13 @@
 #pragma once
 
+#include <functional>
+#include <mutex>
 #include <sstream>
 #include <string>
 #include <type_traits>
 #include <vector>
+
+#include "ollama/attributes.hpp"
 
 namespace ollama {
 /**
@@ -59,4 +63,43 @@ inline void AddFlagSet(EnumName& flags, EnumName flag) {
   t |= static_cast<T>(flag);
 }
 
+/// A helper class that construct ValueType and the provide access to it only
+/// via the "with_mut" and "with" methods.
+template <typename ValueType>
+class Locker {
+ public:
+  template <typename... Args>
+  Locker(Args... args) : m_value(std::forward<Args>(args)...) {}
+
+  Locker(const Locker& other) = delete;
+  Locker& operator=(const Locker& other) = delete;
+
+  /// Provide a write access to the underlying type.
+  void with_mut(std::function<void(ValueType&)> cb) {
+    std::scoped_lock lk{m_mutex};
+    cb(m_value);
+  }
+
+  /// Provide a read-only access to the underlying type.
+  void with(std::function<void(const ValueType&)> cb) const {
+    std::scoped_lock lk{m_mutex};
+    cb(m_value);
+  }
+
+  /// Return a **copy of the value**
+  ValueType get_value() const {
+    std::scoped_lock lk{m_mutex};
+    return m_value;
+  }
+
+  /// set the value.
+  void set_value(ValueType value) {
+    std::scoped_lock lk{m_mutex};
+    m_value = std::move(value);
+  }
+
+ private:
+  mutable std::mutex m_mutex;
+  ValueType m_value GUARDED_BY(m_mutex);
+};
 }  // namespace ollama
