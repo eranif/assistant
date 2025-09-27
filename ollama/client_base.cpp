@@ -162,12 +162,17 @@ void ClientBase::CreateAndPushContext(std::optional<ollama::message> msg,
   think = model_options.think;
   hidethinking = model_options.hidethinking;
 
-  AddMessage(msg);
+  ollama::messages history;
+  if (IsFlagSet(chat_options, ChatOptions::kNoHistory)) {
+    if (msg.has_value()) {
+      history = {msg.value()};
+    }
+  } else {
+    AddMessage(msg);
+    history = GetMessages();
+  }
 
   // Build the request
-  ollama::messages history = IsFlagSet(chat_options, ChatOptions::kNoHistory)
-                                 ? ollama::messages{}
-                                 : GetMessages();
   ollama::request req{model,    history, opts,
                       m_stream, "json",  m_keep_alive.get_value()};
   if (think.has_value()) {
