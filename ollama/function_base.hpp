@@ -151,6 +151,7 @@ class FunctionTable {
   }
 
   void ReloadMCPServers(const Config* config);
+  void Merge(const FunctionTable& other);
 
  private:
   mutable std::mutex m_mutex;

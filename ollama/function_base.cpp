@@ -59,4 +59,18 @@ void FunctionTable::ReloadMCPServers(const Config* config) {
     }
   }
 }
+
+void FunctionTable::Merge(const FunctionTable& other) {
+  // Lock both tables.
+  std::lock_guard lk1{m_mutex};
+  std::lock_guard lk2{other.m_mutex};
+
+  for (auto [name, f] : other.m_functions) {
+    if (m_functions.contains(name)) {
+      continue;
+    }
+    m_functions.insert({name, f});
+  }
+}
+
 }  // namespace ollama

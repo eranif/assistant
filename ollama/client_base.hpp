@@ -41,8 +41,12 @@ enum class ModelCapabilities {
 
 /// Options passed to the "Chat()" API call.
 enum class ChatOptions {
+  /// Default. All is enabled.
   kDefault = (0),
+  /// Do not pass the tools to the current chat request.
   kNoTools = (1 << 0),
+  /// Do not pass the chat history to the current chat request.
+  kNoHistory = (1 << 1),
 };
 
 using OnResponseCallback = std::function<bool(std::string, Reason, bool)>;
