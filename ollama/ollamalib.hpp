@@ -997,11 +997,24 @@ class Ollama {
     return version;
   }
 
-  void setServerURL(const std::string& server_url) {
+  void setKeepAlive(bool b) {
+    if (this->cli) {
+      this->cli->set_keep_alive(b);
+    }
+  }
+
+  bool setServerURL(const std::string& server_url) {
+    if (this->server_url == server_url) {
+      // No need to change
+      return false;
+    }
     this->server_url = server_url;
     delete (this->cli);
     this->cli = new httplib::Client(server_url);
+    return true;
   }
+
+  std::string getServerURL() const { return this->server_url; }
 
   void interrupt() {
     // Close the socket to force any lingering thread to exit.

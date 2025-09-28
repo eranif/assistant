@@ -10,6 +10,11 @@
 
 namespace ollama {
 
+enum class EventType {
+  kShutdown,
+  kServerReloadConfig,
+};
+
 class Client : public ClientBase {
  public:
   Client(const std::string& url,
@@ -45,8 +50,6 @@ class Client : public ClientBase {
 
   /// This method should be called from another thread.
   void Interrupt() override;
-  void Shutdown() override;
-  void Startup() override;
 
  private:
   void SetHeadersInternal(
@@ -55,8 +58,7 @@ class Client : public ClientBase {
 
   void StartIsAliveThread();
   void StopIsAliveThread();
-  void IsAliveThreadMain(std::string server_url,
-                         std::unordered_map<std::string, std::string> headers);
+  void IsAliveThreadMain();
 
   /// Check if the server is running. This method does not rely on the cached
   /// "m_is_running_flag" variable.
@@ -65,7 +67,7 @@ class Client : public ClientBase {
   std::mutex m_ollama_mutex;
   Ollama m_ollama GUARDED_BY(m_ollama_mutex);
   std::atomic_bool m_is_running_flag{false};
-  ollama::ThreadNotifier m_shutdown_flag;
+  ThreadNotifier<EventType> m_is_alive_channel;
   std::unique_ptr<std::thread> m_isAliveThread;
 };
 }  // namespace ollama

@@ -172,9 +172,19 @@ int main(int argc, char** argv) {
   //                        [[maybe_unused]] std::string msg) {});
 
   ollama::SetLogLevel(args.log_level);
-  std::shared_ptr<ollama::Client> cli = std::make_shared<ollama::Client>(
-      std::string{"http://127.0.0.1:11434"},
-      std::unordered_map<std::string, std::string>{});
+  std::optional<ollama::Config> conf;
+  if (!args.config_file.empty()) {
+    conf = ollama::Config::FromFile(args.config_file);
+    ollama::SetLogLevel(conf.value().GetLogLevel());
+  }
+
+  std::string url = "http://127.0.0.1:11434";
+  std::unordered_map<std::string, std::string> headers;
+  std::shared_ptr<ollama::Client> cli =
+      std::make_shared<ollama::Client>(url, headers);
+  if (conf.has_value()) {
+    cli->ApplyConfig(&(*conf));
+  }
 
   cli->GetFunctionTable().Add(
       FunctionBuilder("Open file in editor")
@@ -193,12 +203,6 @@ int main(int argc, char** argv) {
           .AddRequiredParam("file_content", "the content of the file", "string")
           .SetCallback(WriteFileContent)
           .Build());
-  if (!args.config_file.empty()) {
-    auto conf = ollama::Config::FromFile(args.config_file);
-    if (conf.has_value()) {
-      cli->ApplyConfig(&conf.value());
-    }
-  }
 
   OLOG(ollama::LogLevel::kInfo)
       << "Waiting for ollama server to become available...";

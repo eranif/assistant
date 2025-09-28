@@ -22,22 +22,38 @@ Client::Client(const std::string& url,
   mcp::set_log_level(mcp::log_level::error);
   SetHeadersInternal(m_ollama, headers);
   Startup();
+  StartIsAliveThread();
 }
 
-Client::~Client() { Shutdown(); }
+Client::~Client() {
+  Shutdown();
+  StopIsAliveThread();
+}
 
-void Client::IsAliveThreadMain(
-    std::string server_url,
-    std::unordered_map<std::string, std::string> headers) {
-  OLOG(LogLevel::kInfo) << "Ollama 'is alive' thread started.";
-  while (true) {
+void Client::IsAliveThreadMain() {
+  OLOG(LogLevel::kInfo) << "Ollama 'is alive' thread started. Server: "
+                        << m_url.get_value();
+  bool cont{true};
+  while (cont) {
     Ollama client;
-    client.setServerURL(server_url);
-    SetHeadersInternal(client, headers);
+    client.setServerURL(m_url.get_value());
+    SetHeadersInternal(client, m_http_headers.get_value());
     m_is_running_flag.store(IsRunningInternal(client));
+    auto event = m_is_alive_channel.Wait(5000);
+    if (!event.has_value()) {
+      // timeout
+      continue;
+    }
 
-    if (m_shutdown_flag.Wait(1000) == WakeupReason::kNotified) {
-      break;
+    switch (event.value()) {
+      case ollama::EventType::kShutdown:
+        OLOG(LogLevel::kInfo) << "Received command to shutdown.";
+        cont = false;
+        break;
+      case ollama::EventType::kServerReloadConfig:
+        OLOG(LogLevel::kInfo)
+            << "Server configuration changed. Server: " << m_url.get_value();
+        break;
     }
   }
   OLOG(LogLevel::kInfo) << "Ollama 'is alive' thread exited.";
@@ -48,7 +64,7 @@ void Client::StartIsAliveThread() {
   auto t = new std::thread(
       [](Client* c, std::string server_url,
          std::unordered_map<std::string, std::string> headers) {
-        c->IsAliveThreadMain(std::move(server_url), std::move(headers));
+        c->IsAliveThreadMain();
       },
       this, m_url.get_value(), m_http_headers.get_value());
   m_isAliveThread.reset(t);
@@ -56,23 +72,10 @@ void Client::StartIsAliveThread() {
 
 void Client::StopIsAliveThread() {
   if (m_isAliveThread) {
-    OLOG(LogLevel::kInfo) << "Stopping is-alive thread";
-    m_shutdown_flag.Notify();
+    m_is_alive_channel.Notify(EventType::kShutdown);
     m_isAliveThread->join();
     m_isAliveThread.reset();
-    OLOG(LogLevel::kInfo) << "Stopping is-alive thread...done";
   }
-}
-
-void Client::Startup() {
-  ClientBase::Startup();
-  StartIsAliveThread();
-}
-
-void Client::Shutdown() {
-  ClientBase::Shutdown();
-  std::scoped_lock lk{m_ollama_mutex};
-  StopIsAliveThread();
 }
 
 void Client::Interrupt() {
@@ -82,7 +85,7 @@ void Client::Interrupt() {
     m_ollama.interrupt();
   } catch (std::exception& e) {
     OLOG(LogLevel::kWarning)
-        << "an error occured while interrupting client. " << e.what();
+        << "an error occurred while interrupting client. " << e.what();
   }
 }
 
@@ -102,9 +105,8 @@ void Client::ApplyConfig(const ollama::Config* conf) {
     m_ollama.setServerURL(m_url.get_value());
   }
 
-  // Restart the "Is Alive" thread
-  StopIsAliveThread();
-  StartIsAliveThread();
+  // Notify the "is-alive" thread to reload configuration
+  m_is_alive_channel.Notify(EventType::kServerReloadConfig);
 
   {
     std::scoped_lock lk{m_ollama_mutex};
