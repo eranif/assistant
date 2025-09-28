@@ -268,7 +268,8 @@ int main(int argc, char** argv) {
         prompt = std::move(item.value().first);
         options = std::move(item.value().second);
       }
-      std::cout << "Thread: " << prompt << std::endl;
+      std::cout << prompt << std::endl;
+      std::cout.flush();
 
       std::atomic_bool done{false};
       std::atomic_bool saved_thinking_state{false};
@@ -373,6 +374,9 @@ int main(int argc, char** argv) {
     // push the prompt
     PushPrompt(std::move(prompt), options);
   }
+
+  // notify the worker thread to exit.
+  cli->Interrupt();
   chat_thread.join();
   return 0;
 }

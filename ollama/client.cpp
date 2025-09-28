@@ -30,13 +30,15 @@ void Client::IsAliveThreadMain(
     std::string server_url,
     std::unordered_map<std::string, std::string> headers) {
   OLOG(LogLevel::kInfo) << "Ollama 'is alive' thread started.";
-  while (!m_shutdown_flag.load()) {
+  while (true) {
     Ollama client;
     client.setServerURL(server_url);
     SetHeadersInternal(client, headers);
-
     m_is_running_flag.store(IsRunningInternal(client));
-    std::this_thread::sleep_for(std::chrono::seconds(1));
+
+    if (m_shutdown_flag.Wait(1000) == WakeupReason::kNotified) {
+      break;
+    }
   }
   OLOG(LogLevel::kInfo) << "Ollama 'is alive' thread exited.";
 }
@@ -53,12 +55,13 @@ void Client::StartIsAliveThread() {
 }
 
 void Client::StopIsAliveThread() {
-  m_shutdown_flag.store(true);
   if (m_isAliveThread) {
+    OLOG(LogLevel::kInfo) << "Stopping is-alive thread";
+    m_shutdown_flag.Notify();
     m_isAliveThread->join();
     m_isAliveThread.reset();
+    OLOG(LogLevel::kInfo) << "Stopping is-alive thread...done";
   }
-  m_shutdown_flag.store(false);
 }
 
 void Client::Startup() {

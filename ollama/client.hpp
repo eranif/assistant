@@ -6,6 +6,7 @@
 
 #include "ollama/attributes.hpp"
 #include "ollama/client_base.hpp"
+#include "ollama/thread_notifier.hpp"
 
 namespace ollama {
 
@@ -64,7 +65,7 @@ class Client : public ClientBase {
   std::mutex m_ollama_mutex;
   Ollama m_ollama GUARDED_BY(m_ollama_mutex);
   std::atomic_bool m_is_running_flag{false};
-  std::atomic_bool m_shutdown_flag{false};
+  ollama::ThreadNotifier m_shutdown_flag;
   std::unique_ptr<std::thread> m_isAliveThread;
 };
 }  // namespace ollama
