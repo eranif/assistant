@@ -195,7 +195,7 @@ class ClientBase {
 
   /// Clear all history messages.
   void ClearHistoryMessages() {
-    m_system_messages.with_mut([](ollama::messages& msgs) { msgs.clear(); });
+    m_messages.with_mut([](ollama::messages& msgs) { msgs.clear(); });
   }
 
   inline std::string GetUrl() const { return m_url.get_value(); }
