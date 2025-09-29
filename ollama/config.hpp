@@ -49,6 +49,40 @@ inline std::ostream& operator<<(std::ostream& os, const Endpoint& ep) {
   return os;
 }
 
+struct ServerTimeout {
+  /// Timeout for connecting to the server, milliseconds.
+  int connect_ms_{500};
+  /// Timeout for reading from the server, milliseconds.
+  int read_ms_{10000};
+  /// Timeout for writing to the server, milliseconds.
+  int write_ms_{10000};
+
+  /// Convert milliseconds to pair of secs/micros.
+  inline std::pair<int, int> ToSecsAndMicros(int time_ms) const {
+    int secs = time_ms / 1000;
+    int micro_secs = (time_ms % 1000) * 1000;
+    return {secs, micro_secs};
+  }
+
+  inline std::pair<int, int> GetConnectTimeout() const {
+    return ToSecsAndMicros(connect_ms_);
+  }
+
+  inline std::pair<int, int> GetReadTimeout() const {
+    return ToSecsAndMicros(read_ms_);
+  }
+
+  inline std::pair<int, int> GetWriteTimeout() const {
+    return ToSecsAndMicros(write_ms_);
+  }
+};
+
+inline std::ostream& operator<<(std::ostream& os, const ServerTimeout& t) {
+  os << "Timeout {connect: " << t.connect_ms_ << "ms, read: " << t.read_ms_
+     << "ms, write: " << t.write_ms_ << "ms}";
+  return os;
+}
+
 class Config {
  public:
   ~Config() = default;
@@ -86,6 +120,9 @@ class Config {
 
   const std::string& GetKeepAlive() const { return m_keep_alive; }
   bool IsStream() const { return m_stream; }
+  inline ServerTimeout GetServerTimeoutSettings() const {
+    return m_server_timeout;
+  }
 
  private:
   Config() = default;
@@ -97,6 +134,7 @@ class Config {
   LogLevel m_logLevel{LogLevel::kInfo};
   std::string m_keep_alive{"5m"};
   bool m_stream{true};
+  ServerTimeout m_server_timeout;
   std::vector<std::shared_ptr<Endpoint>> endpoints_;
 };
 }  // namespace ollama

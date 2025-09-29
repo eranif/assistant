@@ -258,6 +258,7 @@ void ClientBase::ApplyConfig(const ollama::Config* conf) {
   m_model_options.set_value(conf->GetModelOptionsMap());
   m_default_model_options.set_value(Config::CreaetDefaultModelOptions());
   m_http_headers.set_value(endpoint->GetHeaders());
+  m_server_timeout.set_value(conf->GetServerTimeoutSettings());
   auto iter = conf->GetModelOptionsMap().find("default");
   if (iter != conf->GetModelOptionsMap().end()) {
     m_default_model_options.set_value(iter->second);

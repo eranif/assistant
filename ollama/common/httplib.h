@@ -7411,6 +7411,7 @@ inline void ClientImpl::copy_settings(const ClientImpl &rhs) {
   client_cert_path_ = rhs.client_cert_path_;
   client_key_path_ = rhs.client_key_path_;
   connection_timeout_sec_ = rhs.connection_timeout_sec_;
+  connection_timeout_usec_ = rhs.connection_timeout_usec_;
   read_timeout_sec_ = rhs.read_timeout_sec_;
   read_timeout_usec_ = rhs.read_timeout_usec_;
   write_timeout_sec_ = rhs.write_timeout_sec_;

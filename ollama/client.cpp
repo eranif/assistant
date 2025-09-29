@@ -17,8 +17,9 @@ Client::Client(const std::string& url,
   ollama::show_replies(false);
   ollama::allow_exceptions(true);
   m_ollama.setServerURL(url);
-  m_ollama.setReadTimeout(300);
-  m_ollama.setWriteTimeout(300);
+  m_ollama.setReadTimeout(10);
+  m_ollama.setWriteTimeout(10);
+  m_ollama.setConnectTimeout(10);
   mcp::set_log_level(mcp::log_level::error);
   SetHeadersInternal(m_ollama, headers);
   Startup();
@@ -34,11 +35,24 @@ void Client::IsAliveThreadMain() {
   OLOG(LogLevel::kInfo) << "Ollama 'is alive' thread started. Server: "
                         << m_url.get_value();
   bool cont{true};
+  constexpr int kConnectTimeoutMicroSecs = 100 * 1000;  // 0.5 seconds
+  constexpr int kConnectTimeoutSecs = 0;                // 0 seconds
   while (cont) {
-    Ollama client;
-    client.setServerURL(m_url.get_value());
-    SetHeadersInternal(client, m_http_headers.get_value());
-    m_is_running_flag.store(IsRunningInternal(client));
+    try {
+      Ollama client;
+      client.setServerURL(m_url.get_value());
+
+      auto server_timeout_settings = m_server_timeout.get_value();
+      client.setConnectTimeout(
+          server_timeout_settings.GetConnectTimeout().first,
+          server_timeout_settings.GetConnectTimeout().second);
+
+      SetHeadersInternal(client, m_http_headers.get_value());
+      m_is_running_flag.store(IsRunningInternal(client));
+    } catch (const std::exception& e) {
+      m_is_running_flag.store(false);
+    }
+
     auto event = m_is_alive_channel.Wait(5000);
     if (!event.has_value()) {
       // timeout
@@ -103,6 +117,14 @@ void Client::ApplyConfig(const ollama::Config* conf) {
   {
     std::scoped_lock lk{m_ollama_mutex};
     m_ollama.setServerURL(m_url.get_value());
+    auto server_timeout_settings = m_server_timeout.get_value();
+    m_ollama.setConnectTimeout(
+        server_timeout_settings.GetConnectTimeout().first,
+        server_timeout_settings.GetConnectTimeout().second);
+    m_ollama.setReadTimeout(server_timeout_settings.GetReadTimeout().first,
+                            server_timeout_settings.GetReadTimeout().second);
+    m_ollama.setWriteTimeout(server_timeout_settings.GetWriteTimeout().first,
+                             server_timeout_settings.GetWriteTimeout().second);
   }
 
   // Notify the "is-alive" thread to reload configuration
@@ -216,7 +238,8 @@ void Client::SetHeadersInternal(
 bool Client::IsRunningInternal(Ollama& client) const {
   try {
     return client.is_running();
-  } catch ([[maybe_unused]] std::exception& e) {
+  } catch (const std::exception& e) {
+    OLOG(LogLevel::kDebug) << e.what();
     return false;
   }
 }

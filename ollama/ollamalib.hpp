@@ -1022,15 +1022,26 @@ class Ollama {
     httplib::detail::close_socket(this->cli->socket());
   }
 
-  void setReadTimeout(const int seconds) {
-    this->cli->set_connection_timeout(seconds);
-    this->cli->set_read_timeout(seconds);
+  void setReadTimeout(const int seconds, const int usecs = 0) {
+    if (this->cli == nullptr) {
+      return;
+    }
+    this->cli->set_read_timeout(seconds, usecs);
   }
 
-  void setWriteTimeout(const int seconds) {
-    this->cli->set_write_timeout(seconds);
+  void setWriteTimeout(const int seconds, const int usecs = 0) {
+    if (this->cli == nullptr) {
+      return;
+    }
+    this->cli->set_write_timeout(seconds, usecs);
   }
 
+  void setConnectTimeout(const int secs, const int usecs = 0) {
+    if (this->cli == nullptr) {
+      return;
+    }
+    this->cli->set_connection_timeout(secs, usecs);
+  }
   void setHttpHeaders(httplib::Headers headers) {
     headers_ = std::move(headers);
   }

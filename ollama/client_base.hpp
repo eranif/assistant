@@ -223,6 +223,7 @@ class ClientBase {
   Locker<std::unordered_map<std::string, ModelOptions>> m_model_options;
   Locker<std::unordered_map<std::string, std::string>> m_http_headers;
   Locker<ModelOptions> m_default_model_options;
+  Locker<ServerTimeout> m_server_timeout;
   Locker<std::unordered_map<std::string, ModelCapabilities>>
       m_model_capabilities;
   std::atomic_bool m_interrupt{false};

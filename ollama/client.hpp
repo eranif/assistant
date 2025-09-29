@@ -51,6 +51,24 @@ class Client : public ClientBase {
   /// This method should be called from another thread.
   void Interrupt() override;
 
+  /// Timeout for connecting the server.
+  void SetConnectTimeout(const int secs, const int usecs) {
+    std::scoped_lock lk{m_ollama_mutex};
+    m_ollama.setConnectTimeout(secs, usecs);
+  }
+
+  /// Timeout for reading from the server.
+  void SetReadTimeout(const int secs, const int usecs) {
+    std::scoped_lock lk{m_ollama_mutex};
+    m_ollama.setReadTimeout(secs, usecs);
+  }
+
+  /// Timeout for writer to the server.
+  void SetWriteTimeout(const int secs, const int usecs) {
+    std::scoped_lock lk{m_ollama_mutex};
+    m_ollama.setWriteTimeout(secs, usecs);
+  }
+
  private:
   void SetHeadersInternal(
       Ollama& client,

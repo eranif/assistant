@@ -120,6 +120,27 @@ std::optional<Config> Config::FromContent(const std::string& content) {
       }
     }
 
+    if (parsed_data.contains("server_timeout")) {
+      OLOG(LogLevel::kDebug) << "Parsing timeout settings...";
+      auto server_timeout = parsed_data["server_timeout"];
+      if (server_timeout.contains("read_msecs") &&
+          server_timeout["read_msecs"].is_number()) {
+        config.m_server_timeout.read_ms_ =
+            server_timeout["read_msecs"].get<int>();
+      }
+      if (server_timeout.contains("read_msecs") &&
+          server_timeout["read_msecs"].is_number()) {
+        config.m_server_timeout.write_ms_ =
+            server_timeout["write_msecs"].get<int>();
+      }
+      if (server_timeout.contains("connect_msecs") &&
+          server_timeout["connect_msecs"].is_number()) {
+        config.m_server_timeout.connect_ms_ =
+            server_timeout["connect_msecs"].get<int>();
+      }
+    }
+
+    OLOG(LogLevel::kInfo) << "Timeout settings:" << config.m_server_timeout;
     // Always ensure that we have at least 1 endpoint.
     if (config.endpoints_.empty()) {
       config.endpoints_.push_back(std::make_shared<Endpoint>());
