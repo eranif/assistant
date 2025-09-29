@@ -74,18 +74,11 @@ class Client : public ClientBase {
       Ollama& client,
       const std::unordered_map<std::string, std::string>& headers);
 
-  void StartIsAliveThread();
-  void StopIsAliveThread();
-  void IsAliveThreadMain();
-
   /// Check if the server is running. This method does not rely on the cached
   /// "m_is_running_flag" variable.
   bool IsRunningInternal(Ollama& client) const;
 
   std::mutex m_ollama_mutex;
   Ollama m_ollama GUARDED_BY(m_ollama_mutex);
-  std::atomic_bool m_is_running_flag{false};
-  ThreadNotifier<EventType> m_is_alive_channel;
-  std::unique_ptr<std::thread> m_isAliveThread;
 };
 }  // namespace ollama

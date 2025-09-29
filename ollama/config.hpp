@@ -51,7 +51,7 @@ inline std::ostream& operator<<(std::ostream& os, const Endpoint& ep) {
 
 struct ServerTimeout {
   /// Timeout for connecting to the server, milliseconds.
-  int connect_ms_{500};
+  int connect_ms_{100};
   /// Timeout for reading from the server, milliseconds.
   int read_ms_{10000};
   /// Timeout for writing to the server, milliseconds.
