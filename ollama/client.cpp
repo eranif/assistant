@@ -49,6 +49,8 @@ void Client::IsAliveThreadMain() {
 
       SetHeadersInternal(client, m_http_headers.get_value());
       m_is_running_flag.store(IsRunningInternal(client));
+      OLOG(LogLevel::kDebug)
+          << "Server is " << (m_is_running_flag ? "running" : "not-running");
     } catch (const std::exception& e) {
       m_is_running_flag.store(false);
     }
