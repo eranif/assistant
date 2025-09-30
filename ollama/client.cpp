@@ -29,7 +29,6 @@ Client::~Client() { Shutdown(); }
 
 void Client::Interrupt() {
   ClientBase::Interrupt();
-  std::scoped_lock lk{m_ollama_mutex};
   try {
     m_ollama.interrupt();
   } catch (std::exception& e) {

@@ -59,7 +59,8 @@ inline size_t GetChoiceFromUser(const std::vector<std::string>& choices) {
   }
 }
 
-Result<std::string, std::string> ReadFileContent(const std::string& path) {
+inline Result<std::string, std::string> ReadFileContent(
+    const std::string& path) {
   std::ifstream file(path, std::ios::binary);  // open in binary mode
   if (!file) {
     std::stringstream ss;
@@ -75,10 +76,9 @@ Result<std::string, std::string> ReadFileContent(const std::string& path) {
   return buffer.str();
 }
 
-inline std::string GetTextFromUser(const std::string& prompt) {
+inline std::string GetTextFromUser() {
   while (true) {
     std::string text;
-    std::cout << prompt << ">";
     std::getline(std::cin, text);
     if (text.empty()) {
       continue;

@@ -1017,9 +1017,7 @@ class Ollama {
   std::string getServerURL() const { return this->server_url; }
 
   void interrupt() {
-    // Close the socket to force any lingering thread to exit.
-    httplib::detail::shutdown_socket(this->cli->socket());
-    httplib::detail::close_socket(this->cli->socket());
+    this->cli->stop();
   }
 
   void setReadTimeout(const int seconds, const int usecs = 0) {

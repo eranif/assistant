@@ -79,6 +79,6 @@ class Client : public ClientBase {
   bool IsRunningInternal(Ollama& client) const;
 
   std::mutex m_ollama_mutex;
-  Ollama m_ollama GUARDED_BY(m_ollama_mutex);
+  Ollama m_ollama;
 };
 }  // namespace ollama

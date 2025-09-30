@@ -162,6 +162,9 @@ ollama::FunctionResult OpenFileInEditor(const ollama::json& args) {
 }
 
 int main(int argc, char** argv) {
+#ifdef __WIN32
+  SetConsoleOutputCP(65001);
+#endif
   auto args = ParseCommandLine(argc, argv);
   if (!args.log_file.empty()) {
     ollama::SetLogFile(args.log_file);
@@ -171,7 +174,7 @@ int main(int argc, char** argv) {
   //  ollama::SetLogSink([]([[maybe_unused]] ollama::LogLevel level,
   //                        [[maybe_unused]] std::string msg) {});
 
-  ollama::SetLogLevel(args.log_level);
+  ollama::SetLogLevel(ollama::LogLevel::kError);
   std::optional<ollama::Config> conf;
   if (!args.config_file.empty()) {
     conf = ollama::Config::FromFile(args.config_file);
@@ -272,8 +275,6 @@ int main(int argc, char** argv) {
         prompt = std::move(item.value().first);
         options = std::move(item.value().second);
       }
-      std::cout << prompt << std::endl;
-      std::cout.flush();
 
       std::atomic_bool done{false};
       std::atomic_bool saved_thinking_state{false};
@@ -326,12 +327,19 @@ int main(int argc, char** argv) {
             return true;
           },
           model_name, options);
+      std::cout << "\n>";
+      std::cout.flush();
     }
   });
 
+  std::cout << ">";
+  std::cout.flush();
   ollama::ChatOptions options{ollama::ChatOptions::kDefault};
   while (true) {
-    std::string prompt = GetTextFromUser("Ask me anything");
+    std::string prompt = GetTextFromUser();
+    if (prompt.empty()) {
+      continue;
+    }
     if (prompt == "q" || prompt == "exit" || prompt == "quit") {
       break;
     } else if (prompt == "/no_tools") {
