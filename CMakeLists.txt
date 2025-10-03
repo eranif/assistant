@@ -22,8 +22,8 @@ option(
   ON)
 
 if (ASSISTANTLIB_BUILD_EXAMPLE)
-  add_executable(assistant main.cpp)
-  target_link_libraries(assistant PRIVATE assistantlib)
+  add_executable(assistant-demo main.cpp)
+  target_link_libraries(assistant-demo PRIVATE assistantlib)
 endif ()
 
 file(
