@@ -10,7 +10,7 @@
 #include "ollama/attributes.hpp"
 #include "ollama/config.hpp"
 
-namespace ollama {
+namespace assistant {
 
 constexpr std::string_view kDefaultOllamaUrl = "http://127.0.0.1:11434";
 constexpr std::string_view kAssistantRole = "assistant";
@@ -54,12 +54,12 @@ using OnResponseCallback = std::function<bool(std::string, Reason, bool)>;
 class ClientBase;
 struct ChatRequest {
   OnResponseCallback callback_;
-  ollama::request request_;
+  assistant::request request_;
   std::string model_;
   /// If a tool(s) invocation is required, it will be placed here. Once we
   /// invoke the tool and push the tool response + the request to the history
   /// and remove it from here.
-  std::vector<std::pair<ollama::message, std::vector<FunctionCall>>>
+  std::vector<std::pair<assistant::message, std::vector<FunctionCall>>>
       func_calls_;
   void InvokeTools(ClientBase* client);
 };
@@ -123,8 +123,8 @@ class ClientBase {
 
   /// The underlying function that triggers the chat.
   virtual void ChatImpl(
-      ollama::request& request,
-      std::function<bool(const ollama::response& resp, void* user_data)>
+      assistant::request& request,
+      std::function<bool(const assistant::response& resp, void* user_data)>
           on_response,
       void* user_data) = 0;
 
@@ -156,7 +156,7 @@ class ClientBase {
                     ChatOptions chat_options  // bitwise OR'ed ChatOptions
   );
 
-  virtual void ApplyConfig(const ollama::Config* conf);
+  virtual void ApplyConfig(const assistant::Config* conf);
   virtual void Startup() { m_interrupt.store(false); }
   virtual void Shutdown() {
     Interrupt();
@@ -183,34 +183,34 @@ class ClientBase {
   /// Add system message to the prompt. System messages are always sent as part
   /// of the prompt
   void AddSystemMessage(const std::string& msg) {
-    m_system_messages.with_mut([&msg](ollama::messages& msgs) {
-      msgs.push_back(ollama::message{"system", msg});
+    m_system_messages.with_mut([&msg](assistant::messages& msgs) {
+      msgs.push_back(assistant::message{"system", msg});
     });
   }
 
   /// Clear all system messages.
   void ClearSystemMessages() {
-    m_system_messages.with_mut([](ollama::messages& msgs) { msgs.clear(); });
+    m_system_messages.with_mut([](assistant::messages& msgs) { msgs.clear(); });
   }
 
   /// Clear all history messages.
   void ClearHistoryMessages() {
-    m_messages.with_mut([](ollama::messages& msgs) { msgs.clear(); });
+    m_messages.with_mut([](assistant::messages& msgs) { msgs.clear(); });
   }
 
   inline std::string GetUrl() const { return m_url.get_value(); }
 
  protected:
-  static bool OnResponse(const ollama::response& resp, void* user_data);
-  void ProcessQueue();
-  bool HandleResponse(const ollama::response& resp,
+  static bool OnResponse(const assistant::response& resp, void* user_data);
+  void ProcessChatRequestQueue();
+  bool HandleResponse(const assistant::response& resp,
                       ChatContext& chat_user_data);
-  void ProcessContext(std::shared_ptr<ChatRequest> context);
-  void CreateAndPushContext(std::optional<ollama::message> msg,
-                            OnResponseCallback cb, std::string model,
-                            ChatOptions chat_options);
-  void AddMessage(std::optional<ollama::message> msg);
-  ollama::messages GetMessages() const;
+  void ProcessChatRquest(std::shared_ptr<ChatRequest> chat_request);
+  void CreateAndPushChatRequest(std::optional<assistant::message> msg,
+                                OnResponseCallback cb, std::string model,
+                                ChatOptions chat_options);
+  void AddMessage(std::optional<assistant::message> msg);
+  assistant::messages GetMessages() const;
   bool ModelHasCapability(const std::string& model_name, ModelCapabilities c);
 
   FunctionTable m_function_table;
@@ -218,8 +218,8 @@ class ClientBase {
   Locker<std::string> m_url;
   std::atomic_size_t m_windows_size{20};
   /// Messages that were sent to the AI, will be placed here
-  Locker<ollama::messages> m_messages;
-  Locker<ollama::messages> m_system_messages;
+  Locker<assistant::messages> m_messages;
+  Locker<assistant::messages> m_system_messages;
   Locker<std::unordered_map<std::string, ModelOptions>> m_model_options;
   Locker<std::unordered_map<std::string, std::string>> m_http_headers;
   Locker<ModelOptions> m_default_model_options;
@@ -231,4 +231,4 @@ class ClientBase {
   Locker<std::string> m_keep_alive{"5m"};
   friend struct ChatRequest;
 };
-}  // namespace ollama
+}  // namespace assistant

@@ -6,12 +6,12 @@
 
 #include "ollama/function.hpp"
 
-namespace ollama {
+namespace assistant {
 
 class ResponseParser {
  public:
   static std::optional<std::vector<FunctionCall>> GetTools(
-      const ollama::response& resp) {
+      const assistant::response& resp) {
     try {
       json j = resp.as_json();
       std::vector<FunctionCall> calls;
@@ -29,11 +29,11 @@ class ResponseParser {
     }
   }
 
-  static std::optional<ollama::message> GetResponseMessage(
-      const ollama::response& resp) {
+  static std::optional<assistant::message> GetResponseMessage(
+      const assistant::response& resp) {
     try {
       json j = resp.as_json();
-      auto msg = ollama::message(j["message"]["role"], j["message"]["content"]);
+      auto msg = assistant::message(j["message"]["role"], j["message"]["content"]);
       if (j["message"].contains("tool_calls")) {
         msg["tool_calls"] = j["message"]["tool_calls"];
       }
@@ -43,7 +43,7 @@ class ResponseParser {
     }
   }
 
-  static std::optional<std::string> GetContent(const ollama::response& resp) {
+  static std::optional<std::string> GetContent(const assistant::response& resp) {
     try {
       json j = resp.as_json();
       return j["message"]["content"];
@@ -52,7 +52,7 @@ class ResponseParser {
     }
   }
 
-  static bool IsDone(const ollama::response& resp) {
+  static bool IsDone(const assistant::response& resp) {
     try {
       json j = resp.as_json();
       return j["done"];
@@ -61,4 +61,4 @@ class ResponseParser {
     return false;
   }
 };
-}  // namespace ollama
+}  // namespace assistant

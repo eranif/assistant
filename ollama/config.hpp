@@ -8,7 +8,7 @@
 #include "ollama/mcp_local_process.hpp"
 #include "ollama/model_options.hpp"
 
-namespace ollama {
+namespace assistant {
 
 const std::string_view kServerKindStdio = "stdio";
 const std::string_view kServerKindSse = "sse";
@@ -17,7 +17,7 @@ struct MCPServerConfig {
   std::string name;
   std::vector<std::string> args;
   std::optional<SSHLogin> ssh_login;
-  std::optional<ollama::json> env;
+  std::optional<assistant::json> env;
   bool enabled{true};
   std::string type{kServerKindStdio};
   inline bool IsRemote() const { return ssh_login.has_value(); }
@@ -26,7 +26,7 @@ struct MCPServerConfig {
 inline std::ostream& operator<<(std::ostream& os, const MCPServerConfig& mcp) {
   os << "MCPServerConfig {name: " << mcp.name << ", command: " << mcp.args
      << ", env: "
-     << (mcp.env.has_value() ? mcp.env.value() : ollama::json::object()) << "}";
+     << (mcp.env.has_value() ? mcp.env.value() : assistant::json::object()) << "}";
   return os;
 }
 
@@ -137,4 +137,4 @@ class Config {
   ServerTimeout m_server_timeout;
   std::vector<std::shared_ptr<Endpoint>> endpoints_;
 };
-}  // namespace ollama
+}  // namespace assistant

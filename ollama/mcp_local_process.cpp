@@ -2,7 +2,7 @@
 
 #include "ollama/function.hpp"
 
-namespace ollama {
+namespace assistant {
 
 namespace {
 void WrapWithDoubleQuotes(std::string& s) {
@@ -34,12 +34,12 @@ void EscapeDoubleQuotes(std::string& str) {
 }  // namespace
 
 MCPStdioClient::MCPStdioClient(const std::vector<std::string>& args,
-                               std::optional<ollama::json> env)
+                               std::optional<assistant::json> env)
     : m_args(args), m_env(std::move(env)) {}
 
 MCPStdioClient::MCPStdioClient(const SSHLogin& ssh_login,
                                const std::vector<std::string>& args,
-                               std::optional<ollama::json> env)
+                               std::optional<assistant::json> env)
     : m_args(args), m_ssh_login(ssh_login), m_env(std::move(env)) {}
 
 bool MCPStdioClient::Initialise() {
@@ -83,7 +83,7 @@ bool MCPStdioClient::Initialise() {
     // Pass the environment variables
     auto env = (m_env.has_value() && m_env.value().is_object())
                    ? m_env.value()
-                   : ollama::json::object();
+                   : assistant::json::object();
 
     m_client.reset(new mcp::stdio_client(command, env));
     m_client->initialize("assistant", "1.0");
@@ -117,4 +117,4 @@ std::vector<std::shared_ptr<FunctionBase>> MCPStdioClient::GetFunctions()
   }
   return result;
 }
-}  // namespace ollama
+}  // namespace assistant

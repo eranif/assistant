@@ -4,7 +4,7 @@
 
 #include "ollama/logger.hpp"
 
-namespace ollama {
+namespace assistant {
 namespace {
 template <typename T>
 std::optional<T> GetValueFromJson(const json& j, const std::string& name) {
@@ -245,4 +245,4 @@ ModelOptions Config::CreaetDefaultModelOptions() {
 )"_json;
   return mo;
 }
-}  // namespace ollama
+}  // namespace assistant

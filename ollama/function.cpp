@@ -2,8 +2,8 @@
 
 #include "ollama/mcp_local_process.hpp"
 
-namespace ollama {
-ExternalFunction::ExternalFunction(ollama::MCPStdioClient* client, mcp::tool t)
+namespace assistant {
+ExternalFunction::ExternalFunction(assistant::MCPStdioClient* client, mcp::tool t)
     : FunctionBase(t.name, t.description),
       m_client(client),
       m_tool(std::move(t)) {
@@ -34,4 +34,4 @@ ExternalFunction::ExternalFunction(ollama::MCPStdioClient* client, mcp::tool t)
 FunctionResult ExternalFunction::Call(const json& args) const {
   return m_client->Call(m_tool, args);
 }
-}  // namespace ollama
+}  // namespace assistant

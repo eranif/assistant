@@ -6,7 +6,7 @@
 #include "ollama/function_base.hpp"
 #include "ollama/ollamalib.hpp"
 
-namespace ollama {
+namespace assistant {
 class MCPStdioClient;
 
 using FunctionSignature = std::function<FunctionResult(const json&)>;
@@ -26,11 +26,11 @@ class InProcessFunction : public FunctionBase {
 
 class ExternalFunction : public FunctionBase {
  public:
-  ExternalFunction(ollama::MCPStdioClient* client, mcp::tool t);
+  ExternalFunction(assistant::MCPStdioClient* client, mcp::tool t);
   FunctionResult Call(const json& args) const override;
 
  protected:
-  ollama::MCPStdioClient* m_client{nullptr};
+  assistant::MCPStdioClient* m_client{nullptr};
   mcp::tool m_tool;
 };
 
@@ -80,4 +80,4 @@ class FunctionBuilder {
   std::vector<Param> m_params;
 };
 
-}  // namespace ollama
+}  // namespace assistant

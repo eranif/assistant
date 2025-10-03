@@ -9,7 +9,7 @@
 #include <optional>
 #include <sstream>
 
-namespace ollama {
+namespace assistant {
 enum class LogLevel { kTrace, kDebug, kInfo, kWarning, kError };
 
 class Logger {
@@ -184,8 +184,8 @@ inline void SetLogSink(std::function<void(LogLevel, std::string)> sink) {
   Logger::Instance().SetLogSink(std::move(sink));
 }
 
-}  // namespace ollama
+}  // namespace assistant
 
-using OLogLevel = ollama::LogLevel;
+using OLogLevel = assistant::LogLevel;
 
-#define OLOG(level) ollama::LogStream(level)
+#define OLOG(level) assistant::LogStream(level)

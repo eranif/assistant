@@ -4,7 +4,7 @@
 #include "ollama/function.hpp"
 #include "ollama/mcp_local_process.hpp"
 
-namespace ollama {
+namespace assistant {
 void FunctionTable::AddMCPServer(std::shared_ptr<MCPStdioClient> client) {
   std::lock_guard lk{m_mutex};
   m_clients.push_back(client);
@@ -39,7 +39,7 @@ void FunctionTable::ReloadMCPServers(const Config* config) {
       continue;
     }
     OLOG(LogLevel::kInfo) << "Starting MCP server: " << s.name;
-    if (s.type == ollama::kServerKindStdio) {
+    if (s.type == assistant::kServerKindStdio) {
       std::shared_ptr<MCPStdioClient> client{nullptr};
       if (s.IsRemote()) {
         client = std::make_shared<MCPStdioClient>(s.ssh_login.value(), s.args,
@@ -73,4 +73,4 @@ void FunctionTable::Merge(const FunctionTable& other) {
   }
 }
 
-}  // namespace ollama
+}  // namespace assistant

@@ -6,7 +6,7 @@
 #include "ollama/cpp-mcp/mcp_stdio_client.h"
 #include "ollama/function_base.hpp"
 
-namespace ollama {
+namespace assistant {
 class ExternalFunction;
 
 struct SSHLogin {
@@ -20,10 +20,10 @@ struct SSHLogin {
 class MCPStdioClient {
  public:
   MCPStdioClient(const std::vector<std::string>& args,
-                 std::optional<ollama::json> env = {});
+                 std::optional<assistant::json> env = {});
   MCPStdioClient(const SSHLogin& ssh_login,
                  const std::vector<std::string>& args,
-                 std::optional<ollama::json> env = {});
+                 std::optional<assistant::json> env = {});
   ~MCPStdioClient() = default;
 
   bool Initialise();
@@ -37,6 +37,6 @@ class MCPStdioClient {
   std::vector<mcp::tool> m_tools;
   std::unique_ptr<mcp::stdio_client> m_client;
   std::optional<SSHLogin> m_ssh_login;
-  std::optional<ollama::json> m_env;
+  std::optional<assistant::json> m_env;
 };
-}  // namespace ollama
+}  // namespace assistant

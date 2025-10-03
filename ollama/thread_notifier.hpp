@@ -5,7 +5,7 @@
 #include <mutex>
 #include <optional>
 
-namespace ollama {
+namespace assistant {
 
 template <typename Value>
 struct ThreadNotifier {
@@ -46,4 +46,4 @@ struct ThreadNotifier {
   std::optional<Value> notified_;
 };
 
-}  // namespace ollama
+}  // namespace assistant

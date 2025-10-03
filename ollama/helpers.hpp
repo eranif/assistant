@@ -9,7 +9,7 @@
 
 #include "ollama/attributes.hpp"
 
-namespace ollama {
+namespace assistant {
 /**
  * @brief Joins the elements of a container into a single string with a
  * separator.
@@ -102,4 +102,4 @@ class Locker {
   mutable std::mutex m_mutex;
   ValueType m_value GUARDED_BY(m_mutex);
 };
-}  // namespace ollama
+}  // namespace assistant

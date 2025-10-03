@@ -6,7 +6,7 @@
 
 #include "ollama/ollamalib.hpp"
 
-namespace ollama {
+namespace assistant {
 struct ModelOptions {
   std::string name;
   json options;
@@ -25,4 +25,4 @@ inline std::ostream& operator<<(std::ostream& os, const ModelOptions& mo) {
      << ", think_end_tag=" << mo.think_end_tag << "}";
   return os;
 }
-}  // namespace ollama
+}  // namespace assistant

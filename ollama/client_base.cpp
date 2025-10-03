@@ -3,22 +3,22 @@
 #include "ollama/logger.hpp"
 #include "ollama/tool.hpp"
 
-namespace ollama {
+namespace assistant {
 
-void ClientBase::ProcessQueue() {
+void ClientBase::ProcessChatRequestQueue() {
   while (!m_queue.empty()) {
     if (m_interrupt.load()) {
       break;
     }
-    ProcessContext(m_queue.pop_front_and_return());
+    ProcessChatRquest(m_queue.pop_front_and_return());
   }
 }
 
-bool ClientBase::HandleResponse(const ollama::response& resp,
+bool ClientBase::HandleResponse(const assistant::response& resp,
                                 ChatContext& chat_user_data) {
   std::shared_ptr<ChatRequest> req = chat_user_data.chat_context;
   if (m_interrupt.load()) {
-    req->callback_("Request cancelled by user", ollama::Reason::kCancelled,
+    req->callback_("Request cancelled by user", assistant::Reason::kCancelled,
                    false);
     return false;
   }
@@ -68,7 +68,7 @@ bool ClientBase::HandleResponse(const ollama::response& resp,
 
     if (cb_result == false) {
       // Store the AI response, as a message in our history.
-      ollama::message msg{std::string{kAssistantRole},
+      assistant::message msg{std::string{kAssistantRole},
                           chat_user_data.current_response};
       OLOG(LogLevel::kWarning)
           << "User cancelled response processing (callback returned false)."
@@ -82,7 +82,7 @@ bool ClientBase::HandleResponse(const ollama::response& resp,
       case Reason::kDone:
       case Reason::kFatalError: {
         // Store the AI response, as a message in our history.
-        ollama::message msg{std::string{kAssistantRole},
+        assistant::message msg{std::string{kAssistantRole},
                             chat_user_data.current_response};
         OLOG(LogLevel::kDebug) << "<== " << msg;
         AddMessage(std::move(msg));
@@ -94,12 +94,12 @@ bool ClientBase::HandleResponse(const ollama::response& resp,
   return !is_done;
 }
 
-bool ClientBase::OnResponse(const ollama::response& resp, void* user_data) {
+bool ClientBase::OnResponse(const assistant::response& resp, void* user_data) {
   ChatContext* cud = reinterpret_cast<ChatContext*>(user_data);
   return cud->client->HandleResponse(resp, *cud);
 }
 
-void ClientBase::ProcessContext(std::shared_ptr<ChatRequest> chat_request) {
+void ClientBase::ProcessChatRquest(std::shared_ptr<ChatRequest> chat_request) {
   try {
     OLOG(LogLevel::kDebug) << "==> " << chat_request->request_;
 
@@ -137,10 +137,11 @@ void ClientBase::ProcessContext(std::shared_ptr<ChatRequest> chat_request) {
   }
 }
 
-void ClientBase::CreateAndPushContext(std::optional<ollama::message> msg,
-                                      OnResponseCallback cb, std::string model,
-                                      ChatOptions chat_options) {
-  ollama::options opts;
+void ClientBase::CreateAndPushChatRequest(std::optional<assistant::message> msg,
+                                          OnResponseCallback cb,
+                                          std::string model,
+                                          ChatOptions chat_options) {
+  assistant::options opts;
 
   std::optional<bool> think, hidethinking;
   ModelOptions model_options;
@@ -162,7 +163,7 @@ void ClientBase::CreateAndPushContext(std::optional<ollama::message> msg,
   think = model_options.think;
   hidethinking = model_options.hidethinking;
 
-  ollama::messages history;
+  assistant::messages history;
   if (IsFlagSet(chat_options, ChatOptions::kNoHistory)) {
     if (msg.has_value()) {
       history = {msg.value()};
@@ -173,7 +174,7 @@ void ClientBase::CreateAndPushContext(std::optional<ollama::message> msg,
   }
 
   // Build the request
-  ollama::request req{model,    history, opts,
+  assistant::request req{model,    history, opts,
                       m_stream, "json",  m_keep_alive.get_value()};
   if (think.has_value()) {
     req["think"] = think.value();
@@ -203,13 +204,13 @@ void ClientBase::CreateAndPushContext(std::optional<ollama::message> msg,
 
 void ClientBase::Chat(std::string msg, OnResponseCallback cb, std::string model,
                       ChatOptions chat_options) {
-  ollama::message ollama_message{"user", msg};
-  CreateAndPushContext(ollama_message, cb, model, chat_options);
-  ProcessQueue();
+  assistant::message ollama_message{"user", msg};
+  CreateAndPushChatRequest(ollama_message, cb, model, chat_options);
+  ProcessChatRequestQueue();
 }
 
-void ClientBase::AddMessage(std::optional<ollama::message> msg) {
-  m_messages.with_mut([msg = std::move(msg), this](ollama::messages& msgs) {
+void ClientBase::AddMessage(std::optional<assistant::message> msg) {
+  m_messages.with_mut([msg = std::move(msg), this](assistant::messages& msgs) {
     if (!msg.has_value()) {
       return;
     }
@@ -221,19 +222,19 @@ void ClientBase::AddMessage(std::optional<ollama::message> msg) {
   });
 }
 
-ollama::messages ClientBase::GetMessages() const {
-  ollama::messages msgs;
-  m_system_messages.with([&msgs](const ollama::messages& sysmsgs) {
+assistant::messages ClientBase::GetMessages() const {
+  assistant::messages msgs;
+  m_system_messages.with([&msgs](const assistant::messages& sysmsgs) {
     msgs.insert(msgs.end(), sysmsgs.begin(), sysmsgs.end());
   });
-  m_system_messages.with([&msgs](const ollama::messages& m) {
+  m_system_messages.with([&msgs](const assistant::messages& m) {
     if (m.empty()) {
       return;
     }
     msgs.insert(msgs.end(), m.begin(), m.end());
   });
 
-  m_messages.with([&msgs](const ollama::messages& m) {
+  m_messages.with([&msgs](const assistant::messages& m) {
     if (m.empty()) {
       return;
     }
@@ -242,7 +243,7 @@ ollama::messages ClientBase::GetMessages() const {
   return msgs;
 }
 
-void ClientBase::ApplyConfig(const ollama::Config* conf) {
+void ClientBase::ApplyConfig(const assistant::Config* conf) {
   if (!conf) {
     return;
   }
@@ -308,12 +309,12 @@ void ChatRequest::InvokeTools(ClientBase* client) {
            << result.text;
         OLOG(LogLevel::kInfo) << ss.str();
       }
-      ollama::message msg{"tool", ss.str()};
+      assistant::message msg{"tool", ss.str()};
       client->AddMessage(std::move(msg));
     }
   }
-  client->CreateAndPushContext(std::nullopt, callback_, model_,
-                               ChatOptions::kDefault);
+  client->CreateAndPushChatRequest(std::nullopt, callback_, model_,
+                                   ChatOptions::kDefault);
 }
 
 bool ClientBase::ModelHasCapability(const std::string& model_name,
@@ -334,4 +335,4 @@ bool ClientBase::ModelHasCapability(const std::string& model_name,
   });
   return found;
 }
-}  // namespace ollama
+}  // namespace assistant

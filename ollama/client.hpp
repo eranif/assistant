@@ -8,7 +8,7 @@
 #include "ollama/client_base.hpp"
 #include "ollama/thread_notifier.hpp"
 
-namespace ollama {
+namespace assistant {
 
 enum class EventType {
   kShutdown,
@@ -23,13 +23,13 @@ class Client : public ClientBase {
 
   /// Start a chat. All responses will be directed to the `cb`. Note that `cb`
   void ChatImpl(
-      ollama::request& request,
-      std::function<bool(const ollama::response& resp, void* user_data)>
+      assistant::request& request,
+      std::function<bool(const assistant::response& resp, void* user_data)>
           on_response,
       void* user_data) override;
 
   /// Load configuration object into the manager.
-  void ApplyConfig(const ollama::Config* conf) override;
+  void ApplyConfig(const assistant::Config* conf) override;
 
   /// Return true if ollama server is running.
   bool IsRunning() override;
@@ -81,4 +81,4 @@ class Client : public ClientBase {
   std::mutex m_ollama_mutex;
   Ollama m_ollama;
 };
-}  // namespace ollama
+}  // namespace assistant

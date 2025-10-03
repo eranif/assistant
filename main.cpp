@@ -11,9 +11,9 @@
 #include "ollama/tool.hpp"
 #include "utils.hpp"
 
-using FunctionTable = ollama::FunctionTable;
-using FunctionBuilder = ollama::FunctionBuilder;
-using ResponseParser = ollama::ResponseParser;
+using FunctionTable = assistant::FunctionTable;
+using FunctionBuilder = assistant::FunctionBuilder;
+using ResponseParser = assistant::ResponseParser;
 
 namespace {
 
@@ -41,18 +41,18 @@ std::string Yellow(std::string_view word) {
 }
 
 std::mutex prompt_queue_mutex;
-std::vector<std::pair<std::string, ollama::ChatOptions>> prompt_queue;
+std::vector<std::pair<std::string, assistant::ChatOptions>> prompt_queue;
 std::condition_variable cv;
 
 /// Push prompt to the queue
-void PushPrompt(std::string prompt, ollama::ChatOptions options) {
+void PushPrompt(std::string prompt, assistant::ChatOptions options) {
   std::unique_lock lk{prompt_queue_mutex};
   prompt_queue.push_back({std::move(prompt), std::move(options)});
   cv.notify_one();
 }
 
 /// Get prompt from the queue
-std::optional<std::pair<std::string, ollama::ChatOptions>> PopPrompt() {
+std::optional<std::pair<std::string, assistant::ChatOptions>> PopPrompt() {
   std::unique_lock lk{prompt_queue_mutex};
   auto res = cv.wait_for(lk, std::chrono::milliseconds(500),
                          []() { return !prompt_queue.empty(); });
@@ -94,7 +94,7 @@ Args ParseCommandLine(int argc, char** argv) {
     auto arg = iter.GetArgument();
     iter.Next();
     if (arg == "--loglevel" && iter.Valid()) {
-      args.log_level = ollama::Logger::FromString(iter.GetArgument());
+      args.log_level = assistant::Logger::FromString(iter.GetArgument());
       iter.Next();
     } else if ((arg == "-c" || arg == "--config") && iter.Valid()) {
       args.config_file = iter.GetArgument();
@@ -114,19 +114,19 @@ Args ParseCommandLine(int argc, char** argv) {
   return args;
 }
 
-ollama::FunctionResult WriteFileContent(const ollama::json& args) {
+assistant::FunctionResult WriteFileContent(const assistant::json& args) {
   std::stringstream ss;
   if (args.size() != 2) {
-    return ollama::FunctionResult{.isError = true,
+    return assistant::FunctionResult{.isError = true,
                                   .text = "Invalid number of arguments"};
   }
 
   ASSIGN_FUNC_ARG_OR_RETURN(
       std::string filepath,
-      ::ollama::GetFunctionArg<std::string>(args, "filepath"));
+      ::assistant::GetFunctionArg<std::string>(args, "filepath"));
   ASSIGN_FUNC_ARG_OR_RETURN(
       std::string file_content,
-      ::ollama::GetFunctionArg<std::string>(args, "file_content"));
+      ::assistant::GetFunctionArg<std::string>(args, "file_content"));
 
   auto res = CreateDirectoryForFile(filepath);
   if (!res.IsOk()) {
@@ -144,21 +144,21 @@ ollama::FunctionResult WriteFileContent(const ollama::json& args) {
       ss << "Error while writing file: '" << filepath << "' to disk.";
     }
   }
-  return ollama::FunctionResult{.text = ss.str()};
+  return assistant::FunctionResult{.text = ss.str()};
 }
 
-ollama::FunctionResult OpenFileInEditor(const ollama::json& args) {
+assistant::FunctionResult OpenFileInEditor(const assistant::json& args) {
   std::stringstream ss;
   if (args.size() != 1) {
-    return ollama::FunctionResult{.isError = true,
+    return assistant::FunctionResult{.isError = true,
                                   .text = "Invalid number of arguments"};
   }
 
   ASSIGN_FUNC_ARG_OR_RETURN(
       std::string file_name,
-      ::ollama::GetFunctionArg<std::string>(args, "filepath"));
+      ::assistant::GetFunctionArg<std::string>(args, "filepath"));
   ss << "file '" << file_name << "' successfully opened file in the editor.";
-  return ollama::FunctionResult{.text = ss.str()};
+  return assistant::FunctionResult{.text = ss.str()};
 }
 
 int main(int argc, char** argv) {
@@ -167,24 +167,24 @@ int main(int argc, char** argv) {
 #endif
   auto args = ParseCommandLine(argc, argv);
   if (!args.log_file.empty()) {
-    ollama::SetLogFile(args.log_file);
+    assistant::SetLogFile(args.log_file);
   }
 
   // Uncomment this to provide custom log sink.
-  //  ollama::SetLogSink([]([[maybe_unused]] ollama::LogLevel level,
+  //  assistant::SetLogSink([]([[maybe_unused]] assistant::LogLevel level,
   //                        [[maybe_unused]] std::string msg) {});
 
-  ollama::SetLogLevel(ollama::LogLevel::kError);
-  std::optional<ollama::Config> conf;
+  assistant::SetLogLevel(assistant::LogLevel::kError);
+  std::optional<assistant::Config> conf;
   if (!args.config_file.empty()) {
-    conf = ollama::Config::FromFile(args.config_file);
-    ollama::SetLogLevel(conf.value().GetLogLevel());
+    conf = assistant::Config::FromFile(args.config_file);
+    assistant::SetLogLevel(conf.value().GetLogLevel());
   }
 
   std::string url = "http://127.0.0.1:11434";
   std::unordered_map<std::string, std::string> headers;
-  std::shared_ptr<ollama::Client> cli =
-      std::make_shared<ollama::Client>(url, headers);
+  std::shared_ptr<assistant::Client> cli =
+      std::make_shared<assistant::Client>(url, headers);
   if (conf.has_value()) {
     cli->ApplyConfig(&(*conf));
   }
@@ -207,7 +207,7 @@ int main(int argc, char** argv) {
           .SetCallback(WriteFileContent)
           .Build());
 
-  OLOG(ollama::LogLevel::kInfo)
+  OLOG(assistant::LogLevel::kInfo)
       << "Waiting for ollama server to become available...";
 
   while (true) {
@@ -222,7 +222,7 @@ int main(int argc, char** argv) {
   std::cout << "Available functions:" << std::endl;
   std::cout << "====================" << std::endl;
 
-  ollama::json tools_json = cli->GetFunctionTable().ToJSON();
+  assistant::json tools_json = cli->GetFunctionTable().ToJSON();
   for (const auto& func_obj : tools_json) {
     std::cout << "- " << func_obj["function"]["name"] << std::endl;
   }
@@ -263,7 +263,7 @@ int main(int argc, char** argv) {
   std::thread chat_thread([cli, model_name]() {
     while (true) {
       std::string prompt;
-      ollama::ChatOptions options{ollama::ChatOptions::kDefault};
+      assistant::ChatOptions options{assistant::ChatOptions::kDefault};
       auto item = PopPrompt();
       if (cli->IsInterrupted()) {
         std::cout << "Worker Thread: client interrupted." << std::endl;
@@ -281,7 +281,7 @@ int main(int argc, char** argv) {
       cli->Chat(
           prompt,
           [&done, &saved_thinking_state](std::string output,
-                                         ollama::Reason reason,
+                                         assistant::Reason reason,
                                          bool thinking) -> bool {
             if (saved_thinking_state != thinking) {
               // we switched state
@@ -295,18 +295,18 @@ int main(int argc, char** argv) {
 
             saved_thinking_state = thinking;
             switch (reason) {
-              case ollama::Reason::kDone:
+              case assistant::Reason::kDone:
                 std::cout << std::endl;
                 OLOG(OLogLevel::kInfo) << "Completed!";
                 done = true;
                 break;
-              case ollama::Reason::kLogNotice:
+              case assistant::Reason::kLogNotice:
                 OLOG(OLogLevel::kInfo) << output;
                 break;
-              case ollama::Reason::kLogDebug:
+              case assistant::Reason::kLogDebug:
                 OLOG(OLogLevel::kDebug) << output;
                 break;
-              case ollama::Reason::kPartialResult:
+              case assistant::Reason::kPartialResult:
                 if (thinking) {
                   std::cout << Gray(output);
                 } else {
@@ -314,11 +314,11 @@ int main(int argc, char** argv) {
                 }
                 std::cout.flush();
                 break;
-              case ollama::Reason::kFatalError:
+              case assistant::Reason::kFatalError:
                 OLOG(OLogLevel::kError) << output;
                 done = true;
                 break;
-              case ollama::Reason::kCancelled:
+              case assistant::Reason::kCancelled:
                 OLOG(OLogLevel::kWarning) << output;
                 done = true;
                 break;
@@ -334,7 +334,7 @@ int main(int argc, char** argv) {
 
   std::cout << ">";
   std::cout.flush();
-  ollama::ChatOptions options{ollama::ChatOptions::kDefault};
+  assistant::ChatOptions options{assistant::ChatOptions::kDefault};
   while (true) {
     std::string prompt = GetTextFromUser();
     if (prompt.empty()) {
@@ -343,7 +343,7 @@ int main(int argc, char** argv) {
     if (prompt == "q" || prompt == "exit" || prompt == "quit") {
       break;
     } else if (prompt == "/no_tools") {
-      ollama::AddFlagSet(options, ollama::ChatOptions::kNoTools);
+      assistant::AddFlagSet(options, assistant::ChatOptions::kNoTools);
       std::cout << "Tools are disabled" << std::endl;
       continue;
     } else if (prompt == "/int") {
@@ -351,7 +351,7 @@ int main(int argc, char** argv) {
       std::cout << "Main Thread: Interrupted" << std::endl;
       break;
     } else if (prompt == "/chat_defaults") {
-      options = ollama::ChatOptions::kDefault;
+      options = assistant::ChatOptions::kDefault;
       std::cout << "Chat options restored to defaults." << std::endl;
       continue;
     } else if (prompt == "/info") {

@@ -6,13 +6,13 @@
 #include "ollama/logger.hpp"
 #include "ollama/ollamalib.hpp"
 
-namespace ollama {
+namespace assistant {
 
 class MCPStdioClient;
 class Config;
 
 template <typename ArgType>
-std::optional<ArgType> GetFunctionArg(const ollama::json& args,
+std::optional<ArgType> GetFunctionArg(const assistant::json& args,
                                       const std::string& name) {
   try {
     if (!args.contains(name)) {
@@ -27,7 +27,7 @@ std::optional<ArgType> GetFunctionArg(const ollama::json& args,
 
 #define ASSIGN_FUNC_ARG_OR_RETURN(var, expr)                             \
   if (!expr.has_value()) {                                               \
-    return ollama::FunctionResult{.isError = true,                       \
+    return assistant::FunctionResult{.isError = true,                       \
                                   .text = "Missing mandatory argument"}; \
   }                                                                      \
   var = expr.value();
@@ -160,4 +160,4 @@ class FunctionTable {
   std::vector<std::shared_ptr<MCPStdioClient>> m_clients GUARDED_BY(m_mutex);
 };
 
-}  // namespace ollama
+}  // namespace assistant

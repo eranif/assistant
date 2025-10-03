@@ -79,16 +79,16 @@ class logger {
     // Add log level and colour
     switch (level) {
       case log_level::debug:
-        ollama::Logger::Instance().debug(ss);
+        assistant::Logger::Instance().debug(ss);
         break;
       case log_level::info:
-        ollama::Logger::Instance().info(ss);
+        assistant::Logger::Instance().info(ss);
         break;
       case log_level::warning:
-        ollama::Logger::Instance().warning(ss);
+        assistant::Logger::Instance().warning(ss);
         break;
       case log_level::error:
-        ollama::Logger::Instance().error(ss);
+        assistant::Logger::Instance().error(ss);
         break;
     }
   }

@@ -6,16 +6,16 @@
 #include "ollama/logger.hpp"
 #include "ollama/ollamalib.hpp"
 
-namespace ollama {
+namespace assistant {
 
 Client::Client(const std::string& url,
                const std::unordered_map<std::string, std::string>& headers) {
   m_url.set_value(url);
   m_http_headers.set_value(headers);
 
-  ollama::show_requests(false);
-  ollama::show_replies(false);
-  ollama::allow_exceptions(true);
+  assistant::show_requests(false);
+  assistant::show_replies(false);
+  assistant::allow_exceptions(true);
   m_ollama.setServerURL(url);
   m_ollama.setReadTimeout(10);
   m_ollama.setWriteTimeout(10);
@@ -38,15 +38,15 @@ void Client::Interrupt() {
 }
 
 void Client::ChatImpl(
-    ollama::request& request,
-    std::function<bool(const ollama::response& resp, void* user_data)>
+    assistant::request& request,
+    std::function<bool(const assistant::response& resp, void* user_data)>
         on_response,
     void* user_data) {
   std::scoped_lock lk{m_ollama_mutex};
   m_ollama.chat(request, on_response, user_data);
 }
 
-void Client::ApplyConfig(const ollama::Config* conf) {
+void Client::ApplyConfig(const assistant::Config* conf) {
   ClientBase::ApplyConfig(conf);
   {
     std::scoped_lock lk{m_ollama_mutex};
@@ -173,4 +173,4 @@ bool Client::IsRunningInternal(Ollama& client) const {
     return false;
   }
 }
-}  // namespace ollama
+}  // namespace assistant
