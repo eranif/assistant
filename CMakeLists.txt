@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(OllamaLib)
+project(Assistant)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_STANDARD 20)
@@ -11,18 +11,19 @@ if (CMAKE_CXX_COMPILER_ID
     OR CMAKE_CXX_COMPILER_ID
        MATCHES
        "AppleClang")
-  add_compile_options(-Wthread-safety -D_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS)
+  add_compile_options(-Wthread-safety
+                      -D_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS)
 endif ()
 
-add_subdirectory(ollama)
+add_subdirectory(assistant)
 option(
-  OLLAMALIB_BUILD_EXAMPLE
+  ASSISTANTLIB_BUILD_EXAMPLE
   "Build the example program."
   ON)
 
-if (OLLAMALIB_BUILD_EXAMPLE)
+if (ASSISTANTLIB_BUILD_EXAMPLE)
   add_executable(assistant main.cpp)
-  target_link_libraries(assistant PRIVATE ollamalib)
+  target_link_libraries(assistant PRIVATE assistantlib)
 endif ()
 
 file(

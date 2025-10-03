@@ -44,14 +44,14 @@
     This library was created by Yuji Hirose and is available under the MIT
    License. For more details visit: https://github.com/yhirose/cpp-httplib
 */
-#include "ollama/common/httplib.h"
+#include "assistant/common/httplib.h"
 
 /*
     nlohmnann JSON is a feature-rich header-only C++ JSON implementation.
     This library was created by Niels Lohmann and is available under the MIT
    License. For more details visit: https://github.com/nlohmann/json
 */
-#include "ollama/common/json.hpp"
+#include "assistant/common/json.hpp"
 
 /*
     Base64.h is a header-only C++ library for encoding and decoding Base64
@@ -68,7 +68,7 @@
 #include <numeric>
 #include <string>
 
-#include "ollama/common/base64.hpp"
+#include "assistant/common/base64.hpp"
 
 // Namespace types and classes
 
@@ -384,23 +384,21 @@ class response {
   bool valid;
 };
 
-}  // namespace assistant
-
 using on_respons_callback =
     std::function<bool(const assistant::response&, void*)>;
 
-class Ollama {
+class ClientImpl {
   using json = nlohmann::json;
 
  public:
-  Ollama(const std::string& url) {
+  ClientImpl(const std::string& url) {
     this->server_url = url;
     this->cli = new httplib::Client(url);
     this->setReadTimeout(120);
   }
 
-  Ollama() : Ollama("http://localhost:11434") {}
-  ~Ollama() { delete this->cli; }
+  ClientImpl() : ClientImpl("http://localhost:11434") {}
+  ~ClientImpl() { delete this->cli; }
 
   assistant::response generate(
       const std::string& model, const std::string& prompt,
@@ -673,8 +671,8 @@ class Ollama {
     std::string request_string = request.dump();
     if (assistant::log_requests) std::cout << request_string << std::endl;
 
-    // Send a blank request with the model name to instruct ollama to load the
-    // model into memory.
+    // Send a blank request with the model name to instruct the server to load
+    // the model into memory.
     if (auto res = this->cli->Post(GetGeneratePath(), headers_, request_string,
                                    kApplicationJson)) {
       if (assistant::log_replies) std::cout << res->body << std::endl;
@@ -1060,31 +1058,29 @@ class Ollama {
   httplib::Client* cli;
 };
 
-// Functions associated with Ollama singleton
-namespace assistant {
 // Use directly from the namespace as a singleton
-static Ollama ollama;
+static ClientImpl client_impl;
 
 inline void setServerURL(const std::string& server_url) {
-  ollama.setServerURL(server_url);
+  client_impl.setServerURL(server_url);
 }
 
 inline assistant::response generate(
     const std::string& model, const std::string& prompt,
     const json& options = nullptr,
     const std::vector<std::string>& images = std::vector<std::string>()) {
-  return ollama.generate(model, prompt, options, images);
+  return client_impl.generate(model, prompt, options, images);
 }
 
 inline assistant::response generate(
     const std::string& model, const std::string& prompt,
     const assistant::response& context, const json& options = nullptr,
     const std::vector<std::string>& images = std::vector<std::string>()) {
-  return ollama.generate(model, prompt, context, options, images);
+  return client_impl.generate(model, prompt, context, options, images);
 }
 
 inline assistant::response generate(assistant::request& request) {
-  return ollama.generate(request);
+  return client_impl.generate(request);
 }
 
 inline bool generate(
@@ -1092,8 +1088,8 @@ inline bool generate(
     on_respons_callback on_receive_response, void* user_data,
     const json& options = nullptr,
     const std::vector<std::string>& images = std::vector<std::string>()) {
-  return ollama.generate(model, prompt, on_receive_response, user_data, options,
-                         images);
+  return client_impl.generate(model, prompt, on_receive_response, user_data,
+                              options, images);
 }
 
 inline bool generate(
@@ -1101,13 +1097,13 @@ inline bool generate(
     assistant::response& context, on_respons_callback on_receive_response,
     void* user_data, const json& options = nullptr,
     const std::vector<std::string>& images = std::vector<std::string>()) {
-  return ollama.generate(model, prompt, context, on_receive_response, user_data,
-                         options, images);
+  return client_impl.generate(model, prompt, context, on_receive_response,
+                              user_data, options, images);
 }
 
 inline bool generate(assistant::request& request,
                      on_respons_callback on_receive_response, void* user_data) {
-  return ollama.generate(request, on_receive_response, user_data);
+  return client_impl.generate(request, on_receive_response, user_data);
 }
 
 inline assistant::response chat(const std::string& model,
@@ -1115,11 +1111,12 @@ inline assistant::response chat(const std::string& model,
                                 const json& options = nullptr,
                                 const std::string& format = "json",
                                 const std::string& keep_alive_duration = "5m") {
-  return ollama.chat(model, messages, options, format, keep_alive_duration);
+  return client_impl.chat(model, messages, options, format,
+                          keep_alive_duration);
 }
 
 inline assistant::response chat(assistant::request& request) {
-  return ollama.chat(request);
+  return client_impl.chat(request);
 }
 
 inline bool chat(const std::string& model, const assistant::messages& messages,
@@ -1127,85 +1124,87 @@ inline bool chat(const std::string& model, const assistant::messages& messages,
                  const json& options = nullptr,
                  const std::string& format = "json",
                  const std::string& keep_alive_duration = "5m") {
-  return ollama.chat(model, messages, on_receive_response, user_data, options,
-                     format, keep_alive_duration);
+  return client_impl.chat(model, messages, on_receive_response, user_data,
+                          options, format, keep_alive_duration);
 }
 
 inline bool chat(assistant::request& request,
                  on_respons_callback on_receive_response, void* user_data) {
-  return ollama.chat(request, on_receive_response, user_data);
+  return client_impl.chat(request, on_receive_response, user_data);
 }
 
 inline bool create(const std::string& modelName, const std::string& modelFile,
                    bool loadFromFile = true) {
-  return ollama.create_model(modelName, modelFile, loadFromFile);
+  return client_impl.create_model(modelName, modelFile, loadFromFile);
 }
 
-inline bool is_running() { return ollama.is_running(); }
+inline bool is_running() { return client_impl.is_running(); }
 
 inline bool load_model(const std::string& model) {
-  return ollama.load_model(model);
+  return client_impl.load_model(model);
 }
 
-inline std::string get_version() { return ollama.get_version(); }
+inline std::string get_version() { return client_impl.get_version(); }
 
-inline std::vector<std::string> list_models() { return ollama.list_models(); }
+inline std::vector<std::string> list_models() {
+  return client_impl.list_models();
+}
 
-inline json list_model_json() { return ollama.list_model_json(); }
+inline json list_model_json() { return client_impl.list_model_json(); }
 
 inline std::vector<std::string> list_running_models() {
-  return ollama.list_running_models();
+  return client_impl.list_running_models();
 }
 
-inline json running_model_json() { return ollama.running_model_json(); }
+inline json running_model_json() { return client_impl.running_model_json(); }
 
 inline bool blob_exists(const std::string& digest) {
-  return ollama.blob_exists(digest);
+  return client_impl.blob_exists(digest);
 }
 
 inline bool create_blob(const std::string& digest) {
-  return ollama.create_blob(digest);
+  return client_impl.create_blob(digest);
 }
 
 inline json show_model_info(const std::string& model, bool verbose = false) {
-  return ollama.show_model_info(model, verbose);
+  return client_impl.show_model_info(model, verbose);
 }
 
 inline bool copy_model(const std::string& source_model,
                        const std::string& dest_model) {
-  return ollama.copy_model(source_model, dest_model);
+  return client_impl.copy_model(source_model, dest_model);
 }
 
 inline bool delete_model(const std::string& model) {
-  return ollama.delete_model(model);
+  return client_impl.delete_model(model);
 }
 
 inline bool pull_model(const std::string& model, bool allow_insecure = false) {
-  return ollama.pull_model(model, allow_insecure);
+  return client_impl.pull_model(model, allow_insecure);
 }
 
 inline bool push_model(const std::string& model, bool allow_insecure = false) {
-  return ollama.push_model(model, allow_insecure);
+  return client_impl.push_model(model, allow_insecure);
 }
 
 inline assistant::response generate_embeddings(
     const std::string& model, const std::string& input,
     const json& options = nullptr, bool truncate = true,
     const std::string& keep_alive_duration = "5m") {
-  return ollama.generate_embeddings(model, input, options, truncate,
-                                    keep_alive_duration);
+  return client_impl.generate_embeddings(model, input, options, truncate,
+                                         keep_alive_duration);
 }
 
 inline assistant::response generate_embeddings(assistant::request& request) {
-  return ollama.generate_embeddings(request);
+  return client_impl.generate_embeddings(request);
 }
 
 inline void setReadTimeout(const int& seconds) {
-  ollama.setReadTimeout(seconds);
+  client_impl.setReadTimeout(seconds);
 }
 
 inline void setWriteTimeout(const int& seconds) {
-  ollama.setWriteTimeout(seconds);
+  client_impl.setWriteTimeout(seconds);
 }
 
 }  // namespace assistant

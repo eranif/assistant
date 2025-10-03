@@ -1,7 +1,7 @@
-#include "ollama/client_base.hpp"
+#include "assistant/client_base.hpp"
 
-#include "ollama/logger.hpp"
-#include "ollama/tool.hpp"
+#include "assistant/logger.hpp"
+#include "assistant/tool.hpp"
 
 namespace assistant {
 
@@ -69,7 +69,7 @@ bool ClientBase::HandleResponse(const assistant::response& resp,
     if (cb_result == false) {
       // Store the AI response, as a message in our history.
       assistant::message msg{std::string{kAssistantRole},
-                          chat_user_data.current_response};
+                             chat_user_data.current_response};
       OLOG(LogLevel::kWarning)
           << "User cancelled response processing (callback returned false)."
           << msg;
@@ -83,7 +83,7 @@ bool ClientBase::HandleResponse(const assistant::response& resp,
       case Reason::kFatalError: {
         // Store the AI response, as a message in our history.
         assistant::message msg{std::string{kAssistantRole},
-                            chat_user_data.current_response};
+                               chat_user_data.current_response};
         OLOG(LogLevel::kDebug) << "<== " << msg;
         AddMessage(std::move(msg));
       } break;
@@ -175,7 +175,7 @@ void ClientBase::CreateAndPushChatRequest(std::optional<assistant::message> msg,
 
   // Build the request
   assistant::request req{model,    history, opts,
-                      m_stream, "json",  m_keep_alive.get_value()};
+                         m_stream, "json",  m_keep_alive.get_value()};
   if (think.has_value()) {
     req["think"] = think.value();
   }
@@ -204,8 +204,8 @@ void ClientBase::CreateAndPushChatRequest(std::optional<assistant::message> msg,
 
 void ClientBase::Chat(std::string msg, OnResponseCallback cb, std::string model,
                       ChatOptions chat_options) {
-  assistant::message ollama_message{"user", msg};
-  CreateAndPushChatRequest(ollama_message, cb, model, chat_options);
+  assistant::message json_message{"user", msg};
+  CreateAndPushChatRequest(json_message, cb, model, chat_options);
   ProcessChatRequestQueue();
 }
 

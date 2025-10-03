@@ -1,4 +1,4 @@
-#include "ollama/logger.hpp"
+#include "assistant/logger.hpp"
 #ifdef __WIN32
 #include <winsock2.h>
 #endif
@@ -6,9 +6,9 @@
 #include <iostream>
 #include <thread>
 
-#include "ollama/client.hpp"
-#include "ollama/config.hpp"
-#include "ollama/tool.hpp"
+#include "assistant/client.hpp"
+#include "assistant/config.hpp"
+#include "assistant/tool.hpp"
 #include "utils.hpp"
 
 using FunctionTable = assistant::FunctionTable;
@@ -118,7 +118,7 @@ assistant::FunctionResult WriteFileContent(const assistant::json& args) {
   std::stringstream ss;
   if (args.size() != 2) {
     return assistant::FunctionResult{.isError = true,
-                                  .text = "Invalid number of arguments"};
+                                     .text = "Invalid number of arguments"};
   }
 
   ASSIGN_FUNC_ARG_OR_RETURN(
@@ -151,7 +151,7 @@ assistant::FunctionResult OpenFileInEditor(const assistant::json& args) {
   std::stringstream ss;
   if (args.size() != 1) {
     return assistant::FunctionResult{.isError = true,
-                                  .text = "Invalid number of arguments"};
+                                     .text = "Invalid number of arguments"};
   }
 
   ASSIGN_FUNC_ARG_OR_RETURN(

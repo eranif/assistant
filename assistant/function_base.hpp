@@ -2,9 +2,9 @@
 
 #include <string>
 
-#include "ollama/attributes.hpp"
-#include "ollama/logger.hpp"
-#include "ollama/ollamalib.hpp"
+#include "assistant/assistantlib.hpp"
+#include "assistant/attributes.hpp"
+#include "assistant/logger.hpp"
 
 namespace assistant {
 
@@ -25,11 +25,11 @@ std::optional<ArgType> GetFunctionArg(const assistant::json& args,
   }
 }
 
-#define ASSIGN_FUNC_ARG_OR_RETURN(var, expr)                             \
-  if (!expr.has_value()) {                                               \
+#define ASSIGN_FUNC_ARG_OR_RETURN(var, expr)                                \
+  if (!expr.has_value()) {                                                  \
     return assistant::FunctionResult{.isError = true,                       \
-                                  .text = "Missing mandatory argument"}; \
-  }                                                                      \
+                                     .text = "Missing mandatory argument"}; \
+  }                                                                         \
   var = expr.value();
 
 class Param {

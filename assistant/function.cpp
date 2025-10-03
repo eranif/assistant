@@ -1,6 +1,6 @@
-#include "ollama/function.hpp"
+#include "assistant/function.hpp"
 
-#include "ollama/mcp_local_process.hpp"
+#include "assistant/mcp_local_process.hpp"
 
 namespace assistant {
 ExternalFunction::ExternalFunction(assistant::MCPStdioClient* client, mcp::tool t)

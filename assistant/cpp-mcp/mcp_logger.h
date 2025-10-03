@@ -13,7 +13,7 @@
 #include <sstream>
 #include <string>
 
-#include "ollama/logger.hpp"
+#include "assistant/logger.hpp"
 
 namespace mcp {
 

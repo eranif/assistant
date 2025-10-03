@@ -1,10 +1,10 @@
-#include "ollama/client.hpp"
+#include "assistant/client.hpp"
 
-#include "ollama/config.hpp"
-#include "ollama/cpp-mcp/mcp_logger.h"
-#include "ollama/helpers.hpp"
-#include "ollama/logger.hpp"
-#include "ollama/ollamalib.hpp"
+#include "assistant/config.hpp"
+#include "assistant/cpp-mcp/mcp_logger.h"
+#include "assistant/helpers.hpp"
+#include "assistant/logger.hpp"
+#include "assistant/assistantlib.hpp"
 
 namespace assistant {
 
@@ -16,12 +16,12 @@ Client::Client(const std::string& url,
   assistant::show_requests(false);
   assistant::show_replies(false);
   assistant::allow_exceptions(true);
-  m_ollama.setServerURL(url);
-  m_ollama.setReadTimeout(10);
-  m_ollama.setWriteTimeout(10);
-  m_ollama.setConnectTimeout(10);
+  m_client_impl.setServerURL(url);
+  m_client_impl.setReadTimeout(10);
+  m_client_impl.setWriteTimeout(10);
+  m_client_impl.setConnectTimeout(10);
   mcp::set_log_level(mcp::log_level::error);
-  SetHeadersInternal(m_ollama, headers);
+  SetHeadersInternal(m_client_impl, headers);
   Startup();
 }
 
@@ -30,7 +30,7 @@ Client::~Client() { Shutdown(); }
 void Client::Interrupt() {
   ClientBase::Interrupt();
   try {
-    m_ollama.interrupt();
+    m_client_impl.interrupt();
   } catch (std::exception& e) {
     OLOG(LogLevel::kWarning)
         << "an error occurred while interrupting client. " << e.what();
@@ -42,59 +42,61 @@ void Client::ChatImpl(
     std::function<bool(const assistant::response& resp, void* user_data)>
         on_response,
     void* user_data) {
-  std::scoped_lock lk{m_ollama_mutex};
-  m_ollama.chat(request, on_response, user_data);
+  std::scoped_lock lk{m_client_mutex};
+  m_client_impl.chat(request, on_response, user_data);
 }
 
 void Client::ApplyConfig(const assistant::Config* conf) {
   ClientBase::ApplyConfig(conf);
   {
-    std::scoped_lock lk{m_ollama_mutex};
-    m_ollama.setServerURL(m_url.get_value());
+    std::scoped_lock lk{m_client_mutex};
+    m_client_impl.setServerURL(m_url.get_value());
     auto server_timeout_settings = m_server_timeout.get_value();
-    m_ollama.setConnectTimeout(
+    m_client_impl.setConnectTimeout(
         server_timeout_settings.GetConnectTimeout().first,
         server_timeout_settings.GetConnectTimeout().second);
-    m_ollama.setReadTimeout(server_timeout_settings.GetReadTimeout().first,
-                            server_timeout_settings.GetReadTimeout().second);
-    m_ollama.setWriteTimeout(server_timeout_settings.GetWriteTimeout().first,
-                             server_timeout_settings.GetWriteTimeout().second);
-    SetHeadersInternal(m_ollama, m_http_headers.get_value());
+    m_client_impl.setReadTimeout(
+        server_timeout_settings.GetReadTimeout().first,
+        server_timeout_settings.GetReadTimeout().second);
+    m_client_impl.setWriteTimeout(
+        server_timeout_settings.GetWriteTimeout().first,
+        server_timeout_settings.GetWriteTimeout().second);
+    SetHeadersInternal(m_client_impl, m_http_headers.get_value());
   }
 }
 
 std::vector<std::string> Client::List() {
-  std::scoped_lock lk{m_ollama_mutex};
-  if (!IsRunningInternal(m_ollama)) {
+  std::scoped_lock lk{m_client_mutex};
+  if (!IsRunningInternal(m_client_impl)) {
     return {};
   }
   try {
-    return m_ollama.list_models();
+    return m_client_impl.list_models();
   } catch (...) {
     return {};
   }
 }
 
 json Client::ListJSON() {
-  std::scoped_lock lk{m_ollama_mutex};
-  if (!IsRunningInternal(m_ollama)) {
+  std::scoped_lock lk{m_client_mutex};
+  if (!IsRunningInternal(m_client_impl)) {
     return {};
   }
   try {
-    return m_ollama.list_model_json();
+    return m_client_impl.list_model_json();
   } catch (...) {
     return {};
   }
 }
 
 std::optional<json> Client::GetModelInfo(const std::string& model) {
-  std::scoped_lock lk{m_ollama_mutex};
-  if (!IsRunningInternal(m_ollama)) {
+  std::scoped_lock lk{m_client_mutex};
+  if (!IsRunningInternal(m_client_impl)) {
     return std::nullopt;
   }
   try {
     OLOG(LogLevel::kInfo) << "Fetching info for model: " << model;
-    return m_ollama.show_model_info(model);
+    return m_client_impl.show_model_info(model);
   } catch (std::exception& e) {
     return std::nullopt;
   }
@@ -138,7 +140,7 @@ std::optional<ModelCapabilities> Client::GetModelCapabilities(
 
 void Client::PullModel(const std::string& name, OnResponseCallback cb) {
   try {
-    Ollama ol;
+    ClientImpl ol;
     std::stringstream ss;
     ol.setServerURL(m_url.get_value());
     ss << "Pulling model: " << name;
@@ -151,12 +153,12 @@ void Client::PullModel(const std::string& name, OnResponseCallback cb) {
 }
 
 bool Client::IsRunning() {
-  std::scoped_lock lk{m_ollama_mutex};
-  return IsRunningInternal(m_ollama);
+  std::scoped_lock lk{m_client_mutex};
+  return IsRunningInternal(m_client_impl);
 }
 
 void Client::SetHeadersInternal(
-    Ollama& client,
+    ClientImpl& client,
     const std::unordered_map<std::string, std::string>& headers) {
   httplib::Headers h;
   for (const auto& [header_name, header_value] : headers) {
@@ -165,7 +167,7 @@ void Client::SetHeadersInternal(
   client.setHttpHeaders(std::move(h));
 }
 
-bool Client::IsRunningInternal(Ollama& client) const {
+bool Client::IsRunningInternal(ClientImpl& client) const {
   try {
     return client.is_running();
   } catch (const std::exception& e) {

@@ -7,7 +7,7 @@
 #include <type_traits>
 #include <vector>
 
-#include "ollama/attributes.hpp"
+#include "assistant/attributes.hpp"
 
 namespace assistant {
 /**

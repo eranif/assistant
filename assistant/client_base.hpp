@@ -7,8 +7,8 @@
 #include <string_view>
 #include <unordered_map>
 
-#include "ollama/attributes.hpp"
-#include "ollama/config.hpp"
+#include "assistant/attributes.hpp"
+#include "assistant/config.hpp"
 
 namespace assistant {
 
@@ -128,7 +128,7 @@ class ClientBase {
           on_response,
       void* user_data) = 0;
 
-  /// Return true if ollama server is running.
+  /// Return true if the server is running.
   virtual bool IsRunning() = 0;
 
   /// Return list of models available.

@@ -1,8 +1,8 @@
-#include "ollama/config.hpp"
+#include "assistant/config.hpp"
 
 #include <fstream>
 
-#include "ollama/logger.hpp"
+#include "assistant/logger.hpp"
 
 namespace assistant {
 namespace {

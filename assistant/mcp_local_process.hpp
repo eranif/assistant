@@ -3,8 +3,8 @@
 #include <string>
 #include <vector>
 
-#include "ollama/cpp-mcp/mcp_stdio_client.h"
-#include "ollama/function_base.hpp"
+#include "assistant/cpp-mcp/mcp_stdio_client.h"
+#include "assistant/function_base.hpp"
 
 namespace assistant {
 class ExternalFunction;

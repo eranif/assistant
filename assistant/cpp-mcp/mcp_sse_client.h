@@ -15,7 +15,7 @@
 #include "mcp_logger.h"
 
 // Include the HTTP library
-#include "ollama/common/httplib.h"
+#include "assistant/common/httplib.h"
 
 #include <string>
 #include <map>

@@ -4,7 +4,7 @@
 #include <ostream>
 #include <string>
 
-#include "ollama/ollamalib.hpp"
+#include "assistant/assistantlib.hpp"
 
 namespace assistant {
 struct ModelOptions {

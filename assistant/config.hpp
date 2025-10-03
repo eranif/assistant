@@ -4,9 +4,9 @@
 #include <string>
 #include <unordered_map>
 
-#include "ollama/helpers.hpp"
-#include "ollama/mcp_local_process.hpp"
-#include "ollama/model_options.hpp"
+#include "assistant/helpers.hpp"
+#include "assistant/mcp_local_process.hpp"
+#include "assistant/model_options.hpp"
 
 namespace assistant {
 

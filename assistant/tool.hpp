@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-#include "ollama/function.hpp"
+#include "assistant/function.hpp"
 
 namespace assistant {
 

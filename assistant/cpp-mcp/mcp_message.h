@@ -17,7 +17,7 @@
 #include <vector>
 
 // Include the JSON library for parsing and generating JSON
-#include "ollama/common/json.hpp"
+#include "assistant/common/json.hpp"
 
 namespace mcp {
 

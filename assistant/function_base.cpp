@@ -1,8 +1,8 @@
-#include "ollama/function_base.hpp"
+#include "assistant/function_base.hpp"
 
-#include "ollama/config.hpp"
-#include "ollama/function.hpp"
-#include "ollama/mcp_local_process.hpp"
+#include "assistant/config.hpp"
+#include "assistant/function.hpp"
+#include "assistant/mcp_local_process.hpp"
 
 namespace assistant {
 void FunctionTable::AddMCPServer(std::shared_ptr<MCPStdioClient> client) {

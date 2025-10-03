@@ -2,9 +2,9 @@
 
 #include <vector>
 
-#include "ollama/cpp-mcp/mcp_tool.h"
-#include "ollama/function_base.hpp"
-#include "ollama/ollamalib.hpp"
+#include "assistant/cpp-mcp/mcp_tool.h"
+#include "assistant/function_base.hpp"
+#include "assistant/assistantlib.hpp"
 
 namespace assistant {
 class MCPStdioClient;

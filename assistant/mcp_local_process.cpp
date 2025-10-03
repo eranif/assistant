@@ -1,6 +1,6 @@
 #include "mcp_local_process.hpp"
 
-#include "ollama/function.hpp"
+#include "assistant/function.hpp"
 
 namespace assistant {
 
