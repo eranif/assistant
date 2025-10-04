@@ -15,12 +15,21 @@ if (CMAKE_CXX_COMPILER_ID
                       -D_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS)
 endif ()
 
-add_subdirectory(assistant)
 option(
   ASSISTANTLIB_BUILD_EXAMPLE
   "Build the example program."
   ON)
 
+option(
+  ASSISTANTLIB_WITH_OPENSSL
+  "Enable TLS support"
+  ON)
+
+if (ASSISTANTLIB_WITH_OPENSSL)
+  message(STATUS "TLS support is enabled")
+endif ()
+
+add_subdirectory(assistant)
 if (ASSISTANTLIB_BUILD_EXAMPLE)
   add_executable(assistant-demo main.cpp)
   target_link_libraries(assistant-demo PRIVATE assistantlib)

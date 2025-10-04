@@ -1,6 +1,6 @@
 project(assistantlib)
 
-if (assistantlib_WITH_OPENSSL)
+if (ASSISTANTLIB_WITH_OPENSSL)
   find_package(
     OpenSSL
     COMPONENTS SSL Crypto
@@ -28,7 +28,7 @@ target_include_directories(assistantlib PUBLIC ${OLLAMLIB_ROOT})
 target_include_directories(assistantlib PRIVATE ${CMAKE_CURRENT_LIST_DIR})
 target_link_libraries(assistantlib PUBLIC mcp-cpp)
 
-if (assistantlib_WITH_OPENSSL)
+if (ASSISTANTLIB_WITH_OPENSSL)
   target_compile_options(assistantlib PUBLIC -DCPPHTTPLIB_OPENSSL_SUPPORT=1)
   target_link_libraries(assistantlib PUBLIC OpenSSL::SSL OpenSSL::Crypto)
   if (WIN32)
