@@ -7,6 +7,7 @@
 #include "assistant/helpers.hpp"
 #include "assistant/mcp_local_process.hpp"
 #include "assistant/model_options.hpp"
+#include "common/magic_enum.hpp"
 
 namespace assistant {
 
@@ -26,13 +27,14 @@ struct MCPServerConfig {
 inline std::ostream& operator<<(std::ostream& os, const MCPServerConfig& mcp) {
   os << "MCPServerConfig {name: " << mcp.name << ", command: " << mcp.args
      << ", env: "
-     << (mcp.env.has_value() ? mcp.env.value() : assistant::json::object()) << "}";
+     << (mcp.env.has_value() ? mcp.env.value() : assistant::json::object())
+     << "}";
   return os;
 }
 
 struct Endpoint {
   std::string url_;
-  std::string type_{"ollama"};
+  EndpointKind type_{EndpointKind::ollama};
   std::unordered_map<std::string, std::string> headers_;
   bool active_{false};
 
@@ -44,7 +46,8 @@ struct Endpoint {
 };
 
 inline std::ostream& operator<<(std::ostream& os, const Endpoint& ep) {
-  os << "Endpoint {url: " << ep.url_ << ", type: " << ep.type_
+  os << "Endpoint {url: " << ep.url_
+     << ", type: " << magic_enum::enum_name(ep.type_)
      << ", active: " << ep.active_ << "}";
   return os;
 }

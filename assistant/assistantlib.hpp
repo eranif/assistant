@@ -75,6 +75,12 @@
 static constexpr const char* kApplicationJson = "application/json";
 
 namespace assistant {
+
+enum class EndpointKind {
+  ollama,
+  claude,
+};
+
 using json = nlohmann::json;
 using base64 = macaron::Base64;
 
@@ -1048,11 +1054,29 @@ class ClientImpl {
   }
 
  private:
-  std::string GetChatPath() const { return "/api/chat"; }
+  std::string GetChatPath() const {
+    switch (endpoint_kind_) {
+      case assistant::EndpointKind::claude:
+        return "/v1/messages";
+      default:
+      case assistant::EndpointKind::ollama:
+        return "/api/chat";
+    }
+  }
+
   std::string GetGeneratePath() const { return "/api/generate"; }
   std::string GetShowPath() const { return "/api/show"; }
-  std::string GetListPath() const { return "/api/tags"; }
+  std::string GetListPath() const {
+    switch (endpoint_kind_) {
+      case assistant::EndpointKind::claude:
+        return "/v1/models";
+      default:
+      case assistant::EndpointKind::ollama:
+        return "/api/tags";
+    }
+  }
 
+  EndpointKind endpoint_kind_{EndpointKind::ollama};
   std::string server_url;
   httplib::Headers headers_;
   httplib::Client* cli;

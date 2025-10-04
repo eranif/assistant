@@ -111,7 +111,9 @@ std::optional<Config> Config::FromContent(const std::string& content) {
         }
         if (endpoint_json.contains("type") &&
             endpoint_json["type"].is_string()) {
-          endpoint->type_ = endpoint_json["type"].get<std::string>();
+          endpoint->type_ = magic_enum::enum_cast<EndpointKind>(
+                                endpoint_json["type"].get<std::string>())
+                                .value_or(EndpointKind::ollama);
         }
         if (endpoint_json.contains("active") &&
             endpoint_json["active"].is_boolean()) {
@@ -148,7 +150,7 @@ std::optional<Config> Config::FromContent(const std::string& content) {
       endpoint->active_ = true;
       endpoint->url_ = "http://127.0.0.1:11434";
       endpoint->headers_.insert({"Host", "127.0.0.1"});
-      endpoint->type_ = "ollama";
+      endpoint->type_ = EndpointKind::ollama;
     }
 
     // Make sure we have exactly 1 active endpoint.
