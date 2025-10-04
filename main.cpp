@@ -208,15 +208,14 @@ int main(int argc, char** argv) {
           .Build());
 
   OLOG(assistant::LogLevel::kInfo)
-      << "Waiting for ollama server to become available...";
+      << "Waiting for: " << cli->GetUrl() << " to become available...";
 
   while (true) {
     if (cli->IsRunning()) {
-      OLOG(OLogLevel::kInfo)
-          << "Ollama server: " << cli->GetUrl() << " is running!";
+      OLOG(OLogLevel::kInfo) << "Server: " << cli->GetUrl() << " is running!";
       break;
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    std::this_thread::sleep_for(std::chrono::seconds(1));
   }
 
   std::cout << "Available functions:" << std::endl;

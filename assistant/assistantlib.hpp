@@ -697,9 +697,23 @@ class ClientImpl {
   }
 
   bool is_running() {
-    auto res = cli->Get("/", headers_);
-    if (res && res->body == "Ollama is running") {
-      return true;
+    switch (endpoint_kind_) {
+      case assistant::EndpointKind::ollama: {
+        auto res = cli->Get("/", headers_);
+        if (res && res->body == "Ollama is running") {
+          return true;
+        }
+        return false;
+      } break;
+      case assistant::EndpointKind::claude: {
+        time_t secs, usecs;
+        cli->get_connection_timeout(secs, usecs);
+        cli->set_connection_timeout(1, 0);
+        auto res = cli->Get("/", headers_);
+        // restore the timeout
+        cli->set_connection_timeout(secs, usecs);
+        return res;
+      } break;
     }
     return false;
   }
@@ -724,8 +738,17 @@ class ClientImpl {
 
     json json_response = list_model_json();
 
-    for (auto& model : json_response["models"]) {
-      models.push_back(model["name"]);
+    switch (endpoint_kind_) {
+      case assistant::EndpointKind::ollama: {
+        for (auto& model : json_response["models"]) {
+          models.push_back(model["name"]);
+        }
+      } break;
+      case assistant::EndpointKind::claude: {
+        for (auto& model : json_response["data"]) {
+          models.push_back(model["id"]);
+        }
+      } break;
     }
 
     return models;
@@ -1029,6 +1052,9 @@ class ClientImpl {
 
   void interrupt() { this->cli->stop(); }
 
+  void setEndpointKind(EndpointKind kind) { endpoint_kind_ = kind; }
+  EndpointKind getEndpointKind() const { return endpoint_kind_; }
+
   void setReadTimeout(const int seconds, const int usecs = 0) {
     if (this->cli == nullptr) {
       return;
@@ -1051,6 +1077,10 @@ class ClientImpl {
   }
   void setHttpHeaders(httplib::Headers headers) {
     headers_ = std::move(headers);
+    if (this->endpoint_kind_ == EndpointKind::claude) {
+      // Mandatory header for "claude"
+      headers_.insert({"anthropic-version", "2023-06-01"});
+    }
   }
 
  private:

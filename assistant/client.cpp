@@ -1,10 +1,10 @@
 #include "assistant/client.hpp"
 
+#include "assistant/assistantlib.hpp"
 #include "assistant/config.hpp"
 #include "assistant/cpp-mcp/mcp_logger.h"
 #include "assistant/helpers.hpp"
 #include "assistant/logger.hpp"
-#include "assistant/assistantlib.hpp"
 
 namespace assistant {
 
@@ -61,6 +61,7 @@ void Client::ApplyConfig(const assistant::Config* conf) {
     m_client_impl.setWriteTimeout(
         server_timeout_settings.GetWriteTimeout().first,
         server_timeout_settings.GetWriteTimeout().second);
+    m_client_impl.setEndpointKind(conf->GetEndpoint()->type_);
     SetHeadersInternal(m_client_impl, m_http_headers.get_value());
   }
 }

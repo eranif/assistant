@@ -1349,6 +1349,7 @@ class ClientImpl {
   void set_socket_options(SocketOptions socket_options);
 
   void set_connection_timeout(time_t sec, time_t usec = 0);
+  void get_connection_timeout(time_t &sec, time_t &usec);
   template <class Rep, class Period>
   void set_connection_timeout(
       const std::chrono::duration<Rep, Period> &duration);
@@ -1781,6 +1782,8 @@ class Client {
   void set_socket_options(SocketOptions socket_options);
 
   void set_connection_timeout(time_t sec, time_t usec = 0);
+  void get_connection_timeout(time_t &sec, time_t &usec);
+
   template <class Rep, class Period>
   void set_connection_timeout(
       const std::chrono::duration<Rep, Period> &duration);
@@ -8903,6 +8906,11 @@ inline void ClientImpl::set_connection_timeout(time_t sec, time_t usec) {
   connection_timeout_usec_ = usec;
 }
 
+inline void ClientImpl::get_connection_timeout(time_t &sec, time_t &usec) {
+  sec = connection_timeout_sec_;
+  usec = connection_timeout_usec_;
+}
+
 inline void ClientImpl::set_read_timeout(time_t sec, time_t usec) {
   read_timeout_sec_ = sec;
   read_timeout_usec_ = usec;
@@ -10315,6 +10323,10 @@ inline void Client::set_socket_options(SocketOptions socket_options) {
 
 inline void Client::set_connection_timeout(time_t sec, time_t usec) {
   cli_->set_connection_timeout(sec, usec);
+}
+
+inline void Client::get_connection_timeout(time_t &sec, time_t &usec) {
+  cli_->get_connection_timeout(sec, usec);
 }
 
 inline void Client::set_read_timeout(time_t sec, time_t usec) {
