@@ -174,8 +174,15 @@ void ClientBase::CreateAndPushChatRequest(std::optional<assistant::message> msg,
   }
 
   // Build the request
-  assistant::request req{model,    history, opts,
-                         m_stream, "json",  m_keep_alive.get_value()};
+  assistant::request req;
+
+  if (GetEndpointKind() == EndpointKind::ollama) {
+    req = assistant::request(model, history, opts, m_stream, "json",
+                             m_keep_alive.get_value());
+  } else {
+    req = assistant::request(model, history, nullptr, m_stream, "json", "");
+  }
+
   if (think.has_value()) {
     req["think"] = think.value();
   }
@@ -183,12 +190,13 @@ void ClientBase::CreateAndPushChatRequest(std::optional<assistant::message> msg,
   if (hidethinking.has_value()) {
     req["hidethinking"] = hidethinking.value();
   }
+  req["max_tokens"] = GetMaxTokens();
 
   if (IsFlagSet(chat_options, ChatOptions::kNoTools)) {
     OLOG(LogLevel::kInfo) << "The 'tools' are disabled for the model: '"
                           << model << "' (per user request).";
-  } else if (ModelHasCapability(model, ModelCapabilities::kTooling)) {
-    req["tools"] = m_function_table.ToJSON();
+  } else if (ModelHasCapability(model, ModelCapabilities::kTools)) {
+    req["tools"] = m_function_table.ToJSON(m_endpoint_kind.get_value());
   } else {
     OLOG(LogLevel::kWarning)
         << "The selected model: " << model << " does not support 'tools'";
@@ -253,6 +261,8 @@ void ClientBase::ApplyConfig(const assistant::Config* conf) {
     return;
   }
 
+  SetMaxTokens(endpoint->max_tokens_.value_or(kMaxTokensDefault));
+  m_endpoint_kind.set_value(endpoint->type_);
   m_url.set_value(endpoint->GetUrl());
   m_windows_size.store(conf->GetHistorySize());
   m_function_table.ReloadMCPServers(conf);

@@ -70,6 +70,8 @@ class Client : public ClientBase {
   }
 
  private:
+  std::optional<ModelCapabilities> GetOllamaModelCapabilities(
+      const std::string& model);
   void SetHeadersInternal(
       ClientImpl& client,
       const std::unordered_map<std::string, std::string>& headers);

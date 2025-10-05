@@ -72,7 +72,21 @@ class FunctionBase {
       : m_name(name), m_desc(desc) {}
   virtual ~FunctionBase() = default;
 
-  json ToJSON() const {
+  json ToJSON(EndpointKind kind) const {
+    switch (kind) {
+      case EndpointKind::ollama:
+        return ToOllamaJson();
+      case EndpointKind::claude:
+        return ToClaudeJSON();
+    }
+  }
+
+  virtual FunctionResult Call(const json& params) const = 0;
+  inline const std::string& GetName() const { return m_name; }
+  inline const std::string& GetDesc() const { return m_desc; }
+
+ private:
+  json ToOllamaJson() const {
     json j;
     j["type"] = "function";
     j["function"]["name"] = m_name;
@@ -91,8 +105,22 @@ class FunctionBase {
     return j;
   }
 
-  virtual FunctionResult Call(const json& params) const = 0;
-  inline const std::string& GetName() const { return m_name; }
+  json ToClaudeJSON() const {
+    json j;
+    j["name"] = m_name;
+    j["description"] = m_desc;
+    j["input_schema"]["type"] = "object";
+
+    std::vector<std::string> required;
+    for (const auto& param : m_params) {
+      j["input_schema"]["properties"][param.GetName()] = param.ToJSON();
+      if (param.IsRequired()) {
+        required.push_back(param.GetName());
+      }
+    }
+    j["input_schema"]["required"] = required;
+    return j;
+  }
 
  protected:
   std::string m_name;
@@ -108,11 +136,11 @@ struct FunctionCall {
 
 class FunctionTable {
  public:
-  json ToJSON() const {
+  json ToJSON(EndpointKind kind) const {
     std::scoped_lock lk{m_mutex};
     std::vector<json> v;
     for (const auto& [_, f] : m_functions) {
-      v.push_back(f->ToJSON());
+      v.push_back(f->ToJSON(kind));
     }
     json j = v;
     return j;
@@ -158,6 +186,16 @@ class FunctionTable {
   std::map<std::string, std::shared_ptr<FunctionBase>> m_functions
       GUARDED_BY(m_mutex);
   std::vector<std::shared_ptr<MCPStdioClient>> m_clients GUARDED_BY(m_mutex);
+  friend std::ostream& operator<<(std::ostream& os, const FunctionTable& table);
 };
+
+inline std::ostream& operator<<(std::ostream& os, const FunctionTable& table) {
+  std::scoped_lock lk{table.m_mutex};
+  for (const auto func : table.m_functions) {
+    os << "‣ " << "\"" << func.first << "\": " << func.second->GetDesc()
+       << std::endl;
+  }
+  return os;
+}
 
 }  // namespace assistant

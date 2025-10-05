@@ -1,3 +1,5 @@
+/// A demo program for using the "assistant" library.
+
 #include "assistant/logger.hpp"
 #ifdef __WIN32
 #include <winsock2.h>
@@ -190,7 +192,7 @@ int main(int argc, char** argv) {
   }
 
   cli->GetFunctionTable().Add(
-      FunctionBuilder("Open file in editor")
+      FunctionBuilder("Open_file_in_editor")
           .SetDescription(
               "Given a file path, open it inside the editor for editing.")
           .AddRequiredParam("filepath", "the path of the file on the disk.",
@@ -198,7 +200,7 @@ int main(int argc, char** argv) {
           .SetCallback(OpenFileInEditor)
           .Build());
   cli->GetFunctionTable().Add(
-      FunctionBuilder("Write file content to disk at a given path")
+      FunctionBuilder("Write_file_content_to_disk_at_a_given_path")
           .SetDescription("Write file content to disk at a given path. Create "
                           "the file if it does not exist.")
           .AddRequiredParam("filepath", "the path of the file on the disk.",
@@ -218,15 +220,14 @@ int main(int argc, char** argv) {
     std::this_thread::sleep_for(std::chrono::seconds(1));
   }
 
+  std::cout << "\n";
   std::cout << "Available functions:" << std::endl;
   std::cout << "====================" << std::endl;
 
-  assistant::json tools_json = cli->GetFunctionTable().ToJSON();
-  for (const auto& func_obj : tools_json) {
-    std::cout << "- " << func_obj["function"]["name"] << std::endl;
-  }
+  std::cout << cli->GetFunctionTable() << std::endl;
 
   auto models = cli->List();
+  std::cout << "\n";
   std::cout << "Available models:" << std::endl;
   std::cout << "=================" << std::endl;
   for (size_t i = 0; i < models.size(); ++i) {

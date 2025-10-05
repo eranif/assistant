@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <iostream>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -102,4 +103,55 @@ class Locker {
   mutable std::mutex m_mutex;
   ValueType m_value GUARDED_BY(m_mutex);
 };
+
+/// This function returns a vector of all complete lines.
+/// If the original string ends with an incomplete line,
+/// that line is returned separately as a string.
+inline std::pair<std::vector<std::string>, std::string> split_into_lines(
+    const std::string& text) {
+  std::vector<std::string> complete_lines;
+  std::string incomplete_line;
+  std::istringstream stream(text);
+  std::string line;
+
+  // Use a while loop with std::getline to extract all lines
+  while (std::getline(stream, line)) {
+    complete_lines.push_back(line);
+  }
+
+  // After the loop, the stream's state can tell us about the last line.
+  // If the stream reached EOF AND the last char of the original string
+  // was not a newline, then the last line read was incomplete.
+  if (!complete_lines.empty() && stream.eof() && text.back() != '\n') {
+    incomplete_line = complete_lines.back();
+    complete_lines.pop_back();  // Remove it from the complete lines vector
+  }
+
+  return {complete_lines, incomplete_line};
+}
+
+inline std::string_view after_first(const std::string_view& str,
+                                    const std::string_view& delimiter) {
+  size_t pos = str.find(delimiter);
+  if (pos != std::string_view::npos) {
+    return str.substr(pos + delimiter.length());
+  }
+  return "";  // Return empty string_view if delimiter is not found
+}
+
+inline std::string_view trim(const std::string_view& str) {
+  // Find the first non-whitespace character
+  size_t start = str.find_first_not_of(" \t\n\r\f\v");
+
+  // If the string contains only whitespace, return empty string_view
+  if (start == std::string_view::npos) {
+    return "";
+  }
+
+  // Find the last non-whitespace character
+  size_t end = str.find_last_not_of(" \t\n\r\f\v");
+
+  // Return substring view between start and end positions
+  return str.substr(start, end - start + 1);
+}
 }  // namespace assistant

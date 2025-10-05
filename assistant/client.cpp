@@ -103,7 +103,7 @@ std::optional<json> Client::GetModelInfo(const std::string& model) {
   }
 }
 
-std::optional<ModelCapabilities> Client::GetModelCapabilities(
+std::optional<ModelCapabilities> Client::GetOllamaModelCapabilities(
     const std::string& model) {
   auto opt = GetModelInfo(model);
   if (!opt.has_value()) {
@@ -122,7 +122,7 @@ std::optional<ModelCapabilities> Client::GetModelCapabilities(
       if (c == "completion") {
         AddFlagSet(flags, ModelCapabilities::kCompletion);
       } else if (c == "tools") {
-        AddFlagSet(flags, ModelCapabilities::kTooling);
+        AddFlagSet(flags, ModelCapabilities::kTools);
       } else if (c == "thinking") {
         AddFlagSet(flags, ModelCapabilities::kThinking);
       } else if (c == "insert") {
@@ -139,11 +139,36 @@ std::optional<ModelCapabilities> Client::GetModelCapabilities(
   }
 }
 
+std::optional<ModelCapabilities> Client::GetModelCapabilities(
+    const std::string& model) {
+  switch (m_client_impl.getEndpointKind()) {
+    case EndpointKind::ollama:
+      return GetOllamaModelCapabilities(model);
+    case EndpointKind::claude:
+      // For now, we return a hard coded list of capabilities.
+      ModelCapabilities flags{ModelCapabilities::kNone};
+      AddFlagSet(flags, ModelCapabilities::kTools);
+      AddFlagSet(flags, ModelCapabilities::kCompletion);
+      AddFlagSet(flags, ModelCapabilities::kInsert);
+      return flags;
+  }
+}
+
 void Client::PullModel(const std::string& name, OnResponseCallback cb) {
+  if (m_client_impl.getEndpointKind() != EndpointKind::ollama) {
+    OLOG(LogLevel::kWarning)
+        << "Pull model is supported by Ollama clients only";
+    cb("Pull model is supported by Ollama clients only", Reason::kFatalError,
+       false);
+    return;
+  }
+
   try {
     ClientImpl ol;
-    std::stringstream ss;
     ol.setServerURL(m_url.get_value());
+    ol.setEndpointKind(m_client_impl.getEndpointKind());
+
+    std::stringstream ss;
     ss << "Pulling model: " << name;
     cb(ss.str(), Reason::kLogNotice, false);
     ol.pull_model(name, true);

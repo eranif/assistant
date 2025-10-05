@@ -274,7 +274,7 @@ class request : public json {
   request(const std::string& model, const assistant::messages& messages,
           const json& options = nullptr, bool stream = false,
           const std::string& format = "json",
-          const std::string& keep_alive_duration = "5m")
+          const std::string& keep_alive_duration = "")
       : request() {
     (*this)["model"] = model;
     (*this)["messages"] = messages.to_json();
@@ -282,8 +282,10 @@ class request : public json {
 
     if (options != nullptr) (*this)["options"] = options["options"];
     (void)format;  //(*this)["format"] = format; // Commented out as providing
-                   // the format causes issues with some models.
-    (*this)["keep_alive"] = keep_alive_duration;
+    // the format causes issues with some models.
+    if (!keep_alive_duration.empty()) {
+      (*this)["keep_alive"] = keep_alive_duration;
+    }
     type = message_type::chat;
   }
   // Request for a chat completion with a single message
@@ -392,6 +394,8 @@ class response {
 
 using on_respons_callback =
     std::function<bool(const assistant::response&, void*)>;
+
+using on_raw_respons_callback = std::function<bool(const std::string&, void*)>;
 
 class ClientImpl {
   using json = nlohmann::json;
@@ -626,6 +630,38 @@ class ClientImpl {
     return false;
   }
 
+  /// Similar to the above "chat" method, but do not assume JSON response.
+  /// Useful for non-ollama servers, like Anthropic's "claude".
+  bool chat_raw_output(assistant::request& request,
+                       on_raw_respons_callback on_receive_token,
+                       void* user_data) {
+    assistant::response response;
+    request["stream"] = true;
+
+    std::string request_string = request.dump();
+    if (assistant::log_requests) std::cout << request_string << std::endl;
+
+    auto stream_callback = [on_receive_token, user_data](
+                               const char* data, size_t data_length) -> bool {
+      std::string message(data, data_length);
+      return on_receive_token(message, user_data);
+    };
+
+    if (auto res = this->cli->Post(GetChatPath(), headers_, request_string,
+                                   kApplicationJson, stream_callback)) {
+      return true;
+    } else if (res.error() ==
+               httplib::Error::Canceled) { /* Request cancelled by user. */
+      return true;
+    } else {
+      if (assistant::use_exceptions)
+        throw assistant::exception(
+            "No response from server returned at URL: " + this->server_url +
+            "\nError: " + httplib::to_string(res.error()));
+    }
+    return false;
+  }
+
   bool create_model(const std::string& modelName, const std::string& modelFile,
                     bool loadFromFile = true) {
     // Generate the JSON request
@@ -672,6 +708,14 @@ class ClientImpl {
   }
 
   bool load_model(const std::string& model) {
+    if (endpoint_kind_ != EndpointKind::ollama) {
+      if (assistant::use_exceptions) {
+        throw std::runtime_error(
+            "Load model is only supported by Ollama server");
+      } else {
+        return false;
+      }
+    }
     json request;
     request["model"] = model;
     std::string request_string = request.dump();
@@ -755,6 +799,15 @@ class ClientImpl {
   }
 
   json running_model_json() {
+    if (endpoint_kind_ != EndpointKind::ollama) {
+      if (assistant::use_exceptions) {
+        throw std::runtime_error(
+            "List running model is only supported by Ollama server");
+      } else {
+        return {};
+      }
+    }
+
     json models;
     if (auto res = cli->Get("/api/ps", headers_)) {
       if (assistant::log_replies) std::cout << res->body << std::endl;
@@ -782,6 +835,15 @@ class ClientImpl {
   }
 
   bool blob_exists(const std::string& digest) {
+    if (endpoint_kind_ != EndpointKind::ollama) {
+      if (assistant::use_exceptions) {
+        throw std::runtime_error(
+            "Blob exists API is only supported by Ollama server");
+      } else {
+        return false;
+      }
+    }
+
     if (auto res = cli->Head("/api/blobs/" + digest)) {
       if (res->status == httplib::StatusCode::OK_200) return true;
       if (res->status == httplib::StatusCode::NotFound_404) return false;
@@ -796,6 +858,15 @@ class ClientImpl {
   }
 
   bool create_blob(const std::string& digest) {
+    if (endpoint_kind_ != EndpointKind::ollama) {
+      if (assistant::use_exceptions) {
+        throw std::runtime_error(
+            "Create blob API is only supported by Ollama server");
+      } else {
+        return false;
+      }
+    }
+
     if (auto res = cli->Post("/api/blobs/" + digest, headers_)) {
       if (res->status == httplib::StatusCode::Created_201) return true;
       if (res->status == httplib::StatusCode::BadRequest_400) {
@@ -831,7 +902,7 @@ class ClientImpl {
       } catch (...) {
         if (assistant::use_exceptions)
           throw assistant::exception(
-              "Received bad response from Ollama server when querying model "
+              "Received bad response from server when querying model "
               "info.");
       }
     } else {

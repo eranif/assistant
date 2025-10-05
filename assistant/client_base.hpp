@@ -33,7 +33,7 @@ enum class Reason {
 enum class ModelCapabilities {
   kNone = (0),
   kThinking = (1 << 0),
-  kTooling = (1 << 1),
+  kTools = (1 << 1),
   kCompletion = (1 << 2),
   kInsert = (1 << 3),
   kVision = (1 << 4),
@@ -199,6 +199,16 @@ class ClientBase {
   }
 
   inline std::string GetUrl() const { return m_url.get_value(); }
+  inline EndpointKind GetEndpointKind() const {
+    return m_endpoint_kind.get_value();
+  }
+
+  inline void SetEndpointKind(EndpointKind kind) {
+    m_endpoint_kind.set_value(kind);
+  }
+
+  inline size_t GetMaxTokens() const { return m_max_tokens.get_value(); }
+  inline void SetMaxTokens(size_t count) { m_max_tokens.set_value(count); }
 
  protected:
   static bool OnResponse(const assistant::response& resp, void* user_data);
@@ -229,6 +239,8 @@ class ClientBase {
   std::atomic_bool m_interrupt{false};
   std::atomic_bool m_stream{true};
   Locker<std::string> m_keep_alive{"5m"};
+  Locker<EndpointKind> m_endpoint_kind{EndpointKind::ollama};
+  Locker<size_t> m_max_tokens{kMaxTokensDefault};
   friend struct ChatRequest;
 };
 }  // namespace assistant

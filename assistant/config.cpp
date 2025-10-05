@@ -119,6 +119,10 @@ std::optional<Config> Config::FromContent(const std::string& content) {
             endpoint_json["active"].is_boolean()) {
           endpoint->active_ = endpoint_json["active"].get<bool>();
         }
+        if (endpoint_json.contains("max_tokens") &&
+            endpoint_json["max_tokens"].is_number_unsigned()) {
+          endpoint->max_tokens_ = endpoint_json["max_tokens"].get<size_t>();
+        }
       }
     }
 
