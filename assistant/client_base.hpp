@@ -12,7 +12,6 @@
 
 namespace assistant {
 
-constexpr std::string_view kDefaultOllamaUrl = "http://127.0.0.1:11434";
 constexpr std::string_view kAssistantRole = "assistant";
 
 enum class Reason {
@@ -49,7 +48,8 @@ enum class ChatOptions {
   kNoHistory = (1 << 1),
 };
 
-using OnResponseCallback = std::function<bool(std::string, Reason, bool)>;
+using OnResponseCallback =
+    std::function<bool(std::string text, Reason call_reason, bool thinking)>;
 
 class ClientBase;
 struct ChatRequest {
@@ -120,13 +120,11 @@ class ClientBase {
   ///===---------------------------
   /// Client API - START
   ///===---------------------------
-
-  /// The underlying function that triggers the chat.
-  virtual void ChatImpl(
-      assistant::request& request,
-      std::function<bool(const assistant::response& resp, void* user_data)>
-          on_response,
-      void* user_data) = 0;
+  /// Start a chat. Some options of the chat can be controlled via the
+  /// ChatOptions flags. For example, user may disable "tools" even though the
+  /// model support them.
+  virtual void Chat(std::string msg, OnResponseCallback cb, std::string model,
+                    ChatOptions chat_options) = 0;
 
   /// Return true if the server is running.
   virtual bool IsRunning() = 0;
@@ -145,16 +143,13 @@ class ClientBase {
   virtual std::optional<ModelCapabilities> GetModelCapabilities(
       const std::string& model) = 0;
 
+  virtual void CreateAndPushChatRequest(std::optional<assistant::message> msg,
+                                        OnResponseCallback cb,
+                                        std::string model,
+                                        ChatOptions chat_options) = 0;
   ///===---------------------------
   /// Client API - END
   ///===---------------------------
-
-  /// Start a chat. Some options of the chat can be controlled via the
-  /// ChatOptions flags. For example, use may disable "tools" even though the
-  /// model support them.
-  virtual void Chat(std::string msg, OnResponseCallback cb, std::string model,
-                    ChatOptions chat_options  // bitwise OR'ed ChatOptions
-  );
 
   virtual void ApplyConfig(const assistant::Config* conf);
   virtual void Startup() { m_interrupt.store(false); }
@@ -212,13 +207,10 @@ class ClientBase {
 
  protected:
   static bool OnResponse(const assistant::response& resp, void* user_data);
+  static bool OnResponseRaw(const std::string& resp, void* user_data);
   void ProcessChatRequestQueue();
   bool HandleResponse(const assistant::response& resp,
                       ChatContext& chat_user_data);
-  void ProcessChatRquest(std::shared_ptr<ChatRequest> chat_request);
-  void CreateAndPushChatRequest(std::optional<assistant::message> msg,
-                                OnResponseCallback cb, std::string model,
-                                ChatOptions chat_options);
   void AddMessage(std::optional<assistant::message> msg);
   assistant::messages GetMessages() const;
   bool ModelHasCapability(const std::string& model_name, ModelCapabilities c);

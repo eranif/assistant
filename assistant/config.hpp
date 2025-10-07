@@ -33,9 +33,12 @@ inline std::ostream& operator<<(std::ostream& os, const MCPServerConfig& mcp) {
 }
 
 constexpr size_t kMaxTokensDefault = 1024;
+constexpr std::string_view kDefaultOllamaUrl = "http://127.0.0.1:11434";
+static std::unordered_map<std::string, std::string> kDefaultOllamaHeaders = {
+    {"Host", "127.0.0.1"}};
 
 struct Endpoint {
-  std::string url_;
+  std::string url_{kDefaultOllamaUrl};
   EndpointKind type_{EndpointKind::ollama};
   std::unordered_map<std::string, std::string> headers_;
   bool active_{false};
@@ -95,6 +98,8 @@ inline std::ostream& operator<<(std::ostream& os, const ServerTimeout& t) {
 class Config {
  public:
   ~Config() = default;
+  Config() = default;
+
   static std::optional<Config> FromFile(const std::string& filepath);
   static std::optional<Config> FromContent(const std::string& json_content);
   static ModelOptions CreaetDefaultModelOptions();
@@ -134,8 +139,6 @@ class Config {
   }
 
  private:
-  Config() = default;
-
   std::vector<MCPServerConfig> m_servers;
   size_t m_history_size{50};
   ModelOptions m_defaultModelOptions;

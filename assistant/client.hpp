@@ -15,18 +15,15 @@ enum class EventType {
   kServerReloadConfig,
 };
 
-class Client : public ClientBase {
+class OllamaClient : public ClientBase {
  public:
-  Client(const std::string& url,
-         const std::unordered_map<std::string, std::string>& headers);
-  ~Client() override;
+  OllamaClient(const std::string& url,
+               const std::unordered_map<std::string, std::string>& headers);
+  ~OllamaClient() override;
 
-  /// Start a chat. All responses will be directed to the `cb`. Note that `cb`
-  void ChatImpl(
-      assistant::request& request,
-      std::function<bool(const assistant::response& resp, void* user_data)>
-          on_response,
-      void* user_data) override;
+  ///===---------------------------------
+  /// Client interface implementation
+  ///===---------------------------------
 
   /// Load configuration object into the manager.
   void ApplyConfig(const assistant::Config* conf) override;
@@ -51,6 +48,17 @@ class Client : public ClientBase {
   /// This method should be called from another thread.
   void Interrupt() override;
 
+  void Chat(std::string msg, OnResponseCallback cb, std::string model,
+            ChatOptions chat_options) override;
+
+  void CreateAndPushChatRequest(std::optional<assistant::message> msg,
+                                OnResponseCallback cb, std::string model,
+                                ChatOptions chat_options) override;
+
+  ///===---------------------------------------
+  /// Client interface implementation ends here.
+  ///===---------------------------------------
+
   /// Timeout for connecting the server.
   void SetConnectTimeout(const int secs, const int usecs) {
     std::scoped_lock lk{m_client_mutex};
@@ -69,7 +77,10 @@ class Client : public ClientBase {
     m_client_impl.setWriteTimeout(secs, usecs);
   }
 
- private:
+ protected:
+  virtual void ProcessChatRquest(std::shared_ptr<ChatRequest> chat_request);
+  virtual void ProcessChatRequestQueue();
+
   std::optional<ModelCapabilities> GetOllamaModelCapabilities(
       const std::string& model);
   void SetHeadersInternal(
@@ -82,5 +93,7 @@ class Client : public ClientBase {
 
   std::mutex m_client_mutex;
   ClientImpl m_client_impl;
+
+  friend class ClaudeClient;
 };
 }  // namespace assistant

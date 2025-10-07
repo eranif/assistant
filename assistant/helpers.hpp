@@ -10,6 +10,20 @@
 
 #include "assistant/attributes.hpp"
 
+#define CONCAT_IMPL(a, b) a##b
+#define CONCAT(a, b) CONCAT_IMPL(a, b)
+#define UNIQUE_VAR(name) CONCAT(name, __LINE__)
+
+#define ASSIGN_OPT_OR_RETURN(Decl, Expr, ReturnValue) \
+  auto UNIQUE_VAR(__result) = (Expr);                 \
+  if (!UNIQUE_VAR(__result).has_value()) {            \
+    return ReturnValue;                               \
+  }                                                   \
+  Decl = UNIQUE_VAR(__result).value();
+
+#define ASSIGN_OPT_OR_RETURN_NULLOPT(Decl, Expr) \
+  ASSIGN_OPT_OR_RETURN(Decl, Expr, std::nullopt)
+
 namespace assistant {
 /**
  * @brief Joins the elements of a container into a single string with a

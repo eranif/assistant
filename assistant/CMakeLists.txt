@@ -13,6 +13,8 @@ add_library(
   assistantlib STATIC
   ${CMAKE_CURRENT_LIST_DIR}/client.cpp
   ${CMAKE_CURRENT_LIST_DIR}/client.hpp
+  ${CMAKE_CURRENT_LIST_DIR}/claude_client.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/claude_client.hpp
   ${CMAKE_CURRENT_LIST_DIR}/mcp_local_process.cpp
   ${CMAKE_CURRENT_LIST_DIR}/mcp_local_process.hpp
   ${CMAKE_CURRENT_LIST_DIR}/function.cpp
@@ -22,7 +24,9 @@ add_library(
   ${CMAKE_CURRENT_LIST_DIR}/client_base.cpp
   ${CMAKE_CURRENT_LIST_DIR}/client_base.hpp
   ${CMAKE_CURRENT_LIST_DIR}/config.cpp
-  ${CMAKE_CURRENT_LIST_DIR}/config.hpp)
+  ${CMAKE_CURRENT_LIST_DIR}/config.hpp
+  ${CMAKE_CURRENT_LIST_DIR}/claude_response_parser.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/claude_response_parser.hpp)
 
 target_include_directories(assistantlib PUBLIC ${OLLAMLIB_ROOT})
 target_include_directories(assistantlib PRIVATE ${CMAKE_CURRENT_LIST_DIR})

@@ -25,6 +25,11 @@ option(
   "Enable TLS support"
   ON)
 
+option(
+  ASSISTANTLIB_BUILD_TESTS
+  "Build tests"
+  OFF)
+
 if (ASSISTANTLIB_WITH_OPENSSL)
   message(STATUS "TLS support is enabled")
 endif ()
@@ -33,6 +38,11 @@ add_subdirectory(assistant)
 if (ASSISTANTLIB_BUILD_EXAMPLE)
   add_executable(assistant-demo main.cpp)
   target_link_libraries(assistant-demo PRIVATE assistantlib)
+endif ()
+
+if (ASSISTANTLIB_BUILD_TESTS)
+  add_subdirectory(submodules/googletest)
+  add_subdirectory(tests)
 endif ()
 
 file(

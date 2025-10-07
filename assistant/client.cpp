@@ -8,8 +8,9 @@
 
 namespace assistant {
 
-Client::Client(const std::string& url,
-               const std::unordered_map<std::string, std::string>& headers) {
+OllamaClient::OllamaClient(
+    const std::string& url,
+    const std::unordered_map<std::string, std::string>& headers) {
   m_url.set_value(url);
   m_http_headers.set_value(headers);
 
@@ -25,9 +26,9 @@ Client::Client(const std::string& url,
   Startup();
 }
 
-Client::~Client() { Shutdown(); }
+OllamaClient::~OllamaClient() { Shutdown(); }
 
-void Client::Interrupt() {
+void OllamaClient::Interrupt() {
   ClientBase::Interrupt();
   try {
     m_client_impl.interrupt();
@@ -37,16 +38,7 @@ void Client::Interrupt() {
   }
 }
 
-void Client::ChatImpl(
-    assistant::request& request,
-    std::function<bool(const assistant::response& resp, void* user_data)>
-        on_response,
-    void* user_data) {
-  std::scoped_lock lk{m_client_mutex};
-  m_client_impl.chat(request, on_response, user_data);
-}
-
-void Client::ApplyConfig(const assistant::Config* conf) {
+void OllamaClient::ApplyConfig(const assistant::Config* conf) {
   ClientBase::ApplyConfig(conf);
   {
     std::scoped_lock lk{m_client_mutex};
@@ -66,7 +58,7 @@ void Client::ApplyConfig(const assistant::Config* conf) {
   }
 }
 
-std::vector<std::string> Client::List() {
+std::vector<std::string> OllamaClient::List() {
   std::scoped_lock lk{m_client_mutex};
   if (!IsRunningInternal(m_client_impl)) {
     return {};
@@ -78,7 +70,7 @@ std::vector<std::string> Client::List() {
   }
 }
 
-json Client::ListJSON() {
+json OllamaClient::ListJSON() {
   std::scoped_lock lk{m_client_mutex};
   if (!IsRunningInternal(m_client_impl)) {
     return {};
@@ -90,7 +82,7 @@ json Client::ListJSON() {
   }
 }
 
-std::optional<json> Client::GetModelInfo(const std::string& model) {
+std::optional<json> OllamaClient::GetModelInfo(const std::string& model) {
   std::scoped_lock lk{m_client_mutex};
   if (!IsRunningInternal(m_client_impl)) {
     return std::nullopt;
@@ -103,7 +95,7 @@ std::optional<json> Client::GetModelInfo(const std::string& model) {
   }
 }
 
-std::optional<ModelCapabilities> Client::GetOllamaModelCapabilities(
+std::optional<ModelCapabilities> OllamaClient::GetOllamaModelCapabilities(
     const std::string& model) {
   auto opt = GetModelInfo(model);
   if (!opt.has_value()) {
@@ -139,22 +131,12 @@ std::optional<ModelCapabilities> Client::GetOllamaModelCapabilities(
   }
 }
 
-std::optional<ModelCapabilities> Client::GetModelCapabilities(
+std::optional<ModelCapabilities> OllamaClient::GetModelCapabilities(
     const std::string& model) {
-  switch (m_client_impl.getEndpointKind()) {
-    case EndpointKind::ollama:
-      return GetOllamaModelCapabilities(model);
-    case EndpointKind::claude:
-      // For now, we return a hard coded list of capabilities.
-      ModelCapabilities flags{ModelCapabilities::kNone};
-      AddFlagSet(flags, ModelCapabilities::kTools);
-      AddFlagSet(flags, ModelCapabilities::kCompletion);
-      AddFlagSet(flags, ModelCapabilities::kInsert);
-      return flags;
-  }
+  return GetOllamaModelCapabilities(model);
 }
 
-void Client::PullModel(const std::string& name, OnResponseCallback cb) {
+void OllamaClient::PullModel(const std::string& name, OnResponseCallback cb) {
   if (m_client_impl.getEndpointKind() != EndpointKind::ollama) {
     OLOG(LogLevel::kWarning)
         << "Pull model is supported by Ollama clients only";
@@ -178,12 +160,12 @@ void Client::PullModel(const std::string& name, OnResponseCallback cb) {
   }
 }
 
-bool Client::IsRunning() {
+bool OllamaClient::IsRunning() {
   std::scoped_lock lk{m_client_mutex};
   return IsRunningInternal(m_client_impl);
 }
 
-void Client::SetHeadersInternal(
+void OllamaClient::SetHeadersInternal(
     ClientImpl& client,
     const std::unordered_map<std::string, std::string>& headers) {
   httplib::Headers h;
@@ -193,7 +175,7 @@ void Client::SetHeadersInternal(
   client.setHttpHeaders(std::move(h));
 }
 
-bool Client::IsRunningInternal(ClientImpl& client) const {
+bool OllamaClient::IsRunningInternal(ClientImpl& client) const {
   try {
     return client.is_running();
   } catch (const std::exception& e) {
@@ -201,4 +183,127 @@ bool Client::IsRunningInternal(ClientImpl& client) const {
     return false;
   }
 }
+
+void OllamaClient::ProcessChatRquest(
+    std::shared_ptr<ChatRequest> chat_request) {
+  try {
+    OLOG(LogLevel::kDebug) << "==> " << chat_request->request_;
+
+    std::string model_name = chat_request->request_["model"].get<std::string>();
+
+    // Prepare chat user data.
+    ChatContext user_data{
+        .client = this, .model = model_name, .chat_context = chat_request};
+    user_data.model_can_think =
+        ModelHasCapability(model_name, ModelCapabilities::kThinking);
+    if (user_data.model_can_think) {
+      m_model_options.with(
+          [&user_data,
+           &model_name](const std::unordered_map<std::string, ModelOptions>&
+                            model_options) {
+            auto iter = model_options.find(model_name);
+            if (iter == model_options.end()) {
+              return;
+            }
+            const auto& mo = iter->second;
+            user_data.thinking_start_tag = mo.think_start_tag;
+            user_data.thinking_end_tag = mo.think_end_tag;
+          });
+    }
+
+    {
+      std::scoped_lock lk{m_client_mutex};
+      m_client_impl.chat(chat_request->request_, &OllamaClient::OnResponse,
+                         static_cast<void*>(&user_data));
+    }
+
+    if (!chat_request->func_calls_.empty()) {
+      chat_request->InvokeTools(this);
+    }
+  } catch (std::exception& e) {
+    chat_request->callback_(e.what(), Reason::kFatalError, false);
+    Shutdown();
+  }
+}
+
+void OllamaClient::Chat(std::string msg, OnResponseCallback cb,
+                        std::string model, ChatOptions chat_options) {
+  assistant::message json_message{"user", msg};
+  CreateAndPushChatRequest(json_message, cb, model, chat_options);
+  ProcessChatRequestQueue();
+}
+
+void OllamaClient::ProcessChatRequestQueue() {
+  while (!m_queue.empty()) {
+    if (m_interrupt.load()) {
+      break;
+    }
+    ProcessChatRquest(m_queue.pop_front_and_return());
+  }
+}
+
+void OllamaClient::CreateAndPushChatRequest(
+    std::optional<assistant::message> msg, OnResponseCallback cb,
+    std::string model, ChatOptions chat_options) {
+  assistant::options opts;
+
+  std::optional<bool> think, hidethinking;
+  ModelOptions model_options;
+  m_model_options.with([&model_options, &model](const auto& m) {
+    auto where = m.find(model);
+    if (where == m.end()) {
+      // Can't fail. We always include the "default"
+      OLOG(LogLevel::kDebug) << "Missing 'default' model setup in "
+                                "configuration file. Creating and using one.";
+      model_options = m.find("default")->second;
+    } else {
+      model_options = where->second;
+    }
+  });
+
+  for (const auto& [name, value] : model_options.options.items()) {
+    opts[name] = value;
+  }
+  think = model_options.think;
+  hidethinking = model_options.hidethinking;
+
+  assistant::messages history;
+  if (IsFlagSet(chat_options, ChatOptions::kNoHistory)) {
+    if (msg.has_value()) {
+      history = {msg.value()};
+    }
+  } else {
+    AddMessage(msg);
+    history = GetMessages();
+  }
+
+  // Build the request
+  assistant::request req{model,    history, opts,
+                         m_stream, "json",  m_keep_alive.get_value()};
+
+  if (think.has_value()) {
+    req["think"] = think.value();
+  }
+
+  if (hidethinking.has_value()) {
+    req["hidethinking"] = hidethinking.value();
+  }
+  if (IsFlagSet(chat_options, ChatOptions::kNoTools)) {
+    OLOG(LogLevel::kInfo) << "The 'tools' are disabled for the model: '"
+                          << model << "' (per user request).";
+  } else if (ModelHasCapability(model, ModelCapabilities::kTools)) {
+    req["tools"] = m_function_table.ToJSON(EndpointKind::ollama);
+  } else {
+    OLOG(LogLevel::kWarning)
+        << "The selected model: " << model << " does not support 'tools'";
+  }
+
+  ChatRequest ctx = {
+      .callback_ = cb,
+      .request_ = req,
+      .model_ = std::move(model),
+  };
+  m_queue.push_back(std::make_shared<ChatRequest>(ctx));
+}
+
 }  // namespace assistant

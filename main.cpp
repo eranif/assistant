@@ -8,10 +8,7 @@
 #include <iostream>
 #include <thread>
 
-#include "assistant/client.hpp"
-#include "assistant/config.hpp"
-#include "assistant/tool.hpp"
-#include "utils.hpp"
+#include "assistant/assistant.hpp"
 
 using FunctionTable = assistant::FunctionTable;
 using FunctionBuilder = assistant::FunctionBuilder;
@@ -183,13 +180,8 @@ int main(int argc, char** argv) {
     assistant::SetLogLevel(conf.value().GetLogLevel());
   }
 
-  std::string url = "http://127.0.0.1:11434";
-  std::unordered_map<std::string, std::string> headers;
-  std::shared_ptr<assistant::Client> cli =
-      std::make_shared<assistant::Client>(url, headers);
-  if (conf.has_value()) {
-    cli->ApplyConfig(&(*conf));
-  }
+  ASSIGN_OPT_OR_RETURN(std::shared_ptr<assistant::ClientBase> cli,
+                       assistant::MakeClient(conf), 1 /* return code */);
 
   cli->GetFunctionTable().Add(
       FunctionBuilder("Open_file_in_editor")
@@ -199,6 +191,7 @@ int main(int argc, char** argv) {
                             "string")
           .SetCallback(OpenFileInEditor)
           .Build());
+
   cli->GetFunctionTable().Add(
       FunctionBuilder("Write_file_content_to_disk_at_a_given_path")
           .SetDescription("Write file content to disk at a given path. Create "

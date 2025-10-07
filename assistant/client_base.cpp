@@ -5,15 +5,6 @@
 
 namespace assistant {
 
-void ClientBase::ProcessChatRequestQueue() {
-  while (!m_queue.empty()) {
-    if (m_interrupt.load()) {
-      break;
-    }
-    ProcessChatRquest(m_queue.pop_front_and_return());
-  }
-}
-
 bool ClientBase::HandleResponse(const assistant::response& resp,
                                 ChatContext& chat_user_data) {
   std::shared_ptr<ChatRequest> req = chat_user_data.chat_context;
@@ -99,124 +90,6 @@ bool ClientBase::OnResponse(const assistant::response& resp, void* user_data) {
   return cud->client->HandleResponse(resp, *cud);
 }
 
-void ClientBase::ProcessChatRquest(std::shared_ptr<ChatRequest> chat_request) {
-  try {
-    OLOG(LogLevel::kDebug) << "==> " << chat_request->request_;
-
-    std::string model_name = chat_request->request_["model"].get<std::string>();
-
-    // Prepare chat user data.
-    ChatContext user_data{
-        .client = this, .model = model_name, .chat_context = chat_request};
-    user_data.model_can_think =
-        ModelHasCapability(model_name, ModelCapabilities::kThinking);
-    if (user_data.model_can_think) {
-      m_model_options.with(
-          [&user_data,
-           &model_name](const std::unordered_map<std::string, ModelOptions>&
-                            model_options) {
-            auto iter = model_options.find(model_name);
-            if (iter == model_options.end()) {
-              return;
-            }
-            const auto& mo = iter->second;
-            user_data.thinking_start_tag = mo.think_start_tag;
-            user_data.thinking_end_tag = mo.think_end_tag;
-          });
-    }
-
-    ChatImpl(chat_request->request_, &ClientBase::OnResponse,
-             static_cast<void*>(&user_data));
-
-    if (!chat_request->func_calls_.empty()) {
-      chat_request->InvokeTools(this);
-    }
-  } catch (std::exception& e) {
-    chat_request->callback_(e.what(), Reason::kFatalError, false);
-    Shutdown();
-  }
-}
-
-void ClientBase::CreateAndPushChatRequest(std::optional<assistant::message> msg,
-                                          OnResponseCallback cb,
-                                          std::string model,
-                                          ChatOptions chat_options) {
-  assistant::options opts;
-
-  std::optional<bool> think, hidethinking;
-  ModelOptions model_options;
-  m_model_options.with([&model_options, &model](const auto& m) {
-    auto where = m.find(model);
-    if (where == m.end()) {
-      // Can't fail. We always include the "default"
-      OLOG(LogLevel::kWarning) << "Missing 'default' model setup in "
-                                  "configuration file. Creating and using one.";
-      model_options = m.find("default")->second;
-    } else {
-      model_options = where->second;
-    }
-  });
-
-  for (const auto& [name, value] : model_options.options.items()) {
-    opts[name] = value;
-  }
-  think = model_options.think;
-  hidethinking = model_options.hidethinking;
-
-  assistant::messages history;
-  if (IsFlagSet(chat_options, ChatOptions::kNoHistory)) {
-    if (msg.has_value()) {
-      history = {msg.value()};
-    }
-  } else {
-    AddMessage(msg);
-    history = GetMessages();
-  }
-
-  // Build the request
-  assistant::request req;
-
-  if (GetEndpointKind() == EndpointKind::ollama) {
-    req = assistant::request(model, history, opts, m_stream, "json",
-                             m_keep_alive.get_value());
-  } else {
-    req = assistant::request(model, history, nullptr, m_stream, "json", "");
-  }
-
-  if (think.has_value()) {
-    req["think"] = think.value();
-  }
-
-  if (hidethinking.has_value()) {
-    req["hidethinking"] = hidethinking.value();
-  }
-  req["max_tokens"] = GetMaxTokens();
-
-  if (IsFlagSet(chat_options, ChatOptions::kNoTools)) {
-    OLOG(LogLevel::kInfo) << "The 'tools' are disabled for the model: '"
-                          << model << "' (per user request).";
-  } else if (ModelHasCapability(model, ModelCapabilities::kTools)) {
-    req["tools"] = m_function_table.ToJSON(m_endpoint_kind.get_value());
-  } else {
-    OLOG(LogLevel::kWarning)
-        << "The selected model: " << model << " does not support 'tools'";
-  }
-
-  ChatRequest ctx = {
-      .callback_ = cb,
-      .request_ = req,
-      .model_ = std::move(model),
-  };
-  m_queue.push_back(std::make_shared<ChatRequest>(ctx));
-}
-
-void ClientBase::Chat(std::string msg, OnResponseCallback cb, std::string model,
-                      ChatOptions chat_options) {
-  assistant::message json_message{"user", msg};
-  CreateAndPushChatRequest(json_message, cb, model, chat_options);
-  ProcessChatRequestQueue();
-}
-
 void ClientBase::AddMessage(std::optional<assistant::message> msg) {
   m_messages.with_mut([msg = std::move(msg), this](assistant::messages& msgs) {
     if (!msg.has_value()) {
@@ -256,6 +129,7 @@ void ClientBase::ApplyConfig(const assistant::Config* conf) {
     return;
   }
   auto endpoint = conf->GetEndpoint();
+
   if (!endpoint) {
     OLOG(LogLevel::kError) << "No endpoint is found!";
     return;
