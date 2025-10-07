@@ -79,6 +79,7 @@ class FunctionBase {
       case EndpointKind::claude:
         return ToClaudeJSON();
     }
+    return json{};
   }
 
   virtual FunctionResult Call(const json& params) const = 0;
