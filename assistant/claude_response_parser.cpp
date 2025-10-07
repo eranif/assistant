@@ -274,13 +274,16 @@ void ResponseParser::AppendText(
       auto j = as_json.value();
       if (j.contains("type") && j["type"].is_string() &&
           j["type"].get<std::string>() == "error") {
+        std::optional<std::string> errmsg{std::nullopt};
         try {
-          auto error_message = j["error"]["message"].get<std::string>();
-          std::stringstream ss;
-          ss << "Internal error. " << error_message;
-          throw std::runtime_error(ss.str());
+          errmsg = j["error"]["message"].get<std::string>();
         } catch (...) {
-          // do nothing
+        }
+
+        if (errmsg.has_value()) {
+          std::stringstream ss;
+          ss << "Internal error. " << errmsg.value();
+          throw std::runtime_error(ss.str());
         }
       }
     }

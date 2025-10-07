@@ -52,8 +52,9 @@ data: {"type":"content_block_stop","index":0}
   EXPECT_FALSE(tokens[0].need_more_data);
   EXPECT_TRUE(tokens[0].content_type.has_value());
   EXPECT_EQ(tokens[0].content_type.value(), ContentType::tool_use);
-  EXPECT_FALSE(tokens[0].content.empty());
-  EXPECT_NO_THROW(auto res = json::parse(tokens[0].content));
+  EXPECT_FALSE(tokens[0].GetToolJson().empty());
+  EXPECT_NO_THROW(auto res = json::parse(tokens[0].GetToolJson()))
+      << "Failed to parse: " << tokens[0].content;
 
   EXPECT_TRUE(tokens.back().need_more_data);
   EXPECT_FALSE(tokens.back().is_done);
@@ -172,4 +173,24 @@ data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text
   EXPECT_FALSE(tokens.back().IsDone());
 }
 
+TEST(ResponseParserTest, ErrorMessage) {
+  ResponseParser parser;
+  std::string message =
+      R"({"type":"error","error":{"type":"invalid_request_error","message":"messages.1.content: Input should be a valid list"},"request_id":"req_011CTtPr3mnnjHJoWCFAK77W"})";
+
+  // First parse with partial data
+  std::vector<ParseResult> tokens;
+  try {
+    parser.Parse(message, [&tokens](ParseResult result) {
+      tokens.push_back(std::move(result));
+    });
+    ASSERT_TRUE(false) << "Expected an exception";
+  } catch (const std::runtime_error& e) {
+    std::string errmsg{e.what()};
+    EXPECT_EQ(
+        errmsg,
+        "Internal error. messages.1.content: Input should be a valid list");
+    EXPECT_EQ(tokens.size(), 0);
+  }
+}
 }  // namespace assistant::claude
