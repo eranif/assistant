@@ -24,6 +24,7 @@ std::optional<ModelCapabilities> ClaudeClient::GetModelCapabilities(
   AddFlagSet(flags, ModelCapabilities::kTools);
   AddFlagSet(flags, ModelCapabilities::kCompletion);
   AddFlagSet(flags, ModelCapabilities::kInsert);
+  AddFlagSet(flags, ModelCapabilities::kThinking);
   return flags;
 }
 
