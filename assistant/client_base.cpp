@@ -181,19 +181,7 @@ void ChatRequest::InvokeTools(ClientBase* client) {
       ss << "Tool output: " << result;
       callback_(ss.str(), Reason::kLogNotice, false);
 
-      ss = {};
-      // Add the tool response
-      if (result.isError) {
-        ss << "An error occurred while executing tool: '" << func_call.name
-           << "'. Reason: " << result.text;
-        OLOG(LogLevel::kWarning) << ss.str();
-      } else {
-        ss << "Tool '" << func_call.name
-           << "' completed successfully. Output:\n"
-           << result.text;
-        OLOG(LogLevel::kInfo) << ss.str();
-      }
-      assistant::message msg{"tool", ss.str()};
+      assistant::message msg = client->FormatToolResponse(func_call, result);
       client->AddMessage(std::move(msg));
     }
   }

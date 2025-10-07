@@ -17,6 +17,11 @@ void ResponseParser::Parse(const std::string& text,
       return;
     }
 
+    OLOG(LogLevel::kDebug) << "Processing event: "
+                           << magic_enum::enum_name<Event>(
+                                  event_message_opt.value().event);
+    OLOG(LogLevel::kDebug) << "Data: " << event_message_opt.value().data;
+
     auto event_message = event_message_opt.value();
     switch (m_state) {
       case ParserState::initial: {
@@ -26,7 +31,9 @@ void ResponseParser::Parse(const std::string& text,
           case Event::message_delta:
             break;
           case Event::message_stop:
-            cb(std::move(ParseResult{.is_done = true}));
+            cb(std::move(ParseResult{
+                .is_done = true, .stop_reason = GetStopReason(event_message)}));
+            Reset();
             return;
           case Event::content_block_start: {
             auto content_block_type = GetContentBlock(event_message);
@@ -37,10 +44,13 @@ void ResponseParser::Parse(const std::string& text,
               case ContentType::thinking:
                 m_state = ParserState::collect_thinking;
                 break;
-              case ContentType::tool_use:
+              case ContentType::tool_use: {
+                // get the toolname
+                m_tool_call.Reset();
+                m_tool_call.name = GetToolName(event_message);  // might throw
+                m_tool_call.id = GetToolId(event_message);      // might throw
                 m_state = ParserState::collect_tool_use_json;
-                m_tool_use_json.clear();
-                break;
+              } break;
             }
           } break;
           default: {
@@ -54,6 +64,12 @@ void ResponseParser::Parse(const std::string& text,
         break;
         case ParserState::collect_text:
           switch (event_message.event) {
+            case Event::message_stop:
+              cb(std::move(
+                  ParseResult{.is_done = true,
+                              .stop_reason = GetStopReason(event_message)}));
+              Reset();
+              return;
             case Event::content_block_delta: {
               // data:
               // {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"
@@ -65,34 +81,37 @@ void ResponseParser::Parse(const std::string& text,
             case Event::content_block_stop:
               m_state = ParserState::initial;
               break;
+            case Event::content_block_start:
+            case Event::message_delta:
+            case Event::message_start:
             case Event::ping:
-              break;
-            default:
-              OLOG(LogLevel::kWarning)
-                  << "Received an unexpected event type while in state "
-                     "collect_text: "
-                  << magic_enum::enum_name<Event>(event_message.event);
               break;
           }
           break;
         case ParserState::collect_tool_use_json:
           // We collect all the JSON parts and return a complete JSON string.
           switch (event_message.event) {
+            case Event::message_delta:
+            case Event::ping:
+              break;
             case Event::content_block_delta:
-              m_tool_use_json.append(
+              m_tool_call.json_str.append(
                   GetContentBlockDeltaContent(event_message));
               break;
             case Event::content_block_stop: {
               cb(std::move(ParseResult{.content_type = ContentType::tool_use,
-                                       .content = m_tool_use_json}));
-              m_tool_use_json.clear();
+                                       .tool_call = m_tool_call}));
+              m_tool_call.Reset();
               m_state = ParserState::initial;
             } break;
-            default:
-              OLOG(LogLevel::kWarning)
-                  << "Received an unexpected event type while in state: "
-                     "collect_tool_use_json: "
-                  << magic_enum::enum_name<Event>(event_message.event);
+            case Event::message_stop:
+              cb(std::move(
+                  ParseResult{.is_done = true,
+                              .stop_reason = GetStopReason(event_message)}));
+              Reset();
+              return;
+            case Event::content_block_start:
+            case Event::message_start:
               break;
           }
           break;
@@ -106,12 +125,17 @@ void ResponseParser::Parse(const std::string& text,
             case Event::content_block_stop:
               m_state = ParserState::initial;
               break;
-            case Event::ping:
+            case Event::message_stop:
+              cb(std::move(
+                  ParseResult{.is_done = true,
+                              .stop_reason = GetStopReason(event_message)}));
+              Reset();
+              return;
               break;
-            default:
-              OLOG(LogLevel::kWarning)
-                  << "Unexpected event type: "
-                  << magic_enum::enum_name<Event>(event_message.event);
+            case Event::ping:
+            case Event::content_block_start:
+            case Event::message_start:
+            case Event::message_delta:
               break;
           }
           break;
@@ -129,7 +153,8 @@ std::optional<EventMessage> ResponseParser::NextMessage() {
   auto event_type_str = assistant::after_first(event_str, ":");
   if (event_type_str.empty()) {
     std::stringstream ss;
-    ss << "Invalid input line. Line must start with 'event:'. Actual line is: '"
+    ss << "Invalid input line. Line must start with 'event:'. Actual line "
+          "is: '"
        << event_str << "'";
     throw std::runtime_error(ss.str());
   }
@@ -187,6 +212,30 @@ std::string ResponseParser::GetContentBlockDeltaContent(
   }
 }
 
+std::optional<StopReason> ResponseParser::GetStopReason(
+    const EventMessage& event_message) {
+  auto j = json::parse(event_message.data);
+  try {
+    if (j["delta"]["stop_reason"].is_null()) {
+      return std::nullopt;
+    }
+    std::string stop_reason = j["delta"]["stop_reason"].get<std::string>();
+    return magic_enum::enum_cast<StopReason>(stop_reason);
+  } catch (...) {
+    return std::nullopt;
+  }
+}
+
+std::string ResponseParser::GetToolName(const EventMessage& event_message) {
+  auto j = json::parse(event_message.data);
+  return j["content_block"]["name"].get<std::string>();
+}
+
+std::string ResponseParser::GetToolId(const EventMessage& event_message) {
+  auto j = json::parse(event_message.data);
+  return j["content_block"]["id"].get<std::string>();
+}
+
 ContentType ResponseParser::GetContentBlock(const EventMessage& event_message) {
   // Check the type of the content
   // data:
@@ -211,17 +260,42 @@ void ResponseParser::AppendText(
   if (res.second.starts_with("data:")) {
     // Check if this is a complete line
     auto json_part = trim(after_first(res.second, "data:"));
-    try {
-      auto __ = json::parse(json_part);
-      // a complete JSON
+    auto as_json = TryJson(json_part);
+    if (as_json.has_value()) {
       res.first.push_back(res.second);
       res.second.clear();
-    } catch (...) {
+    } else {
       m_content = res.second;  // the remainder
+    }
+  } else {
+    // Try to see if this line is an error JSON
+    auto as_json = TryJson(text);
+    if (as_json.has_value()) {
+      auto j = as_json.value();
+      if (j.contains("type") && j["type"].is_string() &&
+          j["type"].get<std::string>() == "error") {
+        try {
+          auto error_message = j["error"]["message"].get<std::string>();
+          std::stringstream ss;
+          ss << "Internal error. " << error_message;
+          throw std::runtime_error(ss.str());
+        } catch (...) {
+          // do nothing
+        }
+      }
     }
   }
 
   m_content = res.second;
   m_lines.insert(m_lines.end(), res.first.begin(), res.first.end());
+}
+
+std::optional<json> ResponseParser::TryJson(std::string_view text) {
+  try {
+    auto _json = json::parse(trim(text));
+    return _json;
+  } catch (...) {
+    return std::nullopt;
+  }
 }
 }  // namespace assistant::claude

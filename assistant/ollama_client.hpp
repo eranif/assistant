@@ -51,6 +51,9 @@ class OllamaClient : public ClientBase {
                                 OnResponseCallback cb, std::string model,
                                 ChatOptions chat_options) override;
 
+  assistant::message FormatToolResponse(
+      const FunctionCall& fcall, const FunctionResult& func_result) override;
+
   ///===---------------------------------------
   /// Client interface implementation ends here.
   ///===---------------------------------------

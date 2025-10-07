@@ -1,5 +1,6 @@
 #pragma once
 
+#include "assistant/claude_response_parser.hpp"
 #include "assistant/ollama_client.hpp"
 
 namespace assistant {
@@ -29,9 +30,14 @@ class ClaudeClient : public OllamaClient {
                                 OnResponseCallback cb, std::string model,
                                 ChatOptions chat_options) override;
 
+  assistant::message FormatToolResponse(
+      const FunctionCall& fcall, const FunctionResult& func_result) override;
+
  protected:
   void ProcessChatRquest(std::shared_ptr<ChatRequest> chat_request) override;
   void ProcessChatRequestQueue() override;
   static bool OnRawResponse(const std::string& resp, void* user_data);
+  bool HandleResponse(const std::string& resp, ChatContext* chat_context);
+  std::shared_ptr<claude::ResponseParser> m_responseParser{nullptr};
 };
 }  // namespace assistant

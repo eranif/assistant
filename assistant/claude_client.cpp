@@ -4,7 +4,8 @@ namespace assistant {
 ClaudeClient::ClaudeClient(
     const std::string& url,
     const std::unordered_map<std::string, std::string>& headers)
-    : OllamaClient(url, headers) {}
+    : OllamaClient(url, headers),
+      m_responseParser(std::make_shared<claude::ResponseParser>()) {}
 
 void ClaudeClient::PullModel(const std::string& name, OnResponseCallback cb) {
   OLOG(LogLevel::kWarning) << "Pull model is supported by Ollama clients only";
@@ -72,8 +73,8 @@ void ClaudeClient::CreateAndPushChatRequest(
 void ClaudeClient::ProcessChatRquest(
     std::shared_ptr<ChatRequest> chat_request) {
   try {
-    OLOG(LogLevel::kDebug) << "==> " << chat_request->request_;
-
+    OLOG(LogLevel::kDebug) << "==> " << std::setw(2) << chat_request->request_;
+    m_responseParser->Reset();
     std::string model_name = chat_request->request_["model"].get<std::string>();
 
     // Prepare chat user data.
@@ -105,9 +106,95 @@ void ClaudeClient::ProcessChatRequestQueue() {
 }
 
 bool ClaudeClient::OnRawResponse(const std::string& resp, void* user_data) {
-  std::cout << resp;
-  std::cout.flush();
-  return true;
+  ChatContext* chat_context = reinterpret_cast<ChatContext*>(user_data);
+  ClaudeClient* client = dynamic_cast<ClaudeClient*>(chat_context->client);
+  return client->HandleResponse(resp, chat_context);
 }
 
+bool ClaudeClient::HandleResponse(const std::string& resp,
+                                  ChatContext* chat_context) {
+  std::shared_ptr<ChatRequest> req = chat_context->chat_context;
+  try {
+    std::vector<claude::ParseResult> tokens;
+    m_responseParser->Parse(resp, [&tokens](claude::ParseResult token) {
+      tokens.push_back(std::move(token));
+    });
+
+    bool cb_result{true};
+    bool is_done{false};
+    for (const auto& token : tokens) {
+      if (!is_done) {
+        is_done = token.IsDone();
+      }
+
+      if (token.IsToolCall()) {
+        FunctionCall fcall{.name = token.GetToolName(),
+                           .args = json::parse(token.GetToolJson()),
+                           .invocation_id = token.GetToolId()};
+
+        // Build the AI request message
+        assistant::message tool_invoke_msg("assistant", "");
+        json content_arr = json::array();
+        json tool_use = json::object();
+        tool_use["type"] = "tool_use";
+        tool_use["id"] = token.GetToolId();
+        tool_use["name"] = token.GetToolName();
+        tool_use["input"] = fcall.args;
+        content_arr.push_back(tool_use);
+        tool_invoke_msg["content"] = content_arr;
+
+        OLOG(LogLevel::kDebug)
+            << "Got tool request: " << std::setw(2) << tool_invoke_msg;
+        req->func_calls_.push_back({tool_invoke_msg, {std::move(fcall)}});
+      } else {
+        cb_result = req->callback_(token.content, token.GetReason(),
+                                   token.IsThinking());
+        chat_context->current_response += token.content;
+      }
+    }
+
+    if (!cb_result || is_done) {
+      // Store the AI response, as a message in our history.
+      assistant::message msg{std::string{kAssistantRole},
+                             chat_context->current_response};
+      if (!cb_result) {
+        OLOG(LogLevel::kWarning)
+            << "User cancelled response processing (callback returned false).";
+      }
+      OLOG(LogLevel::kInfo) << "<== " << msg;
+      AddMessage(std::move(msg));
+      return false;
+    }
+    return cb_result;
+  } catch (const std::exception& e) {
+    req->callback_(e.what(), Reason::kFatalError, false);
+    m_responseParser->Reset();
+    return false;  // close the current session.
+  }
+}
+
+assistant::message ClaudeClient::FormatToolResponse(
+    const FunctionCall& fcall, const FunctionResult& func_result) {
+  std::stringstream ss;
+  // Add the tool response
+  if (func_result.isError) {
+    ss << "An error occurred while executing tool: '" << fcall.name
+       << "'. Reason: " << func_result.text;
+  } else {
+    ss << "Tool '" << fcall.name << "' completed successfully. Output:\n"
+       << func_result.text;
+  }
+
+  assistant::message msg{"user", ""};
+  json content_array = json::array();
+  json res = json::object();
+  res["type"] = "tool_result";
+  res["tool_use_id"] = fcall.invocation_id.value_or("");
+  res["content"] = ss.str();
+  content_array.push_back(res);
+  msg["content"] = content_array;
+
+  OLOG(LogLevel::kDebug) << std::setw(2) << msg;
+  return msg;
+}
 }  // namespace assistant

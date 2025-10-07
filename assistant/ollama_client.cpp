@@ -306,4 +306,20 @@ void OllamaClient::CreateAndPushChatRequest(
   m_queue.push_back(std::make_shared<ChatRequest>(ctx));
 }
 
+assistant::message OllamaClient::FormatToolResponse(
+    const FunctionCall& fcall, const FunctionResult& func_result) {
+  std::stringstream ss;
+  // Add the tool response
+  if (func_result.isError) {
+    ss << "An error occurred while executing tool: '" << fcall.name
+       << "'. Reason: " << func_result.text;
+    OLOG(LogLevel::kWarning) << ss.str();
+  } else {
+    ss << "Tool '" << fcall.name << "' completed successfully. Output:\n"
+       << func_result.text;
+    OLOG(LogLevel::kInfo) << ss.str();
+  }
+  assistant::message msg{"tool", ss.str()};
+  return msg;
+}
 }  // namespace assistant

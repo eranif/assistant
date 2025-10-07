@@ -132,6 +132,8 @@ class FunctionBase {
 struct FunctionCall {
   std::string name;
   json args;
+  /// Optional server side invocation ID.
+  std::optional<std::string> invocation_id;
 };
 
 class FunctionTable {

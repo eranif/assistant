@@ -48,8 +48,8 @@ enum class ChatOptions {
   kNoHistory = (1 << 1),
 };
 
-using OnResponseCallback =
-    std::function<bool(std::string text, Reason call_reason, bool thinking)>;
+using OnResponseCallback = std::function<bool(
+    const std::string& text, Reason call_reason, bool thinking)>;
 
 class ClientBase;
 struct ChatRequest {
@@ -59,7 +59,8 @@ struct ChatRequest {
   /// If a tool(s) invocation is required, it will be placed here. Once we
   /// invoke the tool and push the tool response + the request to the history
   /// and remove it from here.
-  std::vector<std::pair<assistant::message, std::vector<FunctionCall>>>
+  std::vector<
+      std::pair<std::optional<assistant::message>, std::vector<FunctionCall>>>
       func_calls_;
   void InvokeTools(ClientBase* client);
 };
@@ -147,6 +148,11 @@ class ClientBase {
                                         OnResponseCallback cb,
                                         std::string model,
                                         ChatOptions chat_options) = 0;
+
+  /// Format client specific call response message.
+  virtual assistant::message FormatToolResponse(
+      const FunctionCall& fcall, const FunctionResult& func_result) = 0;
+
   ///===---------------------------
   /// Client API - END
   ///===---------------------------

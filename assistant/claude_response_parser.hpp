@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 
+#include "assistant/client_base.hpp"
 #include "assistant/common/json.hpp"
 
 namespace assistant::claude {
@@ -39,9 +40,33 @@ enum ParserState {
   collect_thinking,
 };
 
+enum class StopReason {
+  ///  the model reached a natural stopping point
+  end_turn,
+  /// we exceeded the requested max_tokens or the model's maximum
+  max_tokens,
+  /// one of your provided custom stop_sequences was generated
+  stop_sequence,
+  /// the model invoked one or more tools
+  tool_use,
+  /// we paused a long-running turn. You may provide the response
+  pause_turn,
+};
+
 struct EventMessage {
   Event event;
   std::string data;
+};
+
+struct ToolCall {
+  std::string name;
+  std::string id;
+  std::string json_str;
+  inline void Reset() {
+    name.clear();
+    id.clear();
+    json_str.clear();
+  }
 };
 
 struct ParseResult {
@@ -49,10 +74,38 @@ struct ParseResult {
   bool need_more_data{false};
   std::optional<ContentType> content_type{std::nullopt};
   std::string content;
+  std::optional<StopReason> stop_reason{std::nullopt};
+  ToolCall tool_call;
 
   inline bool HasValue() const { return content_type.has_value(); }
   inline bool NeedMoreData() const { return need_more_data; }
   inline bool IsDone() const { return is_done; }
+  inline bool IsToolCall() const {
+    return content_type.has_value() &&
+           content_type.value() == ContentType::tool_use;
+  }
+
+  inline const std::string& GetToolName() const { return tool_call.name; }
+  inline const std::string& GetToolId() const { return tool_call.id; }
+  inline const std::string& GetToolJson() const { return tool_call.json_str; }
+
+  inline bool IsThinking() const {
+    return content_type.has_value() &&
+           content_type.value() == ContentType::thinking;
+  }
+  inline Reason GetReason() const {
+    if (IsDone()) {
+      // Check the real reason.
+      if (stop_reason.value_or(StopReason::end_turn) ==
+          StopReason::max_tokens) {
+        OLOG(LogLevel::kWarning)
+            << "We exceeded the requested max_tokens or the model's maximum";
+      }
+      return Reason::kDone;
+    } else {
+      return Reason::kPartialResult;
+    }
+  }
 };
 
 /// A state-ful claude response parser.
@@ -61,20 +114,33 @@ class ResponseParser {
   ResponseParser() = default;
   ~ResponseParser() = default;
   void Parse(const std::string& text, std::function<void(ParseResult)> cb);
+  inline void Reset() {
+    m_content.clear();
+    m_lines.clear();
+    m_state = ParserState::initial;
+    m_tool_call.Reset();
+  }
 
  private:
   void AppendText(const std::string& text);
+  std::optional<json> TryJson(std::string_view text);
 
   /// This function might throw.
   std::optional<EventMessage> NextMessage();
   /// This function might throw.
   ContentType GetContentBlock(const EventMessage& event_message);
   /// This function might throw.
+  std::string GetToolName(const EventMessage& event_message);
+  /// This function might throw.
+  std::string GetToolId(const EventMessage& event_message);
+  std::optional<StopReason> GetStopReason(const EventMessage& event_message);
+
+  /// This function might throw.
   std::string GetContentBlockDeltaContent(const EventMessage& event_message);
   std::string m_content;
   std::vector<std::string> m_lines;
   ParserState m_state{ParserState::initial};
-  std::string m_tool_use_json;
+  ToolCall m_tool_call;
 };
 
 }  // namespace assistant::claude
