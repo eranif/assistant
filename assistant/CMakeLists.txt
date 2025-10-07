@@ -11,8 +11,8 @@ add_subdirectory(cpp-mcp)
 
 add_library(
   assistantlib STATIC
-  ${CMAKE_CURRENT_LIST_DIR}/client.cpp
-  ${CMAKE_CURRENT_LIST_DIR}/client.hpp
+  ${CMAKE_CURRENT_LIST_DIR}/ollama_client.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/ollama_client.hpp
   ${CMAKE_CURRENT_LIST_DIR}/claude_client.cpp
   ${CMAKE_CURRENT_LIST_DIR}/claude_client.hpp
   ${CMAKE_CURRENT_LIST_DIR}/mcp_local_process.cpp

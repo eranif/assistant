@@ -1,10 +1,11 @@
 #pragma once
 
 #include "assistant/claude_client.hpp"
-#include "assistant/client.hpp"
+#include "assistant/claude_response_parser.hpp"
 #include "assistant/config.hpp"
+#include "assistant/function.hpp"
+#include "assistant/ollama_client.hpp"
 #include "assistant/tool.hpp"
-#include "utils.hpp"
 
 namespace assistant {
 

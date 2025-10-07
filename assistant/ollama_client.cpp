@@ -1,4 +1,4 @@
-#include "assistant/client.hpp"
+#include "assistant/ollama_client.hpp"
 
 #include "assistant/assistantlib.hpp"
 #include "assistant/config.hpp"

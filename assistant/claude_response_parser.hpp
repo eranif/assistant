@@ -44,12 +44,15 @@ struct EventMessage {
   std::string data;
 };
 
-struct ParserResult {
+struct ParseResult {
   bool is_done{false};
   bool need_more_data{false};
-  json tool_use{nullptr};
   std::optional<ContentType> content_type{std::nullopt};
-  std::string text;
+  std::string content;
+
+  inline bool HasValue() const { return content_type.has_value(); }
+  inline bool NeedMoreData() const { return need_more_data; }
+  inline bool IsDone() const { return is_done; }
 };
 
 /// A state-ful claude response parser.
@@ -57,9 +60,11 @@ class ResponseParser {
  public:
   ResponseParser() = default;
   ~ResponseParser() = default;
-  ParserResult Parse(const std::string& message);
+  void Parse(const std::string& text, std::function<void(ParseResult)> cb);
 
  private:
+  void AppendText(const std::string& text);
+
   /// This function might throw.
   std::optional<EventMessage> NextMessage();
   /// This function might throw.

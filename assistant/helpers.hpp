@@ -118,11 +118,27 @@ class Locker {
   ValueType m_value GUARDED_BY(m_mutex);
 };
 
+inline std::string_view trim(const std::string_view& str) {
+  // Find the first non-whitespace character
+  size_t start = str.find_first_not_of(" \t\n\r\f\v");
+
+  // If the string contains only whitespace, return empty string_view
+  if (start == std::string_view::npos) {
+    return "";
+  }
+
+  // Find the last non-whitespace character
+  size_t end = str.find_last_not_of(" \t\n\r\f\v");
+
+  // Return substring view between start and end positions
+  return str.substr(start, end - start + 1);
+}
+
 /// This function returns a vector of all complete lines.
 /// If the original string ends with an incomplete line,
 /// that line is returned separately as a string.
 inline std::pair<std::vector<std::string>, std::string> split_into_lines(
-    const std::string& text) {
+    const std::string& text, bool wants_empty_lines = false) {
   std::vector<std::string> complete_lines;
   std::string incomplete_line;
   std::istringstream stream(text);
@@ -130,6 +146,10 @@ inline std::pair<std::vector<std::string>, std::string> split_into_lines(
 
   // Use a while loop with std::getline to extract all lines
   while (std::getline(stream, line)) {
+    auto trimmed_line = trim(line);
+    if (!wants_empty_lines && trimmed_line.empty()) {
+      continue;
+    }
     complete_lines.push_back(line);
   }
 
@@ -153,19 +173,4 @@ inline std::string_view after_first(const std::string_view& str,
   return "";  // Return empty string_view if delimiter is not found
 }
 
-inline std::string_view trim(const std::string_view& str) {
-  // Find the first non-whitespace character
-  size_t start = str.find_first_not_of(" \t\n\r\f\v");
-
-  // If the string contains only whitespace, return empty string_view
-  if (start == std::string_view::npos) {
-    return "";
-  }
-
-  // Find the last non-whitespace character
-  size_t end = str.find_last_not_of(" \t\n\r\f\v");
-
-  // Return substring view between start and end positions
-  return str.substr(start, end - start + 1);
-}
 }  // namespace assistant

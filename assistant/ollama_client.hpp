@@ -1,12 +1,8 @@
 #pragma once
 
-#include <atomic>
-#include <functional>
 #include <unordered_map>
 
-#include "assistant/attributes.hpp"
 #include "assistant/client_base.hpp"
-#include "assistant/thread_notifier.hpp"
 
 namespace assistant {
 

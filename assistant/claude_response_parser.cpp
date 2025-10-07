@@ -6,17 +6,15 @@
 
 namespace assistant::claude {
 
-ParserResult ResponseParser::Parse(const std::string& message) {
-  // Split the message into lines.
-  m_content.append(message);
-  auto res = split_into_lines(m_content);
-  m_content = res.second;  // the remainder
-  m_lines.insert(m_lines.end(), res.first.begin(), res.first.end());
+void ResponseParser::Parse(const std::string& text,
+                           std::function<void(ParseResult)> cb) {
+  AppendText(text);
 
   while (true) {
     auto event_message_opt = NextMessage();
     if (!event_message_opt.has_value()) {
-      return ParserResult{.need_more_data = true};
+      cb(std::move(ParseResult{.need_more_data = true}));
+      return;
     }
 
     auto event_message = event_message_opt.value();
@@ -28,7 +26,8 @@ ParserResult ResponseParser::Parse(const std::string& message) {
           case Event::message_delta:
             break;
           case Event::message_stop:
-            return ParserResult{.is_done = true};
+            cb(std::move(ParseResult{.is_done = true}));
+            return;
           case Event::content_block_start: {
             auto content_block_type = GetContentBlock(event_message);
             switch (content_block_type) {
@@ -60,8 +59,8 @@ ParserResult ResponseParser::Parse(const std::string& message) {
               // {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"
               // Francisco"}}
               std::string text = GetContentBlockDeltaContent(event_message);
-              return ParserResult{.content_type = ContentType::text,
-                                  .text = text};
+              cb(std::move(ParseResult{.content_type = ContentType::text,
+                                       .content = text}));
             } break;
             case Event::content_block_stop:
               m_state = ParserState::initial;
@@ -84,11 +83,10 @@ ParserResult ResponseParser::Parse(const std::string& message) {
                   GetContentBlockDeltaContent(event_message));
               break;
             case Event::content_block_stop: {
-              auto result = ParserResult{.content_type = ContentType::tool_use,
-                                         .text = m_tool_use_json};
+              cb(std::move(ParseResult{.content_type = ContentType::tool_use,
+                                       .content = m_tool_use_json}));
               m_tool_use_json.clear();
               m_state = ParserState::initial;
-              return result;
             } break;
             default:
               OLOG(LogLevel::kWarning)
@@ -101,16 +99,9 @@ ParserResult ResponseParser::Parse(const std::string& message) {
         case ParserState::collect_thinking:
           switch (event_message.event) {
             case Event::content_block_delta: {
-              // data: {"type": "content_block_delta", "index": 0, "delta":
-              // {"type": "thinking_delta", "thinking": "\n2. 453 = 400 + 50 +
-              // 3"}}
-              // OR
-              // data: {"type": "content_block_delta", "index": 0, "delta":
-              // {"type": "signature_delta", "signature":
-              // "EqQBCgIYAhIM1gbcDa9GJwZA2b3hGgxBdjrkzLoky3dl1pkiMOYds..."}}
               std::string text = GetContentBlockDeltaContent(event_message);
-              return ParserResult{.content_type = ContentType::thinking,
-                                  .text = text};
+              cb(std::move(ParseResult{.content_type = ContentType::thinking,
+                                       .content = text}));
             } break;
             case Event::content_block_stop:
               m_state = ParserState::initial;
@@ -210,5 +201,27 @@ ContentType ResponseParser::GetContentBlock(const EventMessage& event_message) {
     throw std::runtime_error(ss.str());
   }
   return res.value();
+}
+
+void ResponseParser::AppendText(
+    const std::string& text) {  // Split the message into lines.
+  m_content.append(text);
+  auto res = split_into_lines(m_content, false /* do not return empty lines */);
+
+  if (res.second.starts_with("data:")) {
+    // Check if this is a complete line
+    auto json_part = trim(after_first(res.second, "data:"));
+    try {
+      auto __ = json::parse(json_part);
+      // a complete JSON
+      res.first.push_back(res.second);
+      res.second.clear();
+    } catch (...) {
+      m_content = res.second;  // the remainder
+    }
+  }
+
+  m_content = res.second;
+  m_lines.insert(m_lines.end(), res.first.begin(), res.first.end());
 }
 }  // namespace assistant::claude

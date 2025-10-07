@@ -1,6 +1,6 @@
 #pragma once
 
-#include "assistant/client.hpp"
+#include "assistant/ollama_client.hpp"
 
 namespace assistant {
 class ClaudeClient : public OllamaClient {

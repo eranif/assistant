@@ -9,6 +9,7 @@
 #include <thread>
 
 #include "assistant/assistant.hpp"
+#include "utils.hpp"
 
 using FunctionTable = assistant::FunctionTable;
 using FunctionBuilder = assistant::FunctionBuilder;
