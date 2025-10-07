@@ -21,15 +21,18 @@ jobs:
 
     steps:
 
-    - name: Checkout CodeLite
+    - name: Checkout assistant
       uses: actions/checkout@v4
+      with:
+        submodules: 'true'
 
     - name: cmake --version
       run: cmake --version
 
-    - name: Build
+    - name: Build and Test
       run: |
         mkdir build-release
         cd build-release
-        cmake .. -DCMAKE_BUILD_TYPE=Release
+        cmake .. -DCMAKE_BUILD_TYPE=Release -DASSISTANTLIB_BUILD_TESTS=ON
         cmake --build . --config Release --parallel $(nproc)
+        tests/test_claude_response_parser
