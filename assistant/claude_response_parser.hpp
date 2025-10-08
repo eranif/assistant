@@ -69,6 +69,12 @@ struct ToolCall {
   }
 };
 
+inline std::ostream& operator<<(std::ostream& os, const ToolCall& tc) {
+  os << "ToolCall{.name=" << tc.name << ", .id=" << tc.id
+     << ", .json_str=" << tc.json_str << "}";
+  return os;
+}
+
 struct ParseResult {
   bool is_done{false};
   bool need_more_data{false};
@@ -87,7 +93,19 @@ struct ParseResult {
 
   inline const std::string& GetToolName() const { return tool_call.name; }
   inline const std::string& GetToolId() const { return tool_call.id; }
-  inline const std::string& GetToolJson() const { return tool_call.json_str; }
+  inline const std::string& GetToolJsonStr() const {
+    return tool_call.json_str;
+  }
+
+  inline json GetToolJson() const {
+    try {
+      // Might be an empty string. use try/catch
+      return json::parse(GetToolJsonStr());
+    } catch (...) {
+      // empty **not null** object
+      return json({});
+    }
+  }
 
   inline bool IsThinking() const {
     return content_type.has_value() &&
@@ -107,6 +125,13 @@ struct ParseResult {
     }
   }
 };
+
+inline std::ostream& operator<<(std::ostream& os, const ParseResult& res) {
+  os << "ParseResult{.is_done=" << res.is_done
+     << ", .need_more_data=" << res.need_more_data
+     << ", .content=" << res.content << ", .tool_call=" << res.tool_call << "}";
+  return os;
+}
 
 /// A state-ful claude response parser.
 class ResponseParser {

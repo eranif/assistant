@@ -45,14 +45,14 @@ std::vector<std::pair<std::string, assistant::ChatOptions>> prompt_queue;
 std::condition_variable cv;
 
 /// Push prompt to the queue
-void PushPrompt(std::string prompt, assistant::ChatOptions options) {
+void push_prompt(std::string prompt, assistant::ChatOptions options) {
   std::unique_lock lk{prompt_queue_mutex};
   prompt_queue.push_back({std::move(prompt), std::move(options)});
   cv.notify_one();
 }
 
 /// Get prompt from the queue
-std::optional<std::pair<std::string, assistant::ChatOptions>> PopPrompt() {
+std::optional<std::pair<std::string, assistant::ChatOptions>> pop_prompt() {
   std::unique_lock lk{prompt_queue_mutex};
   auto res = cv.wait_for(lk, std::chrono::milliseconds(500),
                          []() { return !prompt_queue.empty(); });
@@ -147,6 +147,26 @@ assistant::FunctionResult WriteFileContent(const assistant::json& args) {
   return assistant::FunctionResult{.text = ss.str()};
 }
 
+assistant::FunctionResult ToolReadFileContent(const assistant::json& args) {
+  std::stringstream ss;
+  if (args.size() != 1) {
+    return assistant::FunctionResult{.isError = true,
+                                     .text = "Invalid number of arguments"};
+  }
+
+  ASSIGN_FUNC_ARG_OR_RETURN(
+      std::string filepath,
+      ::assistant::GetFunctionArg<std::string>(args, "filepath"));
+
+  auto res = ReadFileContent(filepath);
+  if (!res.IsOk()) {
+    ss << "Error creating directory for file: '" << filepath << "' to disk. "
+       << res.GetError();
+    return assistant::FunctionResult{.isError = true, .text = ss.str()};
+  }
+  return assistant::FunctionResult{.isError = false, .text = res.GetValue()};
+}
+
 assistant::FunctionResult OpenFileInEditor(const assistant::json& args) {
   std::stringstream ss;
   if (args.size() != 1) {
@@ -201,6 +221,14 @@ int main(int argc, char** argv) {
                             "string")
           .AddRequiredParam("file_content", "the content of the file", "string")
           .SetCallback(WriteFileContent)
+          .Build());
+
+  cli->GetFunctionTable().Add(
+      FunctionBuilder("Read_file_content_from_a_given_path")
+          .SetDescription("Read file content from the disk at a given path.")
+          .AddRequiredParam("filepath", "the path of the file on the disk.",
+                            "string")
+          .SetCallback(ToolReadFileContent)
           .Build());
 
   OLOG(assistant::LogLevel::kInfo)
@@ -258,7 +286,7 @@ int main(int argc, char** argv) {
     while (true) {
       std::string prompt;
       assistant::ChatOptions options{assistant::ChatOptions::kDefault};
-      auto item = PopPrompt();
+      auto item = pop_prompt();
       if (cli->IsInterrupted()) {
         std::cout << "Worker Thread: client interrupted." << std::endl;
         break;
@@ -378,7 +406,7 @@ int main(int argc, char** argv) {
       }
     }
     // push the prompt
-    PushPrompt(std::move(prompt), options);
+    push_prompt(std::move(prompt), options);
   }
 
   // notify the worker thread to exit.

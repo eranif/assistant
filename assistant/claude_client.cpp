@@ -120,6 +120,7 @@ bool ClaudeClient::HandleResponse(const std::string& resp,
       tokens.push_back(std::move(token));
     });
 
+    OLOG(LogLevel::kInfo) << "Processing: " << tokens.size() << " tokens";
     bool cb_result{true};
     bool is_done{false};
     for (const auto& token : tokens) {
@@ -129,7 +130,7 @@ bool ClaudeClient::HandleResponse(const std::string& resp,
 
       if (token.IsToolCall()) {
         FunctionCall fcall{.name = token.GetToolName(),
-                           .args = json::parse(token.GetToolJson()),
+                           .args = token.GetToolJson(),
                            .invocation_id = token.GetToolId()};
 
         // Build the AI request message
@@ -167,6 +168,8 @@ bool ClaudeClient::HandleResponse(const std::string& resp,
     }
     return cb_result;
   } catch (const std::exception& e) {
+    OLOG(LogLevel::kWarning)
+        << "ClaudeClient::HandleResponse: got an exception. " << e.what();
     req->callback_(e.what(), Reason::kFatalError, false);
     m_responseParser->Reset();
     return false;  // close the current session.
