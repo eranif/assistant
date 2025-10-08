@@ -194,7 +194,7 @@ class FunctionTable {
 
 inline std::ostream& operator<<(std::ostream& os, const FunctionTable& table) {
   std::scoped_lock lk{table.m_mutex};
-  for (const auto func : table.m_functions) {
+  for (const auto& func : table.m_functions) {
     os << "‣ " << "\"" << func.first << "\": " << func.second->GetDesc()
        << std::endl;
   }
