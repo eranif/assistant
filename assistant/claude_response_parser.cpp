@@ -210,6 +210,7 @@ std::string ResponseParser::GetContentBlockDeltaContent(
       // we don't care (for now) about the signature.
       return "";
   }
+  return "";
 }
 
 std::optional<StopReason> ResponseParser::GetStopReason(

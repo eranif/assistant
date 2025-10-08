@@ -52,8 +52,8 @@ data: {"type":"content_block_stop","index":0}
   EXPECT_FALSE(tokens[0].need_more_data);
   EXPECT_TRUE(tokens[0].content_type.has_value());
   EXPECT_EQ(tokens[0].content_type.value(), ContentType::tool_use);
-  EXPECT_FALSE(tokens[0].GetToolJson().empty());
-  EXPECT_NO_THROW(auto res = json::parse(tokens[0].GetToolJson()))
+  EXPECT_FALSE(tokens[0].GetToolJsonStr().empty());
+  EXPECT_NO_THROW(auto res = json::parse(tokens[0].GetToolJsonStr()))
       << "Failed to parse: " << tokens[0].content;
 
   EXPECT_TRUE(tokens.back().need_more_data);
