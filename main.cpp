@@ -190,14 +190,14 @@ int main(int argc, char** argv) {
     assistant::SetLogFile(args.log_file);
   }
 
-  // Uncomment this to provide custom log sink.
-  //  assistant::SetLogSink([]([[maybe_unused]] assistant::LogLevel level,
-  //                        [[maybe_unused]] std::string msg) {});
-
   assistant::SetLogLevel(assistant::LogLevel::kError);
   std::optional<assistant::Config> conf;
   if (!args.config_file.empty()) {
     conf = assistant::Config::FromFile(args.config_file);
+    if (!conf) {
+      std::cerr << "Failed to parse configuration file." << std::endl;
+      return 1;
+    }
     assistant::SetLogLevel(conf.value().GetLogLevel());
   }
 
@@ -248,21 +248,8 @@ int main(int argc, char** argv) {
 
   std::cout << cli->GetFunctionTable() << std::endl;
 
-  auto models = cli->List();
-  std::cout << "\n";
-  std::cout << "Available models:" << std::endl;
-  std::cout << "=================" << std::endl;
-  for (size_t i = 0; i < models.size(); ++i) {
-    std::cout << i << ") " << models[i] << std::endl;
-  }
-
-  std::cout << "=================" << std::endl;
-  if (models.empty()) {
-    OLOG(OLogLevel::kError)
-        << "No models available, please pull at least 1 model and try again.";
-    return 1;
-  }
-  std::string model_name = models[GetChoiceFromUser(models)];
+  std::cout << "Using Model " << Cyan(cli->GetModel()) << std::endl;
+  std::string model_name = cli->GetModel();
 
   std::cout << "" << std::endl;
   std::cout << Yellow("#") << " Interactive session started." << std::endl;
@@ -348,7 +335,7 @@ int main(int argc, char** argv) {
             // continue
             return true;
           },
-          model_name, options);
+          options);
       std::cout << "\n>";
       std::cout.flush();
     }

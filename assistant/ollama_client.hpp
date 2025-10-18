@@ -13,8 +13,7 @@ enum class EventType {
 
 class OllamaClient : public ClientBase {
  public:
-  OllamaClient(const std::string& url,
-               const std::unordered_map<std::string, std::string>& headers);
+  OllamaClient(const Endpoint& ep = OllamaEndpoint{});
   ~OllamaClient() override;
 
   ///===---------------------------------
@@ -44,7 +43,7 @@ class OllamaClient : public ClientBase {
   /// This method should be called from another thread.
   void Interrupt() override;
 
-  void Chat(std::string msg, OnResponseCallback cb, std::string model,
+  void Chat(std::string msg, OnResponseCallback cb,
             ChatOptions chat_options) override;
 
   void CreateAndPushChatRequest(std::optional<assistant::message> msg,

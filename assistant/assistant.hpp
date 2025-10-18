@@ -23,11 +23,10 @@ inline std::optional<std::shared_ptr<ClientBase>> MakeClient(
   std::shared_ptr<ClientBase> client{nullptr};
   switch (endpoint->type_) {
     case EndpointKind::ollama:
-      client =
-          std::make_shared<OllamaClient>(endpoint->url_, endpoint->headers_);
+      client = std::make_shared<OllamaClient>(*endpoint);
       break;
     case EndpointKind::claude:
-      client = std::make_shared<ClaudeClient>();
+      client = std::make_shared<ClaudeClient>(*endpoint);
       break;
   }
   if (conf.has_value()) {

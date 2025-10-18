@@ -8,21 +8,17 @@
 
 namespace assistant {
 
-OllamaClient::OllamaClient(
-    const std::string& url,
-    const std::unordered_map<std::string, std::string>& headers) {
-  m_url.set_value(url);
-  m_http_headers.set_value(headers);
-
+OllamaClient::OllamaClient(const Endpoint& ep) {
+  m_endpoint.with_mut([ep](Endpoint& endpoint) { endpoint = ep; });
   assistant::show_requests(false);
   assistant::show_replies(false);
   assistant::allow_exceptions(true);
-  m_client_impl.setServerURL(url);
+  m_client_impl.setServerURL(GetUrl());
   m_client_impl.setReadTimeout(10);
   m_client_impl.setWriteTimeout(10);
   m_client_impl.setConnectTimeout(10);
   mcp::set_log_level(mcp::log_level::error);
-  SetHeadersInternal(m_client_impl, headers);
+  SetHeadersInternal(m_client_impl, GetHttpHeaders());
   Startup();
 }
 
@@ -40,9 +36,15 @@ void OllamaClient::Interrupt() {
 
 void OllamaClient::ApplyConfig(const assistant::Config* conf) {
   ClientBase::ApplyConfig(conf);
+  if (conf->GetEndpoint() == nullptr) {
+    OLOG(LogLevel::kError)
+        << "Failed to apply new configuration. Null endpoint";
+    return;
+  }
   {
     std::scoped_lock lk{m_client_mutex};
-    m_client_impl.setServerURL(m_url.get_value());
+    SetEndpoint(*conf->GetEndpoint());
+    m_client_impl.setServerURL(GetUrl());
     auto server_timeout_settings = m_server_timeout.get_value();
     m_client_impl.setConnectTimeout(
         server_timeout_settings.GetConnectTimeout().first,
@@ -54,7 +56,7 @@ void OllamaClient::ApplyConfig(const assistant::Config* conf) {
         server_timeout_settings.GetWriteTimeout().first,
         server_timeout_settings.GetWriteTimeout().second);
     m_client_impl.setEndpointKind(conf->GetEndpoint()->type_);
-    SetHeadersInternal(m_client_impl, m_http_headers.get_value());
+    SetHeadersInternal(m_client_impl, GetHttpHeaders());
   }
 }
 
@@ -147,7 +149,7 @@ void OllamaClient::PullModel(const std::string& name, OnResponseCallback cb) {
 
   try {
     ClientImpl ol;
-    ol.setServerURL(m_url.get_value());
+    ol.setServerURL(GetUrl());
     ol.setEndpointKind(m_client_impl.getEndpointKind());
 
     std::stringstream ss;
@@ -196,20 +198,8 @@ void OllamaClient::ProcessChatRquest(
         .client = this, .model = model_name, .chat_context = chat_request};
     user_data.model_can_think =
         ModelHasCapability(model_name, ModelCapabilities::kThinking);
-    if (user_data.model_can_think) {
-      m_model_options.with(
-          [&user_data,
-           &model_name](const std::unordered_map<std::string, ModelOptions>&
-                            model_options) {
-            auto iter = model_options.find(model_name);
-            if (iter == model_options.end()) {
-              return;
-            }
-            const auto& mo = iter->second;
-            user_data.thinking_start_tag = mo.think_start_tag;
-            user_data.thinking_end_tag = mo.think_end_tag;
-          });
-    }
+    user_data.thinking_start_tag = "<think>";
+    user_data.thinking_end_tag = "</think>";
 
     {
       std::scoped_lock lk{m_client_mutex};
@@ -227,9 +217,9 @@ void OllamaClient::ProcessChatRquest(
 }
 
 void OllamaClient::Chat(std::string msg, OnResponseCallback cb,
-                        std::string model, ChatOptions chat_options) {
+                        ChatOptions chat_options) {
   assistant::message json_message{"user", msg};
-  CreateAndPushChatRequest(json_message, cb, model, chat_options);
+  CreateAndPushChatRequest(json_message, cb, GetModel(), chat_options);
   ProcessChatRequestQueue();
 }
 
@@ -246,26 +236,7 @@ void OllamaClient::CreateAndPushChatRequest(
     std::optional<assistant::message> msg, OnResponseCallback cb,
     std::string model, ChatOptions chat_options) {
   assistant::options opts;
-
-  std::optional<bool> think, hidethinking;
-  ModelOptions model_options;
-  m_model_options.with([&model_options, &model](const auto& m) {
-    auto where = m.find(model);
-    if (where == m.end()) {
-      // Can't fail. We always include the "default"
-      OLOG(LogLevel::kDebug) << "Missing 'default' model setup in "
-                                "configuration file. Creating and using one.";
-      model_options = m.find("default")->second;
-    } else {
-      model_options = where->second;
-    }
-  });
-
-  for (const auto& [name, value] : model_options.options.items()) {
-    opts[name] = value;
-  }
-  think = model_options.think;
-  hidethinking = model_options.hidethinking;
+  opts["num_ctx"] = GetContextSize();
 
   assistant::messages history;
   if (IsFlagSet(chat_options, ChatOptions::kNoHistory)) {
@@ -280,14 +251,6 @@ void OllamaClient::CreateAndPushChatRequest(
   // Build the request
   assistant::request req{model,    history, opts,
                          m_stream, "json",  m_keep_alive.get_value()};
-
-  if (think.has_value()) {
-    req["think"] = think.value();
-  }
-
-  if (hidethinking.has_value()) {
-    req["hidethinking"] = hidethinking.value();
-  }
   if (IsFlagSet(chat_options, ChatOptions::kNoTools)) {
     OLOG(LogLevel::kInfo) << "The 'tools' are disabled for the model: '"
                           << model << "' (per user request).";

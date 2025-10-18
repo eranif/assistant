@@ -124,7 +124,7 @@ class ClientBase {
   /// Start a chat. Some options of the chat can be controlled via the
   /// ChatOptions flags. For example, user may disable "tools" even though the
   /// model support them.
-  virtual void Chat(std::string msg, OnResponseCallback cb, std::string model,
+  virtual void Chat(std::string msg, OnResponseCallback cb,
                     ChatOptions chat_options) = 0;
 
   /// Return true if the server is running.
@@ -199,17 +199,35 @@ class ClientBase {
     m_messages.with_mut([](assistant::messages& msgs) { msgs.clear(); });
   }
 
-  inline std::string GetUrl() const { return m_url.get_value(); }
+  inline std::string GetUrl() const { return m_endpoint.get_value().url_; }
+  inline std::unordered_map<std::string, std::string> GetHttpHeaders() const {
+    return m_endpoint.get_value().headers_;
+  }
   inline EndpointKind GetEndpointKind() const {
-    return m_endpoint_kind.get_value();
+    return m_endpoint.get_value().type_;
   }
 
   inline void SetEndpointKind(EndpointKind kind) {
-    m_endpoint_kind.set_value(kind);
+    m_endpoint.with_mut([kind](Endpoint& ep) { ep.type_ = kind; });
   }
 
-  inline size_t GetMaxTokens() const { return m_max_tokens.get_value(); }
-  inline void SetMaxTokens(size_t count) { m_max_tokens.set_value(count); }
+  inline size_t GetMaxTokens() const {
+    return m_endpoint.get_value().max_tokens_.value_or(kMaxTokensDefault);
+  }
+
+  inline size_t GetContextSize() const {
+    return m_endpoint.get_value().context_size_.value_or(kDefaultContextSize);
+  }
+
+  inline void SetMaxTokens(size_t count) {
+    m_endpoint.with_mut([count](Endpoint& ep) { ep.max_tokens_ = count; });
+  }
+
+  inline void SetEndpoint(const Endpoint& ep) {
+    m_endpoint.with_mut([ep](Endpoint& endpoint) { endpoint = ep; });
+  }
+
+  inline std::string GetModel() const { return m_endpoint.get_value().model_; }
 
  protected:
   static bool OnResponse(const assistant::response& resp, void* user_data);
@@ -223,22 +241,17 @@ class ClientBase {
 
   FunctionTable m_function_table;
   ChatRequestQueue m_queue;
-  Locker<std::string> m_url;
-  std::atomic_size_t m_windows_size{20};
+  Locker<Endpoint> m_endpoint;
+  std::atomic_size_t m_windows_size{50};
   /// Messages that were sent to the AI, will be placed here
   Locker<assistant::messages> m_messages;
   Locker<assistant::messages> m_system_messages;
-  Locker<std::unordered_map<std::string, ModelOptions>> m_model_options;
-  Locker<std::unordered_map<std::string, std::string>> m_http_headers;
-  Locker<ModelOptions> m_default_model_options;
   Locker<ServerTimeout> m_server_timeout;
   Locker<std::unordered_map<std::string, ModelCapabilities>>
       m_model_capabilities;
   std::atomic_bool m_interrupt{false};
   std::atomic_bool m_stream{true};
   Locker<std::string> m_keep_alive{"5m"};
-  Locker<EndpointKind> m_endpoint_kind{EndpointKind::ollama};
-  Locker<size_t> m_max_tokens{kMaxTokensDefault};
   friend struct ChatRequest;
 };
 }  // namespace assistant

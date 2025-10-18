@@ -1,10 +1,8 @@
 #include "assistant/claude_client.hpp"
 
 namespace assistant {
-ClaudeClient::ClaudeClient(
-    const std::string& url,
-    const std::unordered_map<std::string, std::string>& headers)
-    : OllamaClient(url, headers),
+ClaudeClient::ClaudeClient(const Endpoint& endpoint)
+    : OllamaClient(endpoint),
       m_responseParser(std::make_shared<claude::ResponseParser>()) {}
 
 void ClaudeClient::PullModel(const std::string& name, OnResponseCallback cb) {
@@ -30,9 +28,9 @@ std::optional<ModelCapabilities> ClaudeClient::GetModelCapabilities(
 }
 
 void ClaudeClient::Chat(std::string msg, OnResponseCallback cb,
-                        std::string model, ChatOptions chat_options) {
+                        ChatOptions chat_options) {
   assistant::message json_message{"user", msg};
-  CreateAndPushChatRequest(json_message, cb, model, chat_options);
+  CreateAndPushChatRequest(json_message, cb, GetModel(), chat_options);
   ProcessChatRequestQueue();
 }
 
@@ -120,7 +118,7 @@ bool ClaudeClient::HandleResponse(const std::string& resp,
       tokens.push_back(std::move(token));
     });
 
-    OLOG(LogLevel::kInfo) << "Processing: " << tokens.size() << " tokens";
+    OLOG(LogLevel::kTrace) << "Processing: " << tokens.size() << " tokens";
     bool cb_result{true};
     bool is_done{false};
     for (const auto& token : tokens) {

@@ -123,6 +123,14 @@ std::optional<Config> Config::FromContent(const std::string& content) {
             endpoint_json["max_tokens"].is_number_unsigned()) {
           endpoint->max_tokens_ = endpoint_json["max_tokens"].get<size_t>();
         }
+
+        if (!endpoint_json.contains("model") ||
+            !endpoint_json["model"].is_string()) {
+          OLOG(LogLevel::kError) << "Endpoint '" << endpoint_url
+                                 << "' is missing the 'model' property.";
+          return std::nullopt;
+        }
+        endpoint->model_ = endpoint_json["model"].get<std::string>();
       }
     }
 

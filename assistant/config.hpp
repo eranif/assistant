@@ -33,7 +33,10 @@ inline std::ostream& operator<<(std::ostream& os, const MCPServerConfig& mcp) {
 }
 
 constexpr size_t kMaxTokensDefault = 1024;
+constexpr size_t kDefaultContextSize = 32 * 1024;
 constexpr std::string_view kDefaultOllamaUrl = "http://127.0.0.1:11434";
+constexpr std::string_view kAnthropicUrl = "https://api.anthropic.com";
+
 static std::unordered_map<std::string, std::string> kDefaultOllamaHeaders = {
     {"Host", "127.0.0.1"}};
 
@@ -42,19 +45,24 @@ struct Endpoint {
   EndpointKind type_{EndpointKind::ollama};
   std::unordered_map<std::string, std::string> headers_;
   bool active_{false};
+  std::string model_;
   std::optional<size_t> max_tokens_{kMaxTokensDefault};
-  inline std::unordered_map<std::string, std::string> GetHeaders() const {
-    return headers_;
-  }
+  std::optional<size_t> context_size_{kDefaultContextSize};
+};
 
-  inline const std::string& GetUrl() const { return url_; }
-  inline size_t GetMaxTokens() const {
-    return max_tokens_.value_or(kMaxTokensDefault);
+struct AnthropicEndpoint : public Endpoint {
+  AnthropicEndpoint() { url_ = kAnthropicUrl; }
+};
+
+struct OllamaEndpoint : public Endpoint {
+  OllamaEndpoint() {
+    url_ = kDefaultOllamaUrl;
+    headers_ = kDefaultOllamaHeaders;
   }
 };
 
 inline std::ostream& operator<<(std::ostream& os, const Endpoint& ep) {
-  os << "Endpoint {url: " << ep.url_
+  os << "Endpoint {url: " << ep.url_ << ", model: " << ep.model_
      << ", type: " << magic_enum::enum_name(ep.type_)
      << ", active: " << ep.active_
      << ", max_tokens=" << ep.max_tokens_.value_or(kMaxTokensDefault) << "}";

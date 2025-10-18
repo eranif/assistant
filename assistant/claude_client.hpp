@@ -6,9 +6,7 @@
 namespace assistant {
 class ClaudeClient : public OllamaClient {
  public:
-  ClaudeClient(
-      const std::string& url = "https://api.anthropic.com",
-      const std::unordered_map<std::string, std::string>& headers = {});
+  ClaudeClient(const Endpoint& endpoint = AnthropicEndpoint{});
   ~ClaudeClient() override = default;
 
   ///===--------------------------------------
@@ -23,7 +21,7 @@ class ClaudeClient : public OllamaClient {
   std::optional<ModelCapabilities> GetModelCapabilities(
       const std::string& model) override;
 
-  void Chat(std::string msg, OnResponseCallback cb, std::string model,
+  void Chat(std::string msg, OnResponseCallback cb,
             ChatOptions chat_options) override;
 
   void CreateAndPushChatRequest(std::optional<assistant::message> msg,

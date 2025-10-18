@@ -134,20 +134,10 @@ void ClientBase::ApplyConfig(const assistant::Config* conf) {
     OLOG(LogLevel::kError) << "No endpoint is found!";
     return;
   }
-
-  SetMaxTokens(endpoint->max_tokens_.value_or(kMaxTokensDefault));
-  m_endpoint_kind.set_value(endpoint->type_);
-  m_url.set_value(endpoint->GetUrl());
+  SetEndpoint(*endpoint);
   m_windows_size.store(conf->GetHistorySize());
   m_function_table.ReloadMCPServers(conf);
-  m_model_options.set_value(conf->GetModelOptionsMap());
-  m_default_model_options.set_value(Config::CreaetDefaultModelOptions());
-  m_http_headers.set_value(endpoint->GetHeaders());
   m_server_timeout.set_value(conf->GetServerTimeoutSettings());
-  auto iter = conf->GetModelOptionsMap().find("default");
-  if (iter != conf->GetModelOptionsMap().end()) {
-    m_default_model_options.set_value(iter->second);
-  }
   m_keep_alive.set_value(conf->GetKeepAlive());
   m_stream = conf->IsStream();
   SetLogLevel(conf->GetLogLevel());
