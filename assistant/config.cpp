@@ -175,7 +175,7 @@ std::optional<Config> Config::FromContent(const std::string& content) {
       }
     }
 
-    if (!found_active) {
+    if (!found_active && !config.endpoints_.empty()) {
       // Make the first endpoint active.
       config.endpoints_.front()->active_ = true;
     }
