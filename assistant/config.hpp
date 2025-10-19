@@ -33,14 +33,15 @@ inline std::ostream& operator<<(std::ostream& os, const MCPServerConfig& mcp) {
 
 constexpr size_t kMaxTokensDefault = 1024;
 constexpr size_t kDefaultContextSize = 32 * 1024;
-constexpr std::string_view kDefaultOllamaUrl = "http://127.0.0.1:11434";
-constexpr std::string_view kAnthropicUrl = "https://api.anthropic.com";
+constexpr std::string_view kEndpointOllamaLocal = "http://127.0.0.1:11434";
+constexpr std::string_view kEndpointAnthropic = "https://api.anthropic.com";
+constexpr std::string_view kEndpointOllamaCloud = "https://ollama.com";
 
 static std::unordered_map<std::string, std::string> kDefaultOllamaHeaders = {
     {"Host", "127.0.0.1"}};
 
 struct Endpoint {
-  std::string url_{kDefaultOllamaUrl};
+  std::string url_{kEndpointOllamaLocal};
   EndpointKind type_{EndpointKind::ollama};
   std::unordered_map<std::string, std::string> headers_;
   bool active_{false};
@@ -50,13 +51,24 @@ struct Endpoint {
 };
 
 struct AnthropicEndpoint : public Endpoint {
-  AnthropicEndpoint() { url_ = kAnthropicUrl; }
+  AnthropicEndpoint() {
+    url_ = kEndpointAnthropic;
+    type_ = EndpointKind::anthropic;
+  }
 };
 
-struct OllamaEndpoint : public Endpoint {
-  OllamaEndpoint() {
-    url_ = kDefaultOllamaUrl;
+struct OllamaLocalEndpoint : public Endpoint {
+  OllamaLocalEndpoint() {
+    url_ = kEndpointOllamaCloud;
+    type_ = EndpointKind::ollama;
+  }
+};
+
+struct OllamaCloudEndpoint : public Endpoint {
+  OllamaCloudEndpoint() {
+    url_ = kEndpointOllamaLocal;
     headers_ = kDefaultOllamaHeaders;
+    type_ = EndpointKind::ollama;
   }
 };
 

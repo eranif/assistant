@@ -78,7 +78,7 @@ namespace assistant {
 
 enum class EndpointKind {
   ollama,
-  claude,
+  anthropic,
 };
 
 using json = nlohmann::json;
@@ -749,7 +749,7 @@ class ClientImpl {
         }
         return false;
       } break;
-      case assistant::EndpointKind::claude: {
+      case assistant::EndpointKind::anthropic: {
         time_t secs, usecs;
         cli->get_connection_timeout(secs, usecs);
         cli->set_connection_timeout(1, 0);
@@ -788,7 +788,7 @@ class ClientImpl {
           models.push_back(model["name"]);
         }
       } break;
-      case assistant::EndpointKind::claude: {
+      case assistant::EndpointKind::anthropic: {
         for (auto& model : json_response["data"]) {
           models.push_back(model["id"]);
         }
@@ -1148,7 +1148,7 @@ class ClientImpl {
   }
   void setHttpHeaders(httplib::Headers headers) {
     headers_ = std::move(headers);
-    if (this->endpoint_kind_ == EndpointKind::claude) {
+    if (this->endpoint_kind_ == EndpointKind::anthropic) {
       // Mandatory header for "claude"
       headers_.insert({"anthropic-version", "2023-06-01"});
     }
@@ -1157,7 +1157,7 @@ class ClientImpl {
  private:
   std::string GetChatPath() const {
     switch (endpoint_kind_) {
-      case assistant::EndpointKind::claude:
+      case assistant::EndpointKind::anthropic:
         return "/v1/messages";
       default:
       case assistant::EndpointKind::ollama:
@@ -1169,7 +1169,7 @@ class ClientImpl {
   std::string GetShowPath() const { return "/api/show"; }
   std::string GetListPath() const {
     switch (endpoint_kind_) {
-      case assistant::EndpointKind::claude:
+      case assistant::EndpointKind::anthropic:
         return "/v1/models";
       default:
       case assistant::EndpointKind::ollama:

@@ -14,10 +14,10 @@ inline std::optional<std::shared_ptr<ClientBase>> MakeClient(
   std::shared_ptr<Endpoint> endpoint{nullptr};
   if (conf.has_value()) {
     endpoint = conf.value().GetEndpoint();
-  } else {
-    endpoint = std::make_shared<Endpoint>();
-    endpoint->url_ = kDefaultOllamaUrl;
-    endpoint->headers_ = kDefaultOllamaHeaders;
+  }
+
+  if (endpoint == nullptr) {
+    return std::nullopt;
   }
 
   std::shared_ptr<ClientBase> client{nullptr};
@@ -25,7 +25,7 @@ inline std::optional<std::shared_ptr<ClientBase>> MakeClient(
     case EndpointKind::ollama:
       client = std::make_shared<OllamaClient>(*endpoint);
       break;
-    case EndpointKind::claude:
+    case EndpointKind::anthropic:
       client = std::make_shared<ClaudeClient>(*endpoint);
       break;
   }

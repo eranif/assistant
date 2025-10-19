@@ -13,7 +13,7 @@ enum class EventType {
 
 class OllamaClient : public ClientBase {
  public:
-  OllamaClient(const Endpoint& ep = OllamaEndpoint{});
+  OllamaClient(const Endpoint& ep = OllamaLocalEndpoint{});
   ~OllamaClient() override;
 
   ///===---------------------------------

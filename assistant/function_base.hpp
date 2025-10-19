@@ -76,7 +76,7 @@ class FunctionBase {
     switch (kind) {
       case EndpointKind::ollama:
         return ToOllamaJson();
-      case EndpointKind::claude:
+      case EndpointKind::anthropic:
         return ToClaudeJSON();
     }
     return json({});

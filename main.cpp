@@ -201,8 +201,12 @@ int main(int argc, char** argv) {
     assistant::SetLogLevel(conf.value().GetLogLevel());
   }
 
-  ASSIGN_OPT_OR_RETURN(std::shared_ptr<assistant::ClientBase> cli,
-                       assistant::MakeClient(conf), 1 /* return code */);
+  auto cli_opt = assistant::MakeClient(conf);
+  if (!cli_opt.has_value()) {
+    std::cerr << "Failed to create client." << std::endl;
+    return 1;
+  }
+  std::shared_ptr<assistant::ClientBase> cli = cli_opt.value();
 
   cli->GetFunctionTable().Add(
       FunctionBuilder("Open_file_in_editor")
@@ -231,8 +235,8 @@ int main(int argc, char** argv) {
           .SetCallback(ToolReadFileContent)
           .Build());
 
-  OLOG(assistant::LogLevel::kInfo)
-      << "Waiting for: " << cli->GetUrl() << " to become available...";
+  std::cout << "Waiting for: " << cli->GetUrl() << " to become available..."
+            << std::endl;
 
   while (true) {
     if (cli->IsRunning()) {

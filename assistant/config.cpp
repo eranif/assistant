@@ -111,10 +111,16 @@ std::optional<Config> Config::FromContent(const std::string& content) {
         }
         if (endpoint_json.contains("type") &&
             endpoint_json["type"].is_string()) {
-          endpoint->type_ = magic_enum::enum_cast<EndpointKind>(
-                                endpoint_json["type"].get<std::string>())
-                                .value_or(EndpointKind::ollama);
+          auto endpoint_type = endpoint_json["type"].get<std::string>();
+          auto type = magic_enum::enum_cast<EndpointKind>(endpoint_type);
+          if (!type.has_value()) {
+            OLOG(LogLevel::kError)
+                << "Invalid endpoint type: " << endpoint_type;
+            return std::nullopt;
+          }
+          endpoint->type_ = type.value();
         }
+
         if (endpoint_json.contains("active") &&
             endpoint_json["active"].is_boolean()) {
           endpoint->active_ = endpoint_json["active"].get<bool>();
@@ -155,15 +161,6 @@ std::optional<Config> Config::FromContent(const std::string& content) {
     }
 
     OLOG(LogLevel::kInfo) << "Timeout settings:" << config.m_server_timeout;
-    // Always ensure that we have at least 1 endpoint.
-    if (config.endpoints_.empty()) {
-      config.endpoints_.push_back(std::make_shared<Endpoint>());
-      auto endpoint = config.endpoints_.back();
-      endpoint->active_ = true;
-      endpoint->url_ = "http://127.0.0.1:11434";
-      endpoint->headers_.insert({"Host", "127.0.0.1"});
-      endpoint->type_ = EndpointKind::ollama;
-    }
 
     // Make sure we have exactly 1 active endpoint.
     bool found_active{false};

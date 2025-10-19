@@ -57,7 +57,7 @@ void ClaudeClient::CreateAndPushChatRequest(
     OLOG(LogLevel::kInfo) << "The 'tools' are disabled for the model: '"
                           << model << "' (per user request).";
   } else {
-    req["tools"] = m_function_table.ToJSON(EndpointKind::claude);
+    req["tools"] = m_function_table.ToJSON(EndpointKind::anthropic);
   }
 
   ChatRequest ctx = {
