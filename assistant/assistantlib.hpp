@@ -617,6 +617,14 @@ class ClientImpl {
 
     if (auto res = this->cli->Post(GetChatPath(), headers_, request_string,
                                    kApplicationJson, stream_callback)) {
+      if (res.value().status >= 400) {
+        // error code.
+        if (assistant::use_exceptions) {
+          throw assistant::exception("Server responded with an error. " +
+                                     httplib::to_string(res.error()));
+        }
+        return false;
+      }
       return true;
     } else if (res.error() ==
                httplib::Error::Canceled) { /* Request cancelled by user. */
@@ -649,6 +657,14 @@ class ClientImpl {
 
     if (auto res = this->cli->Post(GetChatPath(), headers_, request_string,
                                    kApplicationJson, stream_callback)) {
+      if (res.value().status >= 400) {
+        // error code.
+        if (assistant::use_exceptions) {
+          throw assistant::exception("Server responded with an error. " +
+                                     httplib::to_string(res.error()));
+        }
+        return false;
+      }
       return true;
     } else if (res.error() ==
                httplib::Error::Canceled) { /* Request cancelled by user. */
