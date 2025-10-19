@@ -110,7 +110,6 @@ class Config {
 
   static std::optional<Config> FromFile(const std::string& filepath);
   static std::optional<Config> FromContent(const std::string& json_content);
-  static ModelOptions CreaetDefaultModelOptions();
 
   inline const std::vector<MCPServerConfig>& GetServers() const {
     return m_servers;
@@ -119,12 +118,9 @@ class Config {
   void SetHistorySize(size_t history_size) { m_history_size = history_size; }
   size_t GetHistorySize() const { return m_history_size; }
   LogLevel GetLogLevel() const { return m_logLevel; }
-  inline const std::unordered_map<std::string, ModelOptions>&
-  GetModelOptionsMap() const {
-    return m_model_options_map;
-  }
 
-  /// Return the active endpoint.
+  /// Return the active endpoint. This function may return nullptr is no
+  /// endpoints are configured.
   inline std::shared_ptr<Endpoint> GetEndpoint() const {
     auto iter =
         std::find_if(endpoints_.begin(), endpoints_.end(),
@@ -146,11 +142,15 @@ class Config {
     return m_server_timeout;
   }
 
+  /// Return the list of endpoints as defined in the configuration file.
+  inline const std::vector<std::shared_ptr<Endpoint>>& GetEndpoints() const {
+    return endpoints_;
+  }
+
  private:
   std::vector<MCPServerConfig> m_servers;
   size_t m_history_size{50};
   ModelOptions m_defaultModelOptions;
-  std::unordered_map<std::string, ModelOptions> m_model_options_map;
   LogLevel m_logLevel{LogLevel::kInfo};
   std::string m_keep_alive{"5m"};
   bool m_stream{true};

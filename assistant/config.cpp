@@ -208,37 +208,6 @@ std::optional<Config> Config::FromContent(const std::string& content) {
     for (const auto& mcp_server : config.m_servers) {
       OLOG(OLogLevel::kInfo) << "Loaded MCP server: " << mcp_server;
     }
-
-    // Per model configuration
-    if (parsed_data.contains("models")) {
-      auto models = parsed_data["models"];
-      for (const auto& [model_name, j] : models.items()) {
-        ModelOptions mo{.name = model_name};
-        if (j.contains("options")) {
-          mo.options = j["options"];
-        }
-        if (j.contains("think") && j["think"].is_boolean()) {
-          mo.think = j["think"].get<bool>();
-        }
-        if (j.contains("hidethinking") && j["hidethinking"].is_boolean()) {
-          mo.hidethinking = j["hidethinking"];
-        }
-        if (j.contains("think_start_tag") && j["think_start_tag"].is_string()) {
-          mo.think_start_tag = j["think_start_tag"].get<std::string>();
-        }
-        if (j.contains("think_end_tag") && j["think_end_tag"].is_string()) {
-          mo.think_end_tag = j["think_end_tag"].get<std::string>();
-        }
-        config.m_model_options_map.insert({mo.name, mo});
-        OLOG(LogLevel::kInfo) << mo;
-      }
-
-      if (config.m_model_options_map.count("default") == 0) {
-        // No default model options, add one.
-        config.m_model_options_map.insert(
-            {"default", CreaetDefaultModelOptions()});
-      }
-    }
     return config;
   } catch (std::exception& e) {
     OLOG(OLogLevel::kError) << "Failed to parse configuration JSON: " << content
@@ -247,16 +216,4 @@ std::optional<Config> Config::FromContent(const std::string& content) {
   }
 }
 
-ModelOptions Config::CreaetDefaultModelOptions() {
-  using namespace nlohmann::literals;
-  ModelOptions mo;
-  mo.name = "default";
-  mo.options = R"(
-  {
-    "num_ctx": 10240,
-    "temperature": 0
-  }
-)"_json;
-  return mo;
-}
 }  // namespace assistant
