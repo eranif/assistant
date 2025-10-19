@@ -6,7 +6,6 @@
 
 #include "assistant/helpers.hpp"
 #include "assistant/mcp_local_process.hpp"
-#include "assistant/model_options.hpp"
 #include "common/magic_enum.hpp"
 
 namespace assistant {
@@ -150,7 +149,6 @@ class Config {
  private:
   std::vector<MCPServerConfig> m_servers;
   size_t m_history_size{50};
-  ModelOptions m_defaultModelOptions;
   LogLevel m_logLevel{LogLevel::kInfo};
   std::string m_keep_alive{"5m"};
   bool m_stream{true};
