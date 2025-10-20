@@ -85,6 +85,8 @@ class FunctionBase {
   virtual FunctionResult Call(const json& params) const = 0;
   inline const std::string& GetName() const { return m_name; }
   inline const std::string& GetDesc() const { return m_desc; }
+  inline bool IsEnabled() const { return m_enabled; }
+  inline void SetEnabled(bool b) { m_enabled = b; }
 
  private:
   json ToOllamaJson() const {
@@ -127,6 +129,7 @@ class FunctionBase {
   std::string m_name;
   std::string m_desc;
   std::vector<Param> m_params;
+  std::atomic_bool m_enabled{true};
   friend class FunctionBuilder;
 };
 
@@ -139,16 +142,45 @@ struct FunctionCall {
 
 class FunctionTable {
  public:
+  /**
+   * @brief Converts the internal state to a JSON representation containing only
+   * enabled functions.
+   *
+   * This method acquires a lock on the internal mutex and iterates through all
+   * functions, collecting only those that are enabled into a JSON array.
+   *
+   * @param kind The endpoint kind to filter or identify the functions
+   * @return json A JSON object containing the enabled functions
+   */
   json ToJSON(EndpointKind kind) const {
     std::scoped_lock lk{m_mutex};
     std::vector<json> v;
     for (const auto& [_, f] : m_functions) {
+      // Only collect enabled functions.
+      if (!f->IsEnabled()) {
+        continue;
+      }
       v.push_back(f->ToJSON(kind));
     }
     json j = v;
     return j;
   }
 
+  /**
+   * @brief Adds a function to the function registry.
+   *
+   * This method registers a function by inserting it into the internal function
+   * map using the function's name as the key. If a function with the same name
+   * already exists, a warning is logged and the duplicate is not added.
+   *
+   * @param f A shared pointer to the FunctionBase object to be added to the
+   * registry.
+   *
+   * @note This method is thread-safe and uses a scoped lock to protect
+   * concurrent access.
+   * @warning If a duplicate function name is detected, a warning will be
+   * logged.
+   */
   void Add(std::shared_ptr<FunctionBase> f) {
     std::scoped_lock lk{m_mutex};
     if (!m_functions.insert({f->GetName(), f}).second) {
@@ -183,6 +215,69 @@ class FunctionTable {
 
   void ReloadMCPServers(const Config* config);
   void Merge(const FunctionTable& other);
+
+  /**
+   * @brief Enables or disables all registered functions in a thread-safe
+   * manner.
+   *
+   * This method iterates through all functions stored in m_functions and sets
+   * their enabled state to the specified value. The operation is protected by a
+   * mutex lock to ensure thread safety.
+   *
+   * @param b true to enable all functions, false to disable them
+   */
+  void EnableAll(bool b) {
+    std::scoped_lock lk{m_mutex};
+    for (auto& [name, func] : m_functions) {
+      func->SetEnabled(b);
+    }
+  }
+
+  /**
+   * @brief Enables or disables a function by name.
+   *
+   * This method attempts to find a function with the specified name and modify
+   * its enabled state. The operation is thread-safe through mutex protection.
+   *
+   * @param name The name of the function to enable or disable
+   * @param b True to enable the function, false to disable it
+   * @return true if the function was found and its state was modified, false if
+   * the function does not exist
+   */
+  inline bool EnableFunction(const std::string& name, bool b) {
+    std::scoped_lock lk{m_mutex};
+    auto iter = m_functions.find(name);
+    if (iter == m_functions.end()) {
+      return false;
+    }
+    iter->second->SetEnabled(b);
+    return true;
+  }
+
+  /**
+   * @brief Returns the count of enabled functions.
+   *
+   * This method iterates through all functions in the collection and counts
+   * only those that are currently enabled. Thread-safe operation is ensured
+   * by acquiring a scoped lock on the mutex.
+   *
+   * @return The number of enabled functions in the collection.
+   */
+  inline size_t GetFunctionsCount() const {
+    std::scoped_lock lk{m_mutex};
+    size_t count{0};
+    for (auto& [name, func] : m_functions) {
+      if (func->IsEnabled()) {
+        count++;
+      }
+    }
+    return count;
+  }
+
+  /**
+   * @brief synonym to `GetFunctionsCount() == 0`
+   */
+  inline bool IsEmpty() const { return GetFunctionsCount() == 0; }
 
  private:
   mutable std::mutex m_mutex;

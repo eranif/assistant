@@ -56,7 +56,7 @@ void ClaudeClient::CreateAndPushChatRequest(
   if (IsFlagSet(chat_options, ChatOptions::kNoTools)) {
     OLOG(LogLevel::kInfo) << "The 'tools' are disabled for the model: '"
                           << model << "' (per user request).";
-  } else {
+  } else if (!m_function_table.IsEmpty()) {
     req["tools"] = m_function_table.ToJSON(EndpointKind::anthropic);
   }
 

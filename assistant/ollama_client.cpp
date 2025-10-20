@@ -254,7 +254,8 @@ void OllamaClient::CreateAndPushChatRequest(
   if (IsFlagSet(chat_options, ChatOptions::kNoTools)) {
     OLOG(LogLevel::kInfo) << "The 'tools' are disabled for the model: '"
                           << model << "' (per user request).";
-  } else if (ModelHasCapability(model, ModelCapabilities::kTools)) {
+  } else if (ModelHasCapability(model, ModelCapabilities::kTools) &&
+             !m_function_table.IsEmpty()) {
     req["tools"] = m_function_table.ToJSON(EndpointKind::ollama);
   } else {
     OLOG(LogLevel::kWarning)
