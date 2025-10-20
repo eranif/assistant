@@ -84,10 +84,11 @@ void ClaudeClient::ProcessChatRquest(
     };
 
     {
-      std::scoped_lock lk{m_client_mutex};
-      m_client_impl.chat_raw_output(chat_request->request_,
-                                    &ClaudeClient::OnRawResponse,
-                                    static_cast<void*>(&user_data));
+      auto client = CreateClient();
+      SetInterruptClientLocker locker{this, client.get()};
+      client->chat_raw_output(chat_request->request_,
+                              &ClaudeClient::OnRawResponse,
+                              static_cast<void*>(&user_data));
     }
 
     if (!chat_request->func_calls_.empty()) {

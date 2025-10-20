@@ -358,6 +358,8 @@ int main(int argc, char** argv) {
     } else if (prompt == "/no_tools") {
       assistant::AddFlagSet(options, assistant::ChatOptions::kNoTools);
       std::cout << "Tools are disabled" << std::endl;
+      std::cout << "\n>";
+      std::cout.flush();
       continue;
     } else if (prompt == "/int") {
       cli->Interrupt();
@@ -366,6 +368,8 @@ int main(int argc, char** argv) {
     } else if (prompt == "/chat_defaults") {
       options = assistant::ChatOptions::kDefault;
       std::cout << "Chat options restored to defaults." << std::endl;
+      std::cout << "\n>";
+      std::cout.flush();
       continue;
     } else if (prompt == "/info") {
       auto model_options = cli->GetModelInfo(model_name);
@@ -374,15 +378,21 @@ int main(int argc, char** argv) {
                   << std::endl;
         std::cout << std::setw(2) << model_options.value()["model_info"]
                   << std::endl;
+        std::cout << "\n>";
+        std::cout.flush();
       } else {
         std::cerr << "Could not loading information for model: " << model_name
                   << std::endl;
+        std::cout << "\n>";
+        std::cout.flush();
       }
       continue;
     } else if (prompt == "clear" || prompt == "reset") {
       // Clear the session
       cli->Shutdown();
       std::cout << "Session cleared." << std::endl;
+      std::cout << "\n>";
+      std::cout.flush();
       continue;
     }
 
@@ -391,6 +401,8 @@ int main(int argc, char** argv) {
       if (!content.IsOk()) {
         std::cerr << "Error reading prompt. " << content.GetError()
                   << std::endl;
+        std::cout << "\n>";
+        std::cout.flush();
         continue;
       } else {
         prompt = content.GetValue();

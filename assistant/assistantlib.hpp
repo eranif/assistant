@@ -1139,7 +1139,10 @@ class ClientImpl {
 
   std::string getServerURL() const { return this->server_url; }
 
-  void interrupt() { this->cli->stop(); }
+  void interrupt() {
+    httplib::detail::shutdown_socket(this->cli->socket());
+    httplib::detail::close_socket(this->cli->socket());
+  }
 
   void setEndpointKind(EndpointKind kind) { endpoint_kind_ = kind; }
   EndpointKind getEndpointKind() const { return endpoint_kind_; }

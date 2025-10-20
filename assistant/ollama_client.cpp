@@ -13,21 +13,40 @@ OllamaClient::OllamaClient(const Endpoint& ep) {
   assistant::show_requests(false);
   assistant::show_replies(false);
   assistant::allow_exceptions(true);
-  m_client_impl.setServerURL(GetUrl());
-  m_client_impl.setReadTimeout(10);
-  m_client_impl.setWriteTimeout(10);
-  m_client_impl.setConnectTimeout(10);
   mcp::set_log_level(mcp::log_level::error);
-  SetHeadersInternal(m_client_impl, GetHttpHeaders());
   Startup();
+}
+
+std::unique_ptr<ClientImpl> OllamaClient::CreateClient() {
+  auto client = std::make_unique<ClientImpl>();
+  auto server_timeout_settings = m_server_timeout.get_value();
+  client->setConnectTimeout(server_timeout_settings.GetConnectTimeout().first,
+                            server_timeout_settings.GetConnectTimeout().second);
+  client->setReadTimeout(server_timeout_settings.GetReadTimeout().first,
+                         server_timeout_settings.GetReadTimeout().second);
+  client->setWriteTimeout(server_timeout_settings.GetWriteTimeout().first,
+                          server_timeout_settings.GetWriteTimeout().second);
+  client->setEndpointKind(GetEndpointKind());
+  client->setServerURL(GetUrl());
+  auto headers = GetHttpHeaders();
+  httplib::Headers h;
+  for (const auto& [header_name, header_value] : headers) {
+    h.insert({header_name, header_value});
+  }
+  client->setHttpHeaders(std::move(h));
+  return client;
 }
 
 OllamaClient::~OllamaClient() { Shutdown(); }
 
 void OllamaClient::Interrupt() {
   ClientBase::Interrupt();
+  std::scoped_lock lk{m_client_impl_ptr_mutex};
+  if (m_client_impl_ptr == nullptr) {
+    return;
+  }
   try {
-    m_client_impl.interrupt();
+    m_client_impl_ptr->interrupt();
   } catch (std::exception& e) {
     OLOG(LogLevel::kWarning)
         << "an error occurred while interrupting client. " << e.what();
@@ -36,62 +55,31 @@ void OllamaClient::Interrupt() {
 
 void OllamaClient::ApplyConfig(const assistant::Config* conf) {
   ClientBase::ApplyConfig(conf);
-  if (conf->GetEndpoint() == nullptr) {
-    OLOG(LogLevel::kError)
-        << "Failed to apply new configuration. Null endpoint";
-    return;
-  }
-  {
-    std::scoped_lock lk{m_client_mutex};
-    SetEndpoint(*conf->GetEndpoint());
-    m_client_impl.setServerURL(GetUrl());
-    auto server_timeout_settings = m_server_timeout.get_value();
-    m_client_impl.setConnectTimeout(
-        server_timeout_settings.GetConnectTimeout().first,
-        server_timeout_settings.GetConnectTimeout().second);
-    m_client_impl.setReadTimeout(
-        server_timeout_settings.GetReadTimeout().first,
-        server_timeout_settings.GetReadTimeout().second);
-    m_client_impl.setWriteTimeout(
-        server_timeout_settings.GetWriteTimeout().first,
-        server_timeout_settings.GetWriteTimeout().second);
-    m_client_impl.setEndpointKind(conf->GetEndpoint()->type_);
-    SetHeadersInternal(m_client_impl, GetHttpHeaders());
-  }
 }
 
 std::vector<std::string> OllamaClient::List() {
-  std::scoped_lock lk{m_client_mutex};
-  if (!IsRunningInternal(m_client_impl)) {
-    return {};
-  }
+  auto client = CreateClient();
   try {
-    return m_client_impl.list_models();
+    return client->list_models();
   } catch (...) {
     return {};
   }
 }
 
 json OllamaClient::ListJSON() {
-  std::scoped_lock lk{m_client_mutex};
-  if (!IsRunningInternal(m_client_impl)) {
-    return {};
-  }
   try {
-    return m_client_impl.list_model_json();
+    auto client = CreateClient();
+    return client->list_model_json();
   } catch (...) {
     return {};
   }
 }
 
 std::optional<json> OllamaClient::GetModelInfo(const std::string& model) {
-  std::scoped_lock lk{m_client_mutex};
-  if (!IsRunningInternal(m_client_impl)) {
-    return std::nullopt;
-  }
   try {
+    auto client = CreateClient();
     OLOG(LogLevel::kInfo) << "Fetching info for model: " << model;
-    return m_client_impl.show_model_info(model);
+    return client->show_model_info(model);
   } catch (std::exception& e) {
     return std::nullopt;
   }
@@ -139,23 +127,19 @@ std::optional<ModelCapabilities> OllamaClient::GetModelCapabilities(
 }
 
 void OllamaClient::PullModel(const std::string& name, OnResponseCallback cb) {
-  if (m_client_impl.getEndpointKind() != EndpointKind::ollama) {
-    OLOG(LogLevel::kWarning)
-        << "Pull model is supported by Ollama clients only";
-    cb("Pull model is supported by Ollama clients only", Reason::kFatalError,
-       false);
-    return;
-  }
-
   try {
-    ClientImpl ol;
-    ol.setServerURL(GetUrl());
-    ol.setEndpointKind(m_client_impl.getEndpointKind());
-
+    auto client = CreateClient();
+    if (client->getEndpointKind() != EndpointKind::ollama) {
+      OLOG(LogLevel::kWarning)
+          << "Pull model is supported by Ollama clients only";
+      cb("Pull model is supported by Ollama clients only", Reason::kFatalError,
+         false);
+      return;
+    }
     std::stringstream ss;
     ss << "Pulling model: " << name;
     cb(ss.str(), Reason::kLogNotice, false);
-    ol.pull_model(name, true);
+    client->pull_model(name, true);
     cb("Model successfully pulled.", Reason::kDone, false);
   } catch (std::exception& e) {
     cb(e.what(), Reason::kFatalError, false);
@@ -163,25 +147,10 @@ void OllamaClient::PullModel(const std::string& name, OnResponseCallback cb) {
 }
 
 bool OllamaClient::IsRunning() {
-  std::scoped_lock lk{m_client_mutex};
-  return IsRunningInternal(m_client_impl);
-}
-
-void OllamaClient::SetHeadersInternal(
-    ClientImpl& client,
-    const std::unordered_map<std::string, std::string>& headers) {
-  httplib::Headers h;
-  for (const auto& [header_name, header_value] : headers) {
-    h.insert({header_name, header_value});
-  }
-  client.setHttpHeaders(std::move(h));
-}
-
-bool OllamaClient::IsRunningInternal(ClientImpl& client) const {
+  auto client = CreateClient();
   try {
-    return client.is_running();
-  } catch (const std::exception& e) {
-    OLOG(LogLevel::kDebug) << e.what();
+    return client->is_running();
+  } catch ([[maybe_unused]] const std::exception& e) {
     return false;
   }
 }
@@ -202,9 +171,10 @@ void OllamaClient::ProcessChatRquest(
     user_data.thinking_end_tag = "</think>";
 
     {
-      std::scoped_lock lk{m_client_mutex};
-      m_client_impl.chat(chat_request->request_, &OllamaClient::OnResponse,
-                         static_cast<void*>(&user_data));
+      auto client = CreateClient();
+      SetInterruptClientLocker locker{this, client.get()};
+      client->chat(chat_request->request_, &OllamaClient::OnResponse,
+                   static_cast<void*>(&user_data));
     }
 
     if (!chat_request->func_calls_.empty()) {
