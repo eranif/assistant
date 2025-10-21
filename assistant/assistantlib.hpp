@@ -69,6 +69,7 @@
 #include <string>
 
 #include "assistant/common/base64.hpp"
+#include "assistant/helpers.hpp"
 
 // Namespace types and classes
 
@@ -341,10 +342,13 @@ class response {
 
       if (json_data.contains("error"))
         error_string = json_data["error"].get<std::string>();
-    } catch (...) {
-      if (assistant::use_exceptions)
-        throw assistant::invalid_json_exception("Unable to parse JSON string:" +
-                                                this->json_string);
+    } catch (const std::exception& e) {
+      if (assistant::use_exceptions) {
+        std::stringstream ss;
+        ss << "Unable to parse JSON string: " << e.what() << ". Input string:\n"
+           << this->json_string;
+        throw assistant::invalid_json_exception(ss.str());
+      }
       valid = false;
     }
   }
@@ -583,8 +587,8 @@ class ClientImpl {
     std::string request_string = request.dump();
     if (assistant::log_requests) std::cout << request_string << std::endl;
 
-    std::shared_ptr<std::vector<std::string>> partial_responses =
-        std::make_shared<std::vector<std::string>>();
+    std::shared_ptr<std::string> partial_responses =
+        std::make_shared<std::string>();
 
     auto stream_callback = [on_receive_token, user_data, partial_responses](
                                const char* data, size_t data_length) -> bool {
@@ -592,26 +596,54 @@ class ClientImpl {
       bool continue_stream = true;
 
       if (assistant::log_replies) std::cout << message << std::endl;
-      try {
-        partial_responses->push_back(message);
-        std::string total_response =
-            std::accumulate(partial_responses->begin(),
-                            partial_responses->end(), std::string(""));
-        assistant::response response(total_response,
-                                     assistant::message_type::chat);
-        partial_responses->clear();
 
+      //std::cout << "\nReceived message:\n" << message << "\n" << std::endl;
+
+      partial_responses->append(message);
+      // we can have multiple messages
+      auto lines = split_into_lines(*partial_responses);
+      for (const auto& line : lines.first) {
+        if (!continue_stream) {
+          return false;
+        }
+        try {
+          assistant::response response(line, assistant::message_type::chat);
+          if (response.has_error()) {
+            if (assistant::use_exceptions)
+              throw assistant::exception("Ollama response returned error: " +
+                                         response.get_error());
+          }
+          continue_stream = on_receive_token(response, user_data);
+        } catch (const assistant::invalid_json_exception& e) {
+          // since we are dealing with complete lines, we don't expect invalid
+          // JSON input.
+          if (assistant::use_exceptions) {
+            std::stringstream ss;
+            ss << "Ollama responded with an invalid JSON. " << e.what();
+            throw assistant::exception(ss.str());
+          }
+          // Abort the stream.
+          return false;
+        }
+      }
+      // try to process the last incomplete line.
+      try {
+        assistant::response response(lines.second,
+                                     assistant::message_type::chat);
         if (response.has_error()) {
           if (assistant::use_exceptions)
             throw assistant::exception("Ollama response returned error: " +
                                        response.get_error());
         }
         continue_stream = on_receive_token(response, user_data);
-      } catch (const assistant::invalid_json_exception&
-                   e) { /* Partial response was received. Will do nothing and
-                           attempt to concatenate with the next response. */
-      }
+        // if we got here, it means we were able to process the complete
+        // output.
+        partial_responses->clear();
 
+      } catch (...) {
+        // keep the last line for next iteration.
+        partial_responses->swap(lines.second);
+      }
       return continue_stream;
     };
 
@@ -762,7 +794,8 @@ class ClientImpl {
     switch (endpoint_kind_) {
       case assistant::EndpointKind::ollama: {
         auto res = cli->Get("/", headers_);
-        if (res && res->body == "Ollama is running") {
+        if (res && res.value().status < 400) {
+          // anything below 400 is fine by us.
           return true;
         }
         return false;
@@ -833,7 +866,8 @@ class ClientImpl {
     } else {
       if (assistant::use_exceptions)
         throw assistant::exception(
-            "No response returned from server when querying running models: " +
+            "No response returned from server when querying running "
+            "models: " +
             httplib::to_string(res.error()));
     }
 
@@ -868,7 +902,8 @@ class ClientImpl {
     } else {
       if (assistant::use_exceptions)
         throw assistant::exception(
-            "No response returned from server when checking if blob exists: " +
+            "No response returned from server when checking if blob "
+            "exists: " +
             httplib::to_string(res.error()));
     }
 

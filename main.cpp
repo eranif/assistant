@@ -83,6 +83,7 @@ struct ArgvIter {
 
 struct Args {
   std::string log_file;
+  bool verbose{false};
   OLogLevel log_level{OLogLevel::kInfo};
   std::string config_file;
 };
@@ -102,11 +103,14 @@ Args ParseCommandLine(int argc, char** argv) {
     } else if (arg == "--logfile" && iter.Valid()) {
       args.log_file = iter.GetArgument();
       iter.Next();
+    } else if ((arg == "-v" || arg == "--verbose")) {
+      std::cout << "Verbose mode enabled" << std::endl;
+      args.verbose = true;
     } else if (arg == "--help" || arg == "-h") {
       std::cout << "Usage:" << std::endl;
       std::cout << argv[0]
                 << " [--loglevel <LEVEL>] [-c | --config <CONFIG_PATH>] "
-                   "[--logfile <LOG_FILE>]"
+                   "[--logfile <LOG_FILE>] [-v | --verbose]"
                 << std::endl;
       exit(0);
     }
@@ -348,6 +352,7 @@ int main(int argc, char** argv) {
   std::cout << ">";
   std::cout.flush();
   assistant::ChatOptions options{assistant::ChatOptions::kDefault};
+
   while (true) {
     std::string prompt = GetTextFromUser();
     if (prompt.empty()) {
