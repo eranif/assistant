@@ -63,14 +63,14 @@ class Logger {
   Logger() : level_(LogLevel::kInfo) {}
 
   void log(LogLevel level, const std::stringstream& msg) {
-    if (level < level_) {
-      return;
-    }
-
     if (m_log_sink.has_value()) {
       // If the user provided its own sink, use it instead of the default
       // logging system.
       (*m_log_sink)(level, msg.str());
+      return;
+    }
+
+    if (level < level_) {
       return;
     }
 
