@@ -6,11 +6,19 @@
 
 namespace assistant {
 void FunctionTable::AddMCPServer(std::shared_ptr<MCPStdioClient> client) {
-  std::lock_guard lk{m_mutex};
+  std::scoped_lock lk{m_mutex};
+  AddMCPServerInternal(client);
+}
+
+void FunctionTable::AddMCPServerInternal(
+    std::shared_ptr<MCPStdioClient> client) {
   m_clients.push_back(client);
   auto functions = client->GetFunctions();
   for (auto func : functions) {
-    Add(func);
+    if (!m_functions.insert({func->GetName(), func}).second) {
+      OLOG(OLogLevel::kWarning)
+          << "Duplicate function found: " << func->GetName();
+    }
   }
 }
 
@@ -19,7 +27,7 @@ void FunctionTable::ReloadMCPServers(const Config* config) {
     return;
   }
 
-  std::lock_guard lk{m_mutex};
+  std::scoped_lock lk{m_mutex};
   // Clear all current MCP servers and their functions.
   std::vector<std::string> names;
   for (const auto& [funcname, func] : m_functions) {
@@ -48,7 +56,7 @@ void FunctionTable::ReloadMCPServers(const Config* config) {
         client = std::make_shared<MCPStdioClient>(s.args, s.env);
       }
       if (client->Initialise()) {
-        AddMCPServer(client);
+        AddMCPServerInternal(client);
       } else {
         OLOG(LogLevel::kWarning)
             << "Failed to initialise client for MCP server: " << s.name;

@@ -152,7 +152,7 @@ class FunctionTable {
    * @param kind The endpoint kind to filter or identify the functions
    * @return json A JSON object containing the enabled functions
    */
-  json ToJSON(EndpointKind kind) const {
+  json ToJSON(EndpointKind kind) const FUNCTION_LOCKS(m_mutex) {
     std::scoped_lock lk{m_mutex};
     std::vector<json> v;
     for (const auto& [_, f] : m_functions) {
@@ -181,15 +181,18 @@ class FunctionTable {
    * @warning If a duplicate function name is detected, a warning will be
    * logged.
    */
-  void Add(std::shared_ptr<FunctionBase> f) {
+  void Add(std::shared_ptr<FunctionBase> f) FUNCTION_LOCKS(m_mutex) {
     std::scoped_lock lk{m_mutex};
     if (!m_functions.insert({f->GetName(), f}).second) {
       OLOG(OLogLevel::kWarning) << "Duplicate function found: " << f->GetName();
     }
   }
 
-  void AddMCPServer(std::shared_ptr<MCPStdioClient> client);
-  FunctionResult Call(const FunctionCall& func_call) const {
+  void AddMCPServer(std::shared_ptr<MCPStdioClient> client)
+      FUNCTION_LOCKS(m_mutex);
+
+  FunctionResult Call(const FunctionCall& func_call) const
+      FUNCTION_LOCKS(m_mutex) {
     try {
       std::scoped_lock lk{m_mutex};
       auto iter = m_functions.find(func_call.name);
@@ -207,14 +210,14 @@ class FunctionTable {
     }
   }
 
-  void Clear() {
+  void Clear() FUNCTION_LOCKS(m_mutex) {
     std::scoped_lock lk{m_mutex};
     m_functions.clear();
     m_clients.clear();
   }
 
-  void ReloadMCPServers(const Config* config);
-  void Merge(const FunctionTable& other);
+  void ReloadMCPServers(const Config* config) FUNCTION_LOCKS(m_mutex);
+  void Merge(const FunctionTable& other) FUNCTION_LOCKS(m_mutex);
 
   /**
    * @brief Enables or disables all registered functions in a thread-safe
@@ -226,7 +229,7 @@ class FunctionTable {
    *
    * @param b true to enable all functions, false to disable them
    */
-  void EnableAll(bool b) {
+  void EnableAll(bool b) FUNCTION_LOCKS(m_mutex) {
     std::scoped_lock lk{m_mutex};
     for (auto& [name, func] : m_functions) {
       func->SetEnabled(b);
@@ -244,7 +247,8 @@ class FunctionTable {
    * @return true if the function was found and its state was modified, false if
    * the function does not exist
    */
-  inline bool EnableFunction(const std::string& name, bool b) {
+  inline bool EnableFunction(const std::string& name, bool b)
+      FUNCTION_LOCKS(m_mutex) {
     std::scoped_lock lk{m_mutex};
     auto iter = m_functions.find(name);
     if (iter == m_functions.end()) {
@@ -263,7 +267,7 @@ class FunctionTable {
    *
    * @return The number of enabled functions in the collection.
    */
-  inline size_t GetFunctionsCount() const {
+  inline size_t GetFunctionsCount() const FUNCTION_LOCKS(m_mutex) {
     std::scoped_lock lk{m_mutex};
     size_t count{0};
     for (auto& [name, func] : m_functions) {
@@ -280,6 +284,9 @@ class FunctionTable {
   inline bool IsEmpty() const { return GetFunctionsCount() == 0; }
 
  private:
+  void AddMCPServerInternal(std::shared_ptr<MCPStdioClient> client)
+      CALLER_MUST_LOCK(m_mutex);
+
   mutable std::mutex m_mutex;
   std::map<std::string, std::shared_ptr<FunctionBase>> m_functions
       GUARDED_BY(m_mutex);
