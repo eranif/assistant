@@ -33,11 +33,20 @@ option(
 
 if (ASSISTANTLIB_WITH_OPENSSL)
   message(STATUS "TLS support is enabled")
+  if (ASSISTANTLIB_WITH_OPENSSL)
+    find_package(
+      OpenSSL
+      COMPONENTS SSL Crypto
+      REQUIRED)
+  endif ()
 endif ()
 
 add_subdirectory(assistant)
 if (ASSISTANTLIB_BUILD_EXAMPLE)
   add_executable(assistant-demo main.cpp)
+  if (ASSISTANTLIB_WITH_OPENSSL)
+    target_link_libraries(assistant-demo PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+  endif ()
   target_link_libraries(assistant-demo PRIVATE assistantlib)
 endif ()
 

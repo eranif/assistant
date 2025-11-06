@@ -1,12 +1,5 @@
 project(assistantlib)
 
-if (ASSISTANTLIB_WITH_OPENSSL)
-  find_package(
-    OpenSSL
-    COMPONENTS SSL Crypto
-    REQUIRED)
-endif ()
-
 add_subdirectory(cpp-mcp)
 
 add_library(
@@ -34,7 +27,7 @@ target_link_libraries(assistantlib PUBLIC mcp-cpp)
 
 if (ASSISTANTLIB_WITH_OPENSSL)
   target_compile_options(assistantlib PUBLIC -DCPPHTTPLIB_OPENSSL_SUPPORT=1)
-  target_link_libraries(assistantlib PUBLIC OpenSSL::SSL OpenSSL::Crypto)
+  target_link_libraries(assistantlib PRIVATE OpenSSL::SSL OpenSSL::Crypto)
   if (WIN32)
     target_link_libraries(assistantlib PUBLIC Crypt32)
   endif ()
