@@ -31,4 +31,4 @@
 
 // Documents the locks that cannot be held by callers of this function, as they
 // might be acquired by this function
-#define FUNCTION_LOCKS(x) __attribute__((locks_excluded(x)))
+#define FUNCTION_LOCKS(x) THREAD_ANNOTATION_ATTRIBUTE__((locks_excluded(x)))
