@@ -595,9 +595,9 @@ class ClientImpl {
       std::string message(data, data_length);
       bool continue_stream = true;
 
-      if (assistant::log_replies) std::cout << message << std::endl;
-
-      //std::cout << "\nReceived message:\n" << message << "\n" << std::endl;
+      if (assistant::log_replies) {
+        std::cout << message << std::endl;
+      }
 
       partial_responses->append(message);
       // we can have multiple messages
@@ -619,7 +619,10 @@ class ClientImpl {
           // JSON input.
           if (assistant::use_exceptions) {
             std::stringstream ss;
-            ss << "Ollama responded with an invalid JSON. " << e.what();
+            ss << "Ollama responded with an invalid JSON. " << e.what()
+               << ". JSON:\n"
+               << line << "\nComplete message is:\n"
+               << *partial_responses;
             throw assistant::exception(ss.str());
           }
           // Abort the stream.

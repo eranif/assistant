@@ -97,6 +97,8 @@ class FunctionBase {
     j["function"]["parameters"]["type"] = "object";
 
     std::vector<std::string> required;
+    j["function"]["parameters"]["properties"] =
+        json({});  // Must always include the "properties" field, even if empty.
     for (const auto& param : m_params) {
       j["function"]["parameters"]["properties"][param.GetName()] =
           param.ToJSON();
