@@ -109,6 +109,11 @@ std::optional<Config> Config::FromContent(const std::string& content) {
             endpoint->headers_.insert({header_name, value.get<std::string>()});
           }
         }
+        if (endpoint_json.contains("verify_server_ssl") &&
+            endpoint_json["verify_server_ssl"].is_boolean()) {
+          endpoint->verify_server_ssl_ =
+              endpoint_json["verify_server_ssl"].get<bool>();
+        }
         if (endpoint_json.contains("type") &&
             endpoint_json["type"].is_string()) {
           auto endpoint_type = endpoint_json["type"].get<std::string>();

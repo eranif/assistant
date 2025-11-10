@@ -1213,6 +1213,13 @@ class ClientImpl {
     }
   }
 
+  void verifySSLCertificate(bool b) {
+    if (!this->cli) {
+      return;
+    }
+    this->cli->enable_server_certificate_verification(b);
+  }
+
  private:
   std::string GetChatPath() const {
     switch (endpoint_kind_) {

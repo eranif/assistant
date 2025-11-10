@@ -48,6 +48,7 @@ struct Endpoint {
   std::string model_;
   std::optional<size_t> max_tokens_{kMaxTokensDefault};
   std::optional<size_t> context_size_{kDefaultContextSize};
+  bool verify_server_ssl_{true};
 };
 
 struct AnthropicEndpoint : public Endpoint {
@@ -76,6 +77,7 @@ inline std::ostream& operator<<(std::ostream& os, const Endpoint& ep) {
   os << "Endpoint {url: " << ep.url_ << ", model: " << ep.model_
      << ", type: " << magic_enum::enum_name(ep.type_)
      << ", active: " << ep.active_
+     << ", verify_server_ssl: " << ep.verify_server_ssl_
      << ", max_tokens=" << ep.max_tokens_.value_or(kMaxTokensDefault) << "}";
   return os;
 }
