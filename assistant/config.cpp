@@ -111,6 +111,11 @@ std::optional<Config> Config::FromContent(const std::string& content) {
         }
         if (endpoint_json.contains("verify_server_ssl") &&
             endpoint_json["verify_server_ssl"].is_boolean()) {
+#if !CPPHTTPLIB_OPENSSL_SUPPORT
+          std::cerr << "WARNING: configuration entry 'verify_server_ssl' is "
+                       "only supported when building with OpenSSL enabled"
+                    << std::endl;
+#endif
           endpoint->verify_server_ssl_ =
               endpoint_json["verify_server_ssl"].get<bool>();
         }

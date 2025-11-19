@@ -1213,12 +1213,14 @@ class ClientImpl {
     }
   }
 
+#if CPPHTTPLIB_OPENSSL_SUPPORT
   void verifySSLCertificate(bool b) {
     if (!this->cli) {
       return;
     }
     this->cli->enable_server_certificate_verification(b);
   }
+#endif
 
  private:
   std::string GetChatPath() const {

@@ -39,6 +39,8 @@ if (ASSISTANTLIB_WITH_OPENSSL)
       COMPONENTS SSL Crypto
       REQUIRED)
   endif ()
+else ()
+  message(STATUS "TLS support is disabled")
 endif ()
 
 add_subdirectory(assistant)

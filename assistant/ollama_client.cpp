@@ -28,7 +28,11 @@ std::unique_ptr<ClientImpl> OllamaClient::CreateClient() {
                           server_timeout_settings.GetWriteTimeout().second);
   client->setEndpointKind(GetEndpointKind());
   client->setServerURL(GetUrl());
+
+#if CPPHTTPLIB_OPENSSL_SUPPORT
   client->verifySSLCertificate(m_endpoint.get_value().verify_server_ssl_);
+#endif
+
   auto headers = GetHttpHeaders();
   httplib::Headers h;
   for (const auto& [header_name, header_value] : headers) {
