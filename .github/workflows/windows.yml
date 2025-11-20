@@ -19,6 +19,11 @@ jobs:
   windows:
     runs-on: windows-latest
 
+    strategy:
+      fail-fast: false
+      matrix:
+        options: ['', '-DASSISTANTLIB_WITH_OPENSSL=OFF']
+
     steps:
 
     - name: Checkout assistant
@@ -31,5 +36,5 @@ jobs:
       run: |
         mkdir build-release
         cd build-release
-        cmake .. -DCMAKE_BUILD_TYPE=Release
+        cmake .. -DCMAKE_BUILD_TYPE=Release ${{ matrix.options }}
         cmake --build . --config Release --parallel $(nproc)

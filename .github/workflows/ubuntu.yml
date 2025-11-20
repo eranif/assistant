@@ -19,6 +19,11 @@ jobs:
   linux:
     runs-on: ubuntu-latest
 
+    strategy:
+      fail-fast: false
+      matrix:
+        options: ['', '-DASSISTANTLIB_WITH_OPENSSL=OFF']
+
     steps:
 
     - name: Checkout assistant
@@ -33,6 +38,6 @@ jobs:
       run: |
         mkdir build-release
         cd build-release
-        cmake .. -DCMAKE_BUILD_TYPE=Release -DASSISTANTLIB_BUILD_TESTS=ON
+        cmake .. -DCMAKE_BUILD_TYPE=Release -DASSISTANTLIB_BUILD_TESTS=ON ${{ matrix.options }}
         cmake --build . --config Release --parallel $(nproc)
         tests/test_claude_response_parser
