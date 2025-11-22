@@ -194,7 +194,7 @@ int main(int argc, char** argv) {
     assistant::SetLogFile(args.log_file);
   }
 
-  assistant::SetLogLevel(assistant::LogLevel::kError);
+  assistant::SetLogLevel(assistant::LogLevel::kDebug);
   std::optional<assistant::Config> conf;
   if (!args.config_file.empty()) {
     conf = assistant::Config::FromFile(args.config_file);

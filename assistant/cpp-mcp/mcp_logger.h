@@ -67,10 +67,6 @@ class logger {
 
   template <typename... Args>
   void log(log_level level, Args&&... args) {
-    if (level < level_) {
-      return;
-    }
-
     std::stringstream ss;
 
     // Add log content

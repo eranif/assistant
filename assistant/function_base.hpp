@@ -8,7 +8,7 @@
 
 namespace assistant {
 
-class MCPStdioClient;
+class MCPClient;
 class Config;
 
 template <typename ArgType>
@@ -190,8 +190,7 @@ class FunctionTable {
     }
   }
 
-  void AddMCPServer(std::shared_ptr<MCPStdioClient> client)
-      FUNCTION_LOCKS(m_mutex);
+  void AddMCPServer(std::shared_ptr<MCPClient> client) FUNCTION_LOCKS(m_mutex);
 
   FunctionResult Call(const FunctionCall& func_call) const
       FUNCTION_LOCKS(m_mutex) {
@@ -286,13 +285,13 @@ class FunctionTable {
   inline bool IsEmpty() const { return GetFunctionsCount() == 0; }
 
  private:
-  void AddMCPServerInternal(std::shared_ptr<MCPStdioClient> client)
+  void AddMCPServerInternal(std::shared_ptr<MCPClient> client)
       CALLER_MUST_LOCK(m_mutex);
 
   mutable std::mutex m_mutex;
   std::map<std::string, std::shared_ptr<FunctionBase>> m_functions
       GUARDED_BY(m_mutex);
-  std::vector<std::shared_ptr<MCPStdioClient>> m_clients GUARDED_BY(m_mutex);
+  std::vector<std::shared_ptr<MCPClient>> m_clients GUARDED_BY(m_mutex);
   friend std::ostream& operator<<(std::ostream& os, const FunctionTable& table);
 };
 

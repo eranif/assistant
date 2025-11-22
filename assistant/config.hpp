@@ -5,29 +5,56 @@
 #include <unordered_map>
 
 #include "assistant/helpers.hpp"
-#include "assistant/mcp_local_process.hpp"
+#include "assistant/mcp.hpp"
 #include "common/magic_enum.hpp"
 
 namespace assistant {
 
-const std::string_view kServerKindStdio = "stdio";
-const std::string_view kServerKindSse = "sse";
+const std::string kServerKindStdio = "stdio";
+const std::string kServerKindSse = "sse";
 
-struct MCPServerConfig {
-  std::string name;
+struct StdioParams {
   std::vector<std::string> args;
   std::optional<SSHLogin> ssh_login;
   std::optional<assistant::json> env;
-  bool enabled{true};
-  std::string type{kServerKindStdio};
   inline bool IsRemote() const { return ssh_login.has_value(); }
 };
 
+struct SseParams {
+  std::string baseurl;
+  std::string endpoint{"/sse"};
+  std::optional<std::string> auth_token;
+  std::optional<assistant::json> headers;
+};
+
+struct MCPServerConfig {
+  std::string name;
+  bool enabled{true};
+  std::optional<StdioParams> stdio_params;
+  std::optional<SseParams> sse_params;
+  inline bool IsStdio() const { return stdio_params.has_value(); }
+  inline bool IsSse() const { return sse_params.has_value(); }
+};
+
 inline std::ostream& operator<<(std::ostream& os, const MCPServerConfig& mcp) {
-  os << "MCPServerConfig {name: " << mcp.name << ", command: " << mcp.args
-     << ", env: "
-     << (mcp.env.has_value() ? mcp.env.value() : assistant::json::object())
-     << "}";
+  if (mcp.stdio_params.has_value()) {
+    const auto& params = mcp.stdio_params.value();
+    os << "MCPServerConfig(STDIO) {name: " << mcp.name
+       << ", enabled: " << mcp.enabled << ", command: " << params.args;
+    if (params.env.has_value()) {
+      os << ", env: " << params.env.value().dump(2);
+    }
+    os << "}";
+  } else if (mcp.sse_params.has_value()) {
+    const auto& params = mcp.sse_params.value();
+    os << "MCPServerConfig(SSE) {name: " << mcp.name
+       << ", enabled: " << mcp.enabled << ", baseurl: " << params.baseurl
+       << ", endpoint: " << params.endpoint;
+    if (params.headers.has_value()) {
+      os << ", headers: " << params.headers.value().dump(2);
+    }
+    os << "}";
+  }
   return os;
 }
 

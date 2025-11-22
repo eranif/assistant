@@ -8,8 +8,8 @@ add_library(
   ${CMAKE_CURRENT_LIST_DIR}/ollama_client.hpp
   ${CMAKE_CURRENT_LIST_DIR}/claude_client.cpp
   ${CMAKE_CURRENT_LIST_DIR}/claude_client.hpp
-  ${CMAKE_CURRENT_LIST_DIR}/mcp_local_process.cpp
-  ${CMAKE_CURRENT_LIST_DIR}/mcp_local_process.hpp
+  ${CMAKE_CURRENT_LIST_DIR}/mcp.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/mcp.hpp
   ${CMAKE_CURRENT_LIST_DIR}/function.cpp
   ${CMAKE_CURRENT_LIST_DIR}/function.hpp
   ${CMAKE_CURRENT_LIST_DIR}/function_base.cpp

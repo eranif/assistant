@@ -32,6 +32,24 @@ T GetValueFromJsonWithDefault(const json& j, const std::string& name,
     return default_value;
   }
 }
+
+template <typename T>
+std::optional<T> GetValueFromJsonOneOf(const json& j, const std::string& name,
+                                       const std::unordered_set<T>& options) {
+  try {
+    if (!j.contains(name)) {
+      return std::nullopt;
+    }
+    T v = j[name].get<T>();
+    if (!options.count(v)) {
+      return std::nullopt;
+    }
+    return v;
+  } catch (std::exception& e) {
+    OLOG(OLogLevel::kError) << e.what();
+    return std::nullopt;
+  }
+}
 }  // namespace
 
 std::optional<Config> Config::FromFile(const std::string& filepath) {
@@ -64,33 +82,60 @@ std::optional<Config> Config::FromContent(const std::string& content) {
       // MCP servers
       auto mcp_servers = parsed_data["mcp_servers"];
       for (const auto& [name, server] : mcp_servers.items()) {
+        // Common to both stdio/sse tools
         MCPServerConfig server_config;
         server_config.name = name;
         server_config.enabled =
             GetValueFromJson<bool>(server, "enabled").value_or(true);
-        server_config.type = GetValueFromJson<std::string>(server, "type")
-                                 .value_or(std::string{kServerKindStdio});
-        std::vector<std::string> args;
-        server_config.args =
-            GetValueFromJsonWithDefault<std::vector<std::string>>(
-                server, "command", {});
-        if (server.contains("ssh")) {
-          auto ssh = server["ssh"];
-          SSHLogin login;
-          login.hostname = GetValueFromJson<std::string>(ssh, "hostname")
-                               .value_or(std::string{"127.0.0.1"});
-          login.ssh_program = GetValueFromJson<std::string>(ssh, "ssh_program")
-                                  .value_or(std::string{});
-          login.ssh_key =
-              GetValueFromJson<std::string>(ssh, "key").value_or(std::string{});
-          login.user = GetValueFromJson<std::string>(ssh, "user")
-                           .value_or(std::string{});
-          login.port = GetValueFromJson<int>(ssh, "port").value_or(22);
-          server_config.ssh_login = std::move(login);
-        }
+        std::string type =
+            GetValueFromJsonOneOf<std::string>(
+                server, "type", {kServerKindStdio, kServerKindSse})
+                .value_or(std::string{kServerKindStdio});
 
-        if (server.contains("env")) {
-          server_config.env = server["env"];
+        // Read config per type
+        if (type == kServerKindStdio) {
+          // STDIO based tool
+          StdioParams params;
+          std::vector<std::string> args;
+          params.args = GetValueFromJsonWithDefault<std::vector<std::string>>(
+              server, "command", {});
+          if (server.contains("ssh")) {
+            auto ssh = server["ssh"];
+            SSHLogin login;
+            login.hostname = GetValueFromJson<std::string>(ssh, "hostname")
+                                 .value_or(std::string{"127.0.0.1"});
+            login.ssh_program =
+                GetValueFromJson<std::string>(ssh, "ssh_program")
+                    .value_or(std::string{});
+            login.ssh_key = GetValueFromJson<std::string>(ssh, "key")
+                                .value_or(std::string{});
+            login.user = GetValueFromJson<std::string>(ssh, "user")
+                             .value_or(std::string{});
+            login.port = GetValueFromJson<int>(ssh, "port").value_or(22);
+            params.ssh_login = std::move(login);
+          }
+
+          if (server.contains("env")) {
+            params.env = server["env"];
+          }
+          server_config.stdio_params = std::move(params);
+        } else {
+          SseParams params;
+          // SSE tool
+          if (server.contains("baseurl") && server["baseurl"].is_string()) {
+            params.baseurl = server["baseurl"].get<std::string>();
+          }
+          if (server.contains("endpoint") && server["endpoint"].is_string()) {
+            params.endpoint = server["endpoint"].get<std::string>();
+          }
+          if (server.contains("headers")) {
+            params.headers = server["headers"];
+          }
+          if (server.contains("auth_token") &&
+              server["auth_token"].is_string()) {
+            params.auth_token = server["auth_token"].get<std::string>();
+          }
+          server_config.sse_params = std::move(params);
         }
         config.m_servers.push_back(std::move(server_config));
       }

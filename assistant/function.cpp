@@ -1,9 +1,9 @@
 #include "assistant/function.hpp"
 
-#include "assistant/mcp_local_process.hpp"
+#include "assistant/mcp.hpp"
 
 namespace assistant {
-ExternalFunction::ExternalFunction(assistant::MCPStdioClient* client, mcp::tool t)
+ExternalFunction::ExternalFunction(assistant::MCPClient* client, mcp::tool t)
     : FunctionBase(t.name, t.description),
       m_client(client),
       m_tool(std::move(t)) {

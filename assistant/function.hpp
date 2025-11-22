@@ -7,7 +7,7 @@
 #include "assistant/assistantlib.hpp"
 
 namespace assistant {
-class MCPStdioClient;
+class MCPClient;
 
 using FunctionSignature = std::function<FunctionResult(const json&)>;
 
@@ -26,11 +26,11 @@ class InProcessFunction : public FunctionBase {
 
 class ExternalFunction : public FunctionBase {
  public:
-  ExternalFunction(assistant::MCPStdioClient* client, mcp::tool t);
+  ExternalFunction(assistant::MCPClient* client, mcp::tool t);
   FunctionResult Call(const json& args) const override;
 
  protected:
-  assistant::MCPStdioClient* m_client{nullptr};
+  assistant::MCPClient* m_client{nullptr};
   mcp::tool m_tool;
 };
 

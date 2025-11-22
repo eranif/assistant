@@ -1,5 +1,8 @@
-#include "mcp_local_process.hpp"
+#include "mcp.hpp"
 
+#include "assistant/cpp-mcp/mcp_client.h"
+#include "assistant/cpp-mcp/mcp_sse_client.h"
+#include "assistant/cpp-mcp/mcp_stdio_client.h"
 #include "assistant/function.hpp"
 
 namespace assistant {
@@ -33,16 +36,49 @@ void EscapeDoubleQuotes(std::string& str) {
 }
 }  // namespace
 
-MCPStdioClient::MCPStdioClient(const std::vector<std::string>& args,
-                               std::optional<assistant::json> env)
+MCPClient::MCPClient(const std::vector<std::string>& args,
+                     std::optional<assistant::json> env)
     : m_args(args), m_env(std::move(env)) {}
 
-MCPStdioClient::MCPStdioClient(const SSHLogin& ssh_login,
-                               const std::vector<std::string>& args,
-                               std::optional<assistant::json> env)
+MCPClient::MCPClient(
+    const std::string& base_url, const std::string& sse_endpoint,
+    const std::string& auth_token,
+    const std::vector<std::pair<std::string, std::string>>& headers)
+    : m_base_url{base_url},
+      m_sse_endpoint{sse_endpoint},
+      m_auth_token{auth_token},
+      m_headers{headers},
+      m_is_sse{true} {}
+
+MCPClient::MCPClient(const SSHLogin& ssh_login,
+                     const std::vector<std::string>& args,
+                     std::optional<assistant::json> env)
     : m_args(args), m_ssh_login(ssh_login), m_env(std::move(env)) {}
 
-bool MCPStdioClient::Initialise() {
+bool MCPClient::InitialiseSSE() {
+  try {
+    auto c = new mcp::sse_client(m_base_url, m_sse_endpoint);
+    if (!m_auth_token.empty()) {
+      c->set_auth_token(m_auth_token);
+    }
+    // For now set an **empty** json array for capabilities to avoid sending a
+    // null one.
+    c->set_capabilities(json({}));
+    c->initialize("assistant", "1.0");
+    for (const auto& [k, v] : m_headers) {
+      c->set_header(k, v);
+    }
+    c->ping();
+    m_tools = c->get_tools();
+    m_client.reset(c);
+    return true;
+  } catch (std::exception& e) {
+    OLOG(LogLevel::kWarning) << e.what();
+    return false;
+  }
+}
+
+bool MCPClient::InitialiseStdio() {
   try {
     std::stringstream ss;
     for (size_t i = 0; i < m_args.size(); ++i) {
@@ -97,8 +133,15 @@ bool MCPStdioClient::Initialise() {
   }
 }
 
-FunctionResult MCPStdioClient::Call(const mcp::tool& t,
-                                    const json& args) const {
+bool MCPClient::Initialise() {
+  if (m_is_sse) {
+    return InitialiseSSE();
+  } else {
+    return InitialiseStdio();
+  }
+}
+
+FunctionResult MCPClient::Call(const mcp::tool& t, const json& args) const {
   auto result = m_client->call_tool(t.name, args);
   FunctionResult call_result{
       .isError = result["isError"].get<bool>(),
@@ -106,13 +149,12 @@ FunctionResult MCPStdioClient::Call(const mcp::tool& t,
   return call_result;
 }
 
-std::vector<std::shared_ptr<FunctionBase>> MCPStdioClient::GetFunctions()
-    const {
+std::vector<std::shared_ptr<FunctionBase>> MCPClient::GetFunctions() const {
   std::vector<std::shared_ptr<FunctionBase>> result;
   result.reserve(m_tools.size());
   for (auto t : m_tools) {
     std::shared_ptr<FunctionBase> f = std::make_shared<ExternalFunction>(
-        const_cast<MCPStdioClient*>(this), std::move(t));
+        const_cast<MCPClient*>(this), std::move(t));
     result.push_back(std::move(f));
   }
   return result;
