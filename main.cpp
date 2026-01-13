@@ -84,6 +84,7 @@ struct ArgvIter {
 struct Args {
   std::string log_file;
   bool verbose{false};
+  bool enable_builtin_mcps{true};
   OLogLevel log_level{OLogLevel::kInfo};
   std::string config_file;
 };
@@ -94,7 +95,7 @@ Args ParseCommandLine(int argc, char** argv) {
   while (iter.Valid()) {
     auto arg = iter.GetArgument();
     iter.Next();
-    if (arg == "--loglevel" && iter.Valid()) {
+    if ((arg == "--loglevel" || arg == "--log-level") && iter.Valid()) {
       args.log_level = assistant::Logger::FromString(iter.GetArgument());
       iter.Next();
     } else if ((arg == "-c" || arg == "--config") && iter.Valid()) {
@@ -106,11 +107,14 @@ Args ParseCommandLine(int argc, char** argv) {
     } else if ((arg == "-v" || arg == "--verbose")) {
       std::cout << "Verbose mode enabled" << std::endl;
       args.verbose = true;
+    } else if (arg == "--no-builtin-mcp") {
+      std::cout << "Built In MCPs are disabled" << std::endl;
+      args.enable_builtin_mcps = false;
     } else if (arg == "--help" || arg == "-h") {
       std::cout << "Usage:" << std::endl;
       std::cout << argv[0]
                 << " [--loglevel <LEVEL>] [-c | --config <CONFIG_PATH>] "
-                   "[--logfile <LOG_FILE>] [-v | --verbose]"
+                   "[--logfile <LOG_FILE>] [-v | --verbose] [--no-builtin-mcp]"
                 << std::endl;
       exit(0);
     }
@@ -212,32 +216,36 @@ int main(int argc, char** argv) {
   }
   std::shared_ptr<assistant::ClientBase> cli = cli_opt.value();
 
-  cli->GetFunctionTable().Add(
-      FunctionBuilder("Open_file_in_editor")
-          .SetDescription(
-              "Given a file path, open it inside the editor for editing.")
-          .AddRequiredParam("filepath", "the path of the file on the disk.",
-                            "string")
-          .SetCallback(OpenFileInEditor)
-          .Build());
+  if (args.enable_builtin_mcps) {
+    cli->GetFunctionTable().Add(
+        FunctionBuilder("Open_file_in_editor")
+            .SetDescription(
+                "Given a file path, open it inside the editor for editing.")
+            .AddRequiredParam("filepath", "the path of the file on the disk.",
+                              "string")
+            .SetCallback(OpenFileInEditor)
+            .Build());
 
-  cli->GetFunctionTable().Add(
-      FunctionBuilder("Write_file_content_to_disk_at_a_given_path")
-          .SetDescription("Write file content to disk at a given path. Create "
-                          "the file if it does not exist.")
-          .AddRequiredParam("filepath", "the path of the file on the disk.",
-                            "string")
-          .AddRequiredParam("file_content", "the content of the file", "string")
-          .SetCallback(WriteFileContent)
-          .Build());
+    cli->GetFunctionTable().Add(
+        FunctionBuilder("Write_file_content_to_disk_at_a_given_path")
+            .SetDescription(
+                "Write file content to disk at a given path. Create "
+                "the file if it does not exist.")
+            .AddRequiredParam("filepath", "the path of the file on the disk.",
+                              "string")
+            .AddRequiredParam("file_content", "the content of the file",
+                              "string")
+            .SetCallback(WriteFileContent)
+            .Build());
 
-  cli->GetFunctionTable().Add(
-      FunctionBuilder("Read_file_content_from_a_given_path")
-          .SetDescription("Read file content from the disk at a given path.")
-          .AddRequiredParam("filepath", "the path of the file on the disk.",
-                            "string")
-          .SetCallback(ToolReadFileContent)
-          .Build());
+    cli->GetFunctionTable().Add(
+        FunctionBuilder("Read_file_content_from_a_given_path")
+            .SetDescription("Read file content from the disk at a given path.")
+            .AddRequiredParam("filepath", "the path of the file on the disk.",
+                              "string")
+            .SetCallback(ToolReadFileContent)
+            .Build());
+  }
 
   std::cout << "Waiting for: " << cli->GetUrl() << " to become available..."
             << std::endl;
