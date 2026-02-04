@@ -18,6 +18,7 @@ enum class Event {
   ping,
   content_block_delta,
   content_block_stop,
+  error,
 };
 
 enum class ContentType {
@@ -51,7 +52,64 @@ enum class StopReason {
   tool_use,
   /// we paused a long-running turn. You may provide the response
   pause_turn,
+  /// an error occured.
+  error,
 };
+
+enum class ErrorCode {
+  /// There was an issue with the format or content of your request.
+  invalid_request_error,
+  /// There's an issue with your API key.
+  authentication_error,
+  /// Your API key does not have permission to use the specified resource.
+  permission_error,
+  /// The requested resource was not found
+  not_found_error,
+  /// Request exceeds the maximum allowed number of bytes. The maximum request
+  /// size is 32 MB for standard API endpoints.
+  request_too_large,
+  /// Your account has hit a rate limit.
+  rate_limit_error,
+  /// An unexpected error has occurred internal to Anthropic's systems.
+  api_error,
+  /// The API is temporarily overloaded.
+  overloaded_error,
+  /// General error.
+  general_error,
+};
+
+inline std::string_view ErrorCodeToString(ErrorCode ec) {
+  switch (ec) {
+    /// There was an issue with the format or content of your request.
+    case ErrorCode::invalid_request_error:
+      return "There was an issue with the format or content of your request.";
+    /// There's an issue with your API key.
+    case ErrorCode::authentication_error:
+      /// Your API key does not have permission to use the specified resource.
+      return "Your API key does not have permission to use the specified "
+             "resource.";
+    case ErrorCode::permission_error:
+      /// The requested resource was not found
+      return "The requested resource was not found";
+    case ErrorCode::not_found_error:
+      /// Request exceeds the maximum allowed number of bytes. The maximum
+      /// request size is 32 MB for standard API endpoints.
+      return "Request exceeds the maximum allowed number of bytes.";
+    case ErrorCode::request_too_large:
+      /// Your account has hit a rate limit.
+      return "Your account has hit a rate limit.";
+    case ErrorCode::rate_limit_error:
+    /// An unexpected error has occurred internal to Anthropic's systems.
+    case ErrorCode::api_error:
+      return "An unexpected error has occurred internal to Anthropic's "
+             "systems.";
+    /// The API is temporarily overloaded.
+    case ErrorCode::overloaded_error:
+      return "The API is temporarily overloaded";
+    case ErrorCode::general_error:
+      return "General error.";
+  }
+}
 
 struct EventMessage {
   Event event;
@@ -145,6 +203,9 @@ class ResponseParser {
     m_state = ParserState::initial;
     m_tool_call.Reset();
   }
+
+  static std::optional<std::string> GetErrorMessage(
+      const std::string& event_message);
 
  private:
   void AppendText(const std::string& text);

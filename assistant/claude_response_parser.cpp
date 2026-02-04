@@ -64,6 +64,14 @@ void ResponseParser::Parse(const std::string& text,
         break;
         case ParserState::collect_text:
           switch (event_message.event) {
+            case Event::error:
+              cb(std::move(ParseResult{
+                  .is_done = true,
+                  .content = GetErrorMessage(event_message.data).value_or(""),
+                  .stop_reason = StopReason::error,
+              }));
+              Reset();
+              return;
             case Event::message_stop:
               cb(std::move(
                   ParseResult{.is_done = true,
@@ -104,6 +112,14 @@ void ResponseParser::Parse(const std::string& text,
               m_tool_call.Reset();
               m_state = ParserState::initial;
             } break;
+            case Event::error:
+              cb(std::move(ParseResult{
+                  .is_done = true,
+                  .content = GetErrorMessage(event_message.data).value_or(""),
+                  .stop_reason = StopReason::error,
+              }));
+              Reset();
+              return;
             case Event::message_stop:
               cb(std::move(
                   ParseResult{.is_done = true,
@@ -131,7 +147,14 @@ void ResponseParser::Parse(const std::string& text,
                               .stop_reason = GetStopReason(event_message)}));
               Reset();
               return;
-              break;
+            case Event::error:
+              cb(std::move(ParseResult{
+                  .is_done = true,
+                  .content = GetErrorMessage(event_message.data).value_or(""),
+                  .stop_reason = StopReason::error,
+              }));
+              Reset();
+              return;
             case Event::ping:
             case Event::content_block_start:
             case Event::message_start:
@@ -222,6 +245,23 @@ std::optional<StopReason> ResponseParser::GetStopReason(
     }
     std::string stop_reason = j["delta"]["stop_reason"].get<std::string>();
     return magic_enum::enum_cast<StopReason>(stop_reason);
+  } catch (...) {
+    return std::nullopt;
+  }
+}
+
+std::optional<std::string> ResponseParser::GetErrorMessage(
+    const std::string& event_message) {
+  // data example incase of an error:
+  // {"type":"error","error":{"details":null,"type":"overloaded_error","message":"Overloaded"},"request_id":"req_011CXnsFdbuV3b51g7bRNngu"
+  // }
+  auto j = json::parse(event_message);
+  try {
+    std::string error_str = j["error"]["type"].get<std::string>();
+    auto ec = magic_enum::enum_cast<ErrorCode>(
+        std::string_view{error_str.c_str(), error_str.length()});
+    return std::string{
+        ErrorCodeToString(ec.value_or(ErrorCode::general_error))};
   } catch (...) {
     return std::nullopt;
   }

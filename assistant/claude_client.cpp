@@ -169,6 +169,8 @@ bool ClaudeClient::HandleResponse(const std::string& resp,
   } catch (const std::exception& e) {
     OLOG(LogLevel::kWarning)
         << "ClaudeClient::HandleResponse: got an exception. " << e.what();
+    OLOG(LogLevel::kWarning)
+        << claude::ResponseParser::GetErrorMessage(resp).value_or("");
     req->callback_(e.what(), Reason::kFatalError, false);
     m_responseParser->Reset();
     return false;  // close the current session.
