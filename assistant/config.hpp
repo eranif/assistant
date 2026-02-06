@@ -148,7 +148,48 @@ class Config {
   ~Config() = default;
   Config() = default;
 
+  /**
+   * @brief Constructs a Config object by reading and parsing a configuration
+   * file.
+   *
+   * Attempts to open the specified file, reads its entire contents, and
+   * delegates parsing to FromContent. If file access fails or parsing throws an
+   * exception, an error is logged and std::nullopt is returned.
+   *
+   * @param filepath Path to the configuration file to load.
+   * @return std::optional<Config> A populated Config object on success, or
+   * std::nullopt if the file cannot be opened or parsing fails.
+   *
+   * @throws None — exceptions during parsing or file I/O are caught internally
+   *         and logged; the function always returns std::optional<Config>.
+   *
+   * @see FromContent
+   */
   static std::optional<Config> FromFile(const std::string& filepath);
+
+  /**
+   * Parses a JSON configuration string and constructs a Config object.
+   *
+   * This function deserializes a JSON-formatted string containing MCP server
+   * configurations, endpoint definitions, timeout settings, and global options
+   * into a fully-initialized Config instance. It supports two types of MCP
+   * servers—stdio (local command execution, optionally over SSH) and SSE
+   * (HTTP/REST-based via WebSocket-like streaming). Endpoints are validated
+   * for required fields (e.g., 'model'), and exactly one endpoint is ensured
+   * to be active after parsing. On any JSON parse error or configuration
+   * validation failure, the function logs the issue and returns std::nullopt.
+   *
+   * @param content A JSON string containing the full configuration, including
+   *        optional top-level keys: "mcp_servers", "endpoints",
+   * "server_timeout", "history_size", "log_level", "keep_alive", and "stream".
+   * @return An optional Config object populated from the input; std::nullopt if
+   *         parsing fails, required fields are missing (e.g., endpoint
+   * 'model'), or an invalid endpoint type is specified.
+   * @throws No C++ exceptions propagate to the caller; all exceptions thrown
+   *         during parsing or validation are caught internally and converted to
+   *         a std::nullopt return with an error log.
+   * @see Config, Endpoint, MCPServerConfig, StdioParams, SseParams
+   */
   static std::optional<Config> FromContent(const std::string& json_content);
 
   inline const std::vector<MCPServerConfig>& GetServers() const {

@@ -113,6 +113,26 @@ struct ChatRequestQueue {
   std::vector<std::shared_ptr<ChatRequest>> m_vec GUARDED_BY(m_mutex);
 };
 
+struct Message {
+  std::string role;
+  std::string text;
+
+  assistant::message as_message() const {
+    return assistant::message{role, text};
+  }
+
+  static std::optional<Message> from_message(const assistant::message& j) {
+    try {
+      Message m;
+      m.text = j["content"].get<std::string>();
+      m.role = j["role"].get<std::string>();
+      return m;
+    } catch (...) {
+      return std::nullopt;
+    }
+  }
+};
+
 class ClientBase {
  public:
   ClientBase() = default;
@@ -197,6 +217,31 @@ class ClientBase {
   /// Clear all history messages.
   void ClearHistoryMessages() {
     m_messages.with_mut([](assistant::messages& msgs) { msgs.clear(); });
+  }
+
+  /// Return the history messages.
+  std::vector<Message> GetHistory() const {
+    std::vector<Message> history;
+    m_messages.with([&history](const assistant::messages& m) {
+      for (const auto& msg : m) {
+        auto message = Message::from_message(msg);
+        if (message.has_value()) {
+          history.push_back(message.value());
+        }
+      }
+    });
+    return history;
+  }
+
+  /// Replace the history.
+  void SetHistory(const std::vector<Message>& history) {
+    m_messages.with_mut([&history](assistant::messages& m) {
+      m.clear();
+      m.reserve(history.size());
+      for (const auto& msg : history) {
+        m.push_back(msg.as_message());
+      }
+    });
   }
 
   inline std::string GetUrl() const { return m_endpoint.get_value().url_; }
