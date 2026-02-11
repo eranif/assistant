@@ -39,33 +39,8 @@ std::string Yellow(std::string_view word) {
   ss << kYellow << word << kReset;
   return ss.str();
 }
-
-std::mutex prompt_queue_mutex;
-std::vector<std::pair<std::string, assistant::ChatOptions>> prompt_queue;
-std::condition_variable cv;
-
-/// Push prompt to the queue
-void push_prompt(std::string prompt, assistant::ChatOptions options) {
-  std::unique_lock lk{prompt_queue_mutex};
-  prompt_queue.push_back({std::move(prompt), std::move(options)});
-  cv.notify_one();
-}
-
-/// Get prompt from the queue
-std::optional<std::pair<std::string, assistant::ChatOptions>> pop_prompt() {
-  std::unique_lock lk{prompt_queue_mutex};
-  auto res = cv.wait_for(lk, std::chrono::milliseconds(500),
-                         []() { return !prompt_queue.empty(); });
-  if (!res || prompt_queue.empty()) {
-    return std::nullopt;
-  }
-
-  auto item = std::move(prompt_queue.front());
-  prompt_queue.erase(prompt_queue.begin());
-  return item;
-}
-
 }  // namespace
+
 struct ArgvIter {
  public:
   ArgvIter(int argc, char** argv) : m_argc(argc), m_argv(argv) {}
@@ -83,7 +58,7 @@ struct ArgvIter {
 
 struct Args {
   std::string log_file;
-  bool verbose{false};
+  bool print_to_stdout{true};
   bool enable_builtin_mcps{true};
   OLogLevel log_level{OLogLevel::kInfo};
   std::string config_file;
@@ -104,17 +79,15 @@ Args ParseCommandLine(int argc, char** argv) {
     } else if (arg == "--logfile" && iter.Valid()) {
       args.log_file = iter.GetArgument();
       iter.Next();
-    } else if ((arg == "-v" || arg == "--verbose")) {
-      std::cout << "Verbose mode enabled" << std::endl;
-      args.verbose = true;
+    } else if ((arg == "-s" || arg == "--silence")) {
+      args.print_to_stdout = false;
     } else if (arg == "--no-builtin-mcp") {
-      std::cout << "Built In MCPs are disabled" << std::endl;
       args.enable_builtin_mcps = false;
     } else if (arg == "--help" || arg == "-h") {
       std::cout << "Usage:" << std::endl;
       std::cout << argv[0]
                 << " [--loglevel <LEVEL>] [-c | --config <CONFIG_PATH>] "
-                   "[--logfile <LOG_FILE>] [-v | --verbose] [--no-builtin-mcp]"
+                   "[--logfile <LOG_FILE>] [-s | --silence] [--no-builtin-mcp]"
                 << std::endl;
       exit(0);
     }
@@ -196,6 +169,16 @@ bool CanRunTool(const std::string& tool_name) {
   return ReadYesOrNoFromUser(prompt.str());
 }
 
+static Args args;
+
+void PrintPrompt() {
+  if (!args.print_to_stdout) {
+    return;
+  }
+  std::cout << "\n> ";
+  std::cout.flush();
+}
+
 void HandlePrompt(std::shared_ptr<assistant::ClientBase> cli,
                   const std::string& model_name, const std::string& prompt,
                   assistant::ChatOptions options) {
@@ -249,14 +232,14 @@ void HandlePrompt(std::shared_ptr<assistant::ClientBase> cli,
         return true;
       },
       options);
-  std::cout << "\n" << std::endl;
+  PrintPrompt();
 }
 
 int main(int argc, char** argv) {
 #ifdef __WIN32
   SetConsoleOutputCP(65001);
 #endif
-  auto args = ParseCommandLine(argc, argv);
+  args = ParseCommandLine(argc, argv);
   if (!args.log_file.empty()) {
     assistant::SetLogFile(args.log_file);
   }
@@ -313,44 +296,47 @@ int main(int argc, char** argv) {
   // Set a Human-In-Loop callback.
   cli->SetTookInvokeCallback(CanRunTool);
 
-  OLOG_DEBUG() << "Waiting for: " << cli->GetUrl() << " to become available..."
-               << std::endl;
+  if (args.print_to_stdout) {
+    std::cout << "Waiting for: " << cli->GetUrl() << " to become available..."
+              << std::endl;
+  }
 
   while (true) {
     if (cli->IsRunning()) {
-      OLOG_INFO() << "Server: " << cli->GetUrl() << " is running!";
+      if (args.print_to_stdout) {
+        std::cout << "Server: " << cli->GetUrl() << " is running!" << std::endl;
+      }
       break;
     }
-    std::this_thread::sleep_for(std::chrono::seconds(1));
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
 
-  OLOG_DEBUG() << "\n";
-  OLOG_DEBUG() << "Available functions:" << std::endl;
-  OLOG_DEBUG() << "====================" << std::endl;
-
-  OLOG_DEBUG() << cli->GetFunctionTable() << std::endl;
-
-  OLOG_DEBUG() << "Using Model " << Cyan(cli->GetModel()) << std::endl;
   std::string model_name = cli->GetModel();
-
-  OLOG_DEBUG() << "" << std::endl;
-  OLOG_DEBUG() << Yellow("#") << " Interactive session started." << std::endl;
-  OLOG_DEBUG() << Yellow("#") << " Type " << Cyan("q") << ", " << Cyan("quit")
-               << " or " << Cyan("exit") << " to exit." << std::endl;
-  OLOG_DEBUG() << Yellow("#") << " Type " << Cyan("clear") << " or "
-               << Cyan("reset") << " to clear the session." << std::endl;
-  OLOG_DEBUG() << Yellow("#") << " Type " << Cyan("/info")
-               << " to get model information." << std::endl;
-  OLOG_DEBUG() << Yellow("#") << " To read prompt from a file, use "
-               << Cyan("@") << "filename followed by ENTER" << std::endl;
-  OLOG_DEBUG() << Yellow("#") << " Use " << Cyan("/no_tools")
-               << " to disable tool calls." << std::endl;
-  OLOG_DEBUG() << Yellow("#") << " Use " << Cyan("/chat_defaults")
-               << " to restore chat options to default." << std::endl;
-  OLOG_DEBUG() << Yellow("#") << " Use " << Cyan("/int")
-               << " to interrupt the connection." << std::endl;
-  OLOG_DEBUG() << "" << std::endl;
-  OLOG_DEBUG() << ">";
+  if (args.print_to_stdout) {
+    std::cout << "\n";
+    std::cout << "Available functions:" << std::endl;
+    std::cout << "====================" << std::endl;
+    std::cout << cli->GetFunctionTable() << std::endl;
+    std::cout << "Using Model " << Cyan(cli->GetModel()) << std::endl;
+    std::cout << "" << std::endl;
+    std::cout << Yellow("#") << " Interactive session started." << std::endl;
+    std::cout << Yellow("#") << " Type " << Cyan("q") << ", " << Cyan("quit")
+              << " or " << Cyan("exit") << " to exit." << std::endl;
+    std::cout << Yellow("#") << " Type " << Cyan("/info")
+              << " to get model information." << std::endl;
+    std::cout << Yellow("#") << " To read prompt from a file, use " << Cyan("@")
+              << "filename followed by ENTER" << std::endl;
+    std::cout << Yellow("#") << " Use " << Cyan("/no_tools")
+              << " to disable tool calls." << std::endl;
+    std::cout
+        << Yellow("#") << " Use " << Cyan("/reset")
+        << " to restore chat options to default and clear the chat history."
+        << std::endl;
+    std::cout << Yellow("#") << " Use " << Cyan("/int")
+              << " to interrupt the connection." << std::endl;
+    std::cout << "" << std::endl;
+    PrintPrompt();
+  }
 
   assistant::ChatOptions options{assistant::ChatOptions::kDefault};
 
@@ -363,19 +349,20 @@ int main(int argc, char** argv) {
       break;
     } else if (prompt == "/no_tools") {
       assistant::AddFlagSet(options, assistant::ChatOptions::kNoTools);
-      std::cout << "Tools are disabled" << std::endl;
-      std::cout << "\n>";
-      std::cout.flush();
+      std::cout << ">> Tools are disabled" << std::endl;
+      PrintPrompt();
       continue;
     } else if (prompt == "/int") {
       cli->Interrupt();
-      std::cout << "Main Thread: Interrupted" << std::endl;
       break;
-    } else if (prompt == "/chat_defaults") {
+    } else if (prompt == "/reset") {
+      cli->ClearHistoryMessages();
+      cli->ClearMessageQueue();
       options = assistant::ChatOptions::kDefault;
-      std::cout << "Chat options restored to defaults." << std::endl;
-      std::cout << "\n>";
-      std::cout.flush();
+      if (args.print_to_stdout) {
+        std::cout << ">> Chat options restored to defaults." << std::endl;
+      }
+      PrintPrompt();
       continue;
     } else if (prompt == "/info") {
       auto model_options = cli->GetModelInfo(model_name);
@@ -384,21 +371,12 @@ int main(int argc, char** argv) {
                   << std::endl;
         std::cout << std::setw(2) << model_options.value()["model_info"]
                   << std::endl;
-        std::cout << "\n>";
-        std::cout.flush();
+        PrintPrompt();
       } else {
-        std::cerr << "Could not loading information for model: " << model_name
-                  << std::endl;
-        std::cout << "\n>";
-        std::cout.flush();
+        std::cerr << ">> Could not loading information for model: "
+                  << model_name << std::endl;
+        PrintPrompt();
       }
-      continue;
-    } else if (prompt == "clear" || prompt == "reset") {
-      // Clear the session
-      cli->Shutdown();
-      std::cout << "Session cleared." << std::endl;
-      std::cout << "\n>";
-      std::cout.flush();
       continue;
     }
 
@@ -407,8 +385,7 @@ int main(int argc, char** argv) {
       if (!content.IsOk()) {
         std::cerr << "Error reading prompt. " << content.GetError()
                   << std::endl;
-        std::cout << "\n>";
-        std::cout.flush();
+        PrintPrompt();
         continue;
       } else {
         prompt = content.GetValue();
