@@ -45,12 +45,7 @@ endif ()
 
 add_subdirectory(assistant)
 if (ASSISTANTLIB_BUILD_EXAMPLE)
-  set(CLI "code-assist")
-  add_executable(${CLI} main.cpp)
-  if (ASSISTANTLIB_WITH_OPENSSL)
-    target_link_libraries(${CLI} PRIVATE OpenSSL::SSL OpenSSL::Crypto)
-  endif ()
-  target_link_libraries(${CLI} PRIVATE assistantlib)
+  add_subdirectory(cli)
 endif ()
 
 if (ASSISTANTLIB_BUILD_TESTS)
