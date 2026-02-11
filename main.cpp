@@ -219,14 +219,14 @@ void HandlePrompt(std::shared_ptr<assistant::ClientBase> cli,
         switch (reason) {
           case assistant::Reason::kDone:
             std::cout << std::endl;
-            OLOG(OLogLevel::kInfo) << "Completed!";
+            OLOG_INFO() << "Completed!";
             done = true;
             break;
           case assistant::Reason::kLogNotice:
-            OLOG(OLogLevel::kInfo) << output;
+            OLOG_INFO() << output;
             break;
           case assistant::Reason::kLogDebug:
-            OLOG(OLogLevel::kDebug) << output;
+            OLOG_DEBUG() << output;
             break;
           case assistant::Reason::kPartialResult:
             if (thinking) {
@@ -237,11 +237,11 @@ void HandlePrompt(std::shared_ptr<assistant::ClientBase> cli,
             std::cout.flush();
             break;
           case assistant::Reason::kFatalError:
-            OLOG(OLogLevel::kError) << output;
+            OLOG_ERROR() << output;
             done = true;
             break;
           case assistant::Reason::kCancelled:
-            OLOG(OLogLevel::kWarning) << output;
+            OLOG_WARN() << output;
             done = true;
             break;
         }
@@ -249,8 +249,7 @@ void HandlePrompt(std::shared_ptr<assistant::ClientBase> cli,
         return true;
       },
       options);
-  std::cout << "\n>";
-  std::cout.flush();
+  std::cout << "\n" << std::endl;
 }
 
 int main(int argc, char** argv) {
@@ -314,46 +313,45 @@ int main(int argc, char** argv) {
   // Set a Human-In-Loop callback.
   cli->SetTookInvokeCallback(CanRunTool);
 
-  std::cout << "Waiting for: " << cli->GetUrl() << " to become available..."
-            << std::endl;
+  OLOG_DEBUG() << "Waiting for: " << cli->GetUrl() << " to become available..."
+               << std::endl;
 
   while (true) {
     if (cli->IsRunning()) {
-      OLOG(OLogLevel::kInfo) << "Server: " << cli->GetUrl() << " is running!";
+      OLOG_INFO() << "Server: " << cli->GetUrl() << " is running!";
       break;
     }
     std::this_thread::sleep_for(std::chrono::seconds(1));
   }
 
-  std::cout << "\n";
-  std::cout << "Available functions:" << std::endl;
-  std::cout << "====================" << std::endl;
+  OLOG_DEBUG() << "\n";
+  OLOG_DEBUG() << "Available functions:" << std::endl;
+  OLOG_DEBUG() << "====================" << std::endl;
 
-  std::cout << cli->GetFunctionTable() << std::endl;
+  OLOG_DEBUG() << cli->GetFunctionTable() << std::endl;
 
-  std::cout << "Using Model " << Cyan(cli->GetModel()) << std::endl;
+  OLOG_DEBUG() << "Using Model " << Cyan(cli->GetModel()) << std::endl;
   std::string model_name = cli->GetModel();
 
-  std::cout << "" << std::endl;
-  std::cout << Yellow("#") << " Interactive session started." << std::endl;
-  std::cout << Yellow("#") << " Type " << Cyan("q") << ", " << Cyan("quit")
-            << " or " << Cyan("exit") << " to exit." << std::endl;
-  std::cout << Yellow("#") << " Type " << Cyan("clear") << " or "
-            << Cyan("reset") << " to clear the session." << std::endl;
-  std::cout << Yellow("#") << " Type " << Cyan("/info")
-            << " to get model information." << std::endl;
-  std::cout << Yellow("#") << " To read prompt from a file, use " << Cyan("@")
-            << "filename followed by ENTER" << std::endl;
-  std::cout << Yellow("#") << " Use " << Cyan("/no_tools")
-            << " to disable tool calls." << std::endl;
-  std::cout << Yellow("#") << " Use " << Cyan("/chat_defaults")
-            << " to restore chat options to default." << std::endl;
-  std::cout << Yellow("#") << " Use " << Cyan("/int")
-            << " to interrupt the connection." << std::endl;
-  std::cout << "" << std::endl;
+  OLOG_DEBUG() << "" << std::endl;
+  OLOG_DEBUG() << Yellow("#") << " Interactive session started." << std::endl;
+  OLOG_DEBUG() << Yellow("#") << " Type " << Cyan("q") << ", " << Cyan("quit")
+               << " or " << Cyan("exit") << " to exit." << std::endl;
+  OLOG_DEBUG() << Yellow("#") << " Type " << Cyan("clear") << " or "
+               << Cyan("reset") << " to clear the session." << std::endl;
+  OLOG_DEBUG() << Yellow("#") << " Type " << Cyan("/info")
+               << " to get model information." << std::endl;
+  OLOG_DEBUG() << Yellow("#") << " To read prompt from a file, use "
+               << Cyan("@") << "filename followed by ENTER" << std::endl;
+  OLOG_DEBUG() << Yellow("#") << " Use " << Cyan("/no_tools")
+               << " to disable tool calls." << std::endl;
+  OLOG_DEBUG() << Yellow("#") << " Use " << Cyan("/chat_defaults")
+               << " to restore chat options to default." << std::endl;
+  OLOG_DEBUG() << Yellow("#") << " Use " << Cyan("/int")
+               << " to interrupt the connection." << std::endl;
+  OLOG_DEBUG() << "" << std::endl;
+  OLOG_DEBUG() << ">";
 
-  std::cout << ">";
-  std::cout.flush();
   assistant::ChatOptions options{assistant::ChatOptions::kDefault};
 
   while (true) {

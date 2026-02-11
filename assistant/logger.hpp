@@ -189,3 +189,9 @@ inline void SetLogSink(std::function<void(LogLevel, std::string)> sink) {
 using OLogLevel = assistant::LogLevel;
 
 #define OLOG(level) assistant::LogStream(level)
+
+#define OLOG_DEBUG() OLOG(assistant::LogLevel::kDebug)
+#define OLOG_INFO() OLOG(assistant::LogLevel::kInfo)
+#define OLOG_TRACE() OLOG(assistant::LogLevel::kTrace)
+#define OLOG_WARN() OLOG(assistant::LogLevel::kWarning)
+#define OLOG_ERROR() OLOG(assistant::LogLevel::kError)
