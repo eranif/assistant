@@ -189,6 +189,70 @@ assistant::FunctionResult OpenFileInEditor(const assistant::json& args) {
   return assistant::FunctionResult{.text = ss.str()};
 }
 
+bool CanRunTool(const std::string& tool_name) {
+  std::stringstream prompt;
+  prompt << "The model wants to run tool: \"" << tool_name
+         << "\", allow it [y/n]?";
+  return ReadYesOrNoFromUser(prompt.str());
+}
+
+void HandlePrompt(std::shared_ptr<assistant::ClientBase> cli,
+                  const std::string& model_name, const std::string& prompt,
+                  assistant::ChatOptions options) {
+  std::atomic_bool done{false};
+  std::atomic_bool saved_thinking_state{false};
+  cli->Chat(
+      prompt,
+      [&done, &saved_thinking_state](
+          std::string output, assistant::Reason reason, bool thinking) -> bool {
+        if (saved_thinking_state != thinking) {
+          // we switched state
+          if (thinking) {
+            // the new state is "thinking"
+            std::cout << Cyan("Thinking... ") << std::endl;
+          } else {
+            std::cout << Cyan("... done thinking") << std::endl;
+          }
+        }
+
+        saved_thinking_state = thinking;
+        switch (reason) {
+          case assistant::Reason::kDone:
+            std::cout << std::endl;
+            OLOG(OLogLevel::kInfo) << "Completed!";
+            done = true;
+            break;
+          case assistant::Reason::kLogNotice:
+            OLOG(OLogLevel::kInfo) << output;
+            break;
+          case assistant::Reason::kLogDebug:
+            OLOG(OLogLevel::kDebug) << output;
+            break;
+          case assistant::Reason::kPartialResult:
+            if (thinking) {
+              std::cout << Gray(output);
+            } else {
+              std::cout << output;
+            }
+            std::cout.flush();
+            break;
+          case assistant::Reason::kFatalError:
+            OLOG(OLogLevel::kError) << output;
+            done = true;
+            break;
+          case assistant::Reason::kCancelled:
+            OLOG(OLogLevel::kWarning) << output;
+            done = true;
+            break;
+        }
+        // continue
+        return true;
+      },
+      options);
+  std::cout << "\n>";
+  std::cout.flush();
+}
+
 int main(int argc, char** argv) {
 #ifdef __WIN32
   SetConsoleOutputCP(65001);
@@ -247,6 +311,9 @@ int main(int argc, char** argv) {
             .Build());
   }
 
+  // Set a Human-In-Loop callback.
+  cli->SetTookInvokeCallback(CanRunTool);
+
   std::cout << "Waiting for: " << cli->GetUrl() << " to become available..."
             << std::endl;
 
@@ -284,78 +351,6 @@ int main(int argc, char** argv) {
   std::cout << Yellow("#") << " Use " << Cyan("/int")
             << " to interrupt the connection." << std::endl;
   std::cout << "" << std::endl;
-
-  std::thread chat_thread([cli, model_name]() {
-    while (true) {
-      std::string prompt;
-      assistant::ChatOptions options{assistant::ChatOptions::kDefault};
-      auto item = pop_prompt();
-      if (cli->IsInterrupted()) {
-        std::cout << "Worker Thread: client interrupted." << std::endl;
-        break;
-      }
-      if (!item.has_value()) {
-        continue;
-      } else {
-        prompt = std::move(item.value().first);
-        options = std::move(item.value().second);
-      }
-
-      std::atomic_bool done{false};
-      std::atomic_bool saved_thinking_state{false};
-      cli->Chat(
-          prompt,
-          [&done, &saved_thinking_state](std::string output,
-                                         assistant::Reason reason,
-                                         bool thinking) -> bool {
-            if (saved_thinking_state != thinking) {
-              // we switched state
-              if (thinking) {
-                // the new state is "thinking"
-                std::cout << Cyan("Thinking... ") << std::endl;
-              } else {
-                std::cout << Cyan("... done thinking") << std::endl;
-              }
-            }
-
-            saved_thinking_state = thinking;
-            switch (reason) {
-              case assistant::Reason::kDone:
-                std::cout << std::endl;
-                OLOG(OLogLevel::kInfo) << "Completed!";
-                done = true;
-                break;
-              case assistant::Reason::kLogNotice:
-                OLOG(OLogLevel::kInfo) << output;
-                break;
-              case assistant::Reason::kLogDebug:
-                OLOG(OLogLevel::kDebug) << output;
-                break;
-              case assistant::Reason::kPartialResult:
-                if (thinking) {
-                  std::cout << Gray(output);
-                } else {
-                  std::cout << output;
-                }
-                std::cout.flush();
-                break;
-              case assistant::Reason::kFatalError:
-                OLOG(OLogLevel::kError) << output;
-                done = true;
-                break;
-              case assistant::Reason::kCancelled:
-                OLOG(OLogLevel::kWarning) << output;
-                done = true;
-                break;
-            }
-            // continue
-            return true;
-          },
-          options);
-      std::cout << "\n>";
-      std::cout.flush();
-    }
-  });
 
   std::cout << ">";
   std::cout.flush();
@@ -421,12 +416,7 @@ int main(int argc, char** argv) {
         prompt = content.GetValue();
       }
     }
-    // push the prompt
-    push_prompt(std::move(prompt), options);
+    HandlePrompt(cli, model_name, prompt, options);
   }
-
-  // notify the worker thread to exit.
-  cli->Interrupt();
-  chat_thread.join();
   return 0;
 }

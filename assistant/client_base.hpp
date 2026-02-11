@@ -51,6 +51,9 @@ enum class ChatOptions {
 using OnResponseCallback = std::function<bool(
     const std::string& text, Reason call_reason, bool thinking)>;
 
+/// Called when a tool is about to be invoked.
+using OnToolInvokeCallback = std::function<bool(const std::string& tool_name)>;
+
 class ClientBase;
 struct ChatRequest {
   OnResponseCallback callback_;
@@ -177,6 +180,10 @@ class ClientBase {
   /// Client API - END
   ///===---------------------------
 
+  void SetTookInvokeCallback(OnToolInvokeCallback cb) {
+    m_on_invoke_tool_cb = std::move(cb);
+  }
+
   virtual void ApplyConfig(const assistant::Config* conf);
   virtual void Startup() { m_interrupt.store(false); }
   virtual void Shutdown() {
@@ -297,6 +304,7 @@ class ClientBase {
   std::atomic_bool m_interrupt{false};
   std::atomic_bool m_stream{true};
   Locker<std::string> m_keep_alive{"5m"};
+  OnToolInvokeCallback m_on_invoke_tool_cb{nullptr};
   friend struct ChatRequest;
 };
 }  // namespace assistant

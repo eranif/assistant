@@ -59,6 +59,35 @@ inline size_t GetChoiceFromUser(const std::vector<std::string>& choices) {
   }
 }
 
+inline bool ReadYesOrNoFromUser(const std::string& prompt) {
+  while (true) {
+    std::cout << prompt;
+
+    std::string input;
+    std::getline(std::cin, input);
+
+    // Check if input stream failed (e.g., EOF)
+    if (std::cin.fail()) {
+      std::cin.clear();
+      std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+      std::cout << "Invalid input. Please enter 'y' or 'n'." << std::endl;
+      continue;
+    }
+
+    // Check for single character 'y' or 'n' (case-insensitive)
+    if (input.length() == 1) {
+      char c = std::tolower(input[0]);
+      if (c == 'y') {
+        return true;
+      } else if (c == 'n') {
+        return false;
+      }
+    }
+
+    std::cout << "Invalid input. Please enter 'y' or 'n'." << std::endl;
+  }
+}
+
 inline Result<std::string, std::string> ReadFileContent(
     const std::string& path) {
   std::ifstream file(path, std::ios::binary);  // open in binary mode
