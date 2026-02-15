@@ -105,16 +105,15 @@ void ClientBase::AddMessage(std::optional<assistant::message> msg) {
 
 assistant::messages ClientBase::GetMessages() const {
   assistant::messages msgs;
-  m_system_messages.with([&msgs](const assistant::messages& sysmsgs) {
-    msgs.insert(msgs.end(), sysmsgs.begin(), sysmsgs.end());
-  });
-  m_system_messages.with([&msgs](const assistant::messages& m) {
-    if (m.empty()) {
+  // First place the system messages
+  m_system_messages.with([&msgs](const assistant::messages& sys_msgs) {
+    if (sys_msgs.empty()) {
       return;
     }
-    msgs.insert(msgs.end(), m.begin(), m.end());
+    msgs.insert(msgs.end(), sys_msgs.begin(), sys_msgs.end());
   });
 
+  // Following by the user messages
   m_messages.with([&msgs](const assistant::messages& m) {
     if (m.empty()) {
       return;
