@@ -53,6 +53,28 @@ void ClaudeClient::CreateAndPushChatRequest(
   assistant::request req{model, history, nullptr, m_stream, "json", ""};
   req["max_tokens"] = GetMaxTokens();
 
+  // System message: unlike Ollama, Claude accepts a single top level
+  // "system" property in the request.
+  std::stringstream system_message;
+  m_system_messages.with(
+      [&system_message](const assistant::messages& sys_messages) {
+        if (sys_messages.empty()) {
+          return;
+        }
+        for (const auto& msg : sys_messages) {
+          if (msg.contains("content") && msg["content"].is_string()) {
+            system_message << msg["content"].get<std::string>() << "\n";
+          }
+        }
+      });
+
+  std::string joined_system_message = system_message.str();
+  joined_system_message = std::string{assistant::trim(joined_system_message)};
+
+  if (!joined_system_message.empty()) {
+    req["system"] = joined_system_message;
+  }
+
   if (IsFlagSet(chat_options, ChatOptions::kNoTools)) {
     OLOG(LogLevel::kInfo) << "The 'tools' are disabled for the model: '"
                           << model << "' (per user request).";
@@ -201,4 +223,17 @@ assistant::message ClaudeClient::FormatToolResponse(
   OLOG(LogLevel::kDebug) << std::setw(2) << msg;
   return msg;
 }
+
+assistant::messages ClaudeClient::GetMessages() const {
+  assistant::messages msgs;
+  // Following by the user messages
+  m_messages.with([&msgs](const assistant::messages& m) {
+    if (m.empty()) {
+      return;
+    }
+    msgs.insert(msgs.end(), m.begin(), m.end());
+  });
+  return msgs;
+}
+
 }  // namespace assistant

@@ -288,7 +288,7 @@ class ClientBase {
   bool HandleResponse(const assistant::response& resp,
                       ChatContext& chat_user_data);
   void AddMessage(std::optional<assistant::message> msg);
-  assistant::messages GetMessages() const;
+  virtual assistant::messages GetMessages() const;
   bool ModelHasCapability(const std::string& model_name, ModelCapabilities c);
 
   FunctionTable m_function_table;

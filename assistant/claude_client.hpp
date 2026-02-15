@@ -34,6 +34,11 @@ class ClaudeClient : public OllamaClient {
  protected:
   void ProcessChatRquest(std::shared_ptr<ChatRequest> chat_request) override;
   void ProcessChatRequestQueue() override;
+
+  // Claude does not support system messages as normal messages with a role of
+  // "system"
+  assistant::messages GetMessages() const override;
+
   static bool OnRawResponse(const std::string& resp, void* user_data);
   bool HandleResponse(const std::string& resp, ChatContext* chat_context);
   std::shared_ptr<claude::ResponseParser> m_responseParser{nullptr};
