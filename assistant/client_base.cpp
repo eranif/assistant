@@ -164,6 +164,7 @@ void ChatRequest::InvokeTools(ClientBase* client) {
         ss << std::setw(2) << "  " << name << " => " << value << "\n";
       }
 
+      callback_("\n", Reason::kPartialResult, false);
       callback_(ss.str(), Reason::kLogNotice, false);
 
       FunctionResult result;
