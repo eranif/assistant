@@ -81,6 +81,26 @@ struct Usage {
   }
 
   /**
+   * @brief Adds the token usage counts from another Usage object to this
+   * object.
+   *
+   * This method performs element-wise addition of all token counters,
+   * accumulating the input tokens, cache creation tokens, cache read tokens,
+   * and output tokens from the provided Usage object into the corresponding
+   * fields of this instance.
+   *
+   * @param other The Usage object whose token counts will be added to this
+   * object. The parameter is passed by const reference and remains unmodified.
+   */
+  Usage& Add(const Usage& other) {
+    input_tokens += other.input_tokens;
+    cache_creation_input_tokens += other.cache_creation_input_tokens;
+    cache_read_input_tokens += other.cache_read_input_tokens;
+    output_tokens += other.output_tokens;
+    return *this;
+  }
+
+  /**
    * @brief Calculates the total monetary cost based on token usage.
    *
    * @details Computes the cost by multiplying each token count from the
@@ -385,6 +405,11 @@ class ClientBase {
 
   inline void SetLastRequestUsage(const Usage& usage) {
     m_last_request_usage.set_value(usage);
+    m_aggregated_usage.with_mut([&usage](Usage& agg) { agg.Add(usage); });
+  }
+
+  inline Usage GetAggregatedUsage() const {
+    return m_aggregated_usage.get_value();
   }
 
  protected:
@@ -415,6 +440,7 @@ class ClientBase {
   std::atomic<double> m_total_amount{0.0};
   std::atomic<double> m_last_request_amount{0.0};
   Locker<std::optional<Usage>> m_last_request_usage;
+  Locker<Usage> m_aggregated_usage;
   friend struct ChatRequest;
 };
 }  // namespace assistant

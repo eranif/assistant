@@ -181,7 +181,11 @@ bool ClaudeClient::HandleResponse(const std::string& resp,
           SetLastRequestCost(this_requests_cost);
           std::stringstream ss;
           ss << "Request total cost: $" << GetLastRequestCost()
-             << ". Total cost: $" << GetTotalCost();
+             << ". Total cost: $" << GetTotalCost() << "\n";
+          ss << "Cached tokens: "
+             << GetAggregatedUsage().cache_creation_input_tokens
+             << ", Cached tokens read: "
+             << GetAggregatedUsage().cache_read_input_tokens << "\n";
           req->callback_(ss.str(), Reason::kRequestCost, false);
           SetLastRequestUsage(usage.value());
         }
