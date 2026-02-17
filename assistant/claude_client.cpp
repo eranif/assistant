@@ -183,6 +183,7 @@ bool ClaudeClient::HandleResponse(const std::string& resp,
           ss << "Request total cost: $" << GetLastRequestCost()
              << ". Total cost: $" << GetTotalCost();
           req->callback_(ss.str(), Reason::kRequestCost, false);
+          SetLastRequestUsage(usage.value());
         }
         chat_context->current_response += token.content;
       }

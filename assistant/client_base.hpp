@@ -64,6 +64,55 @@ struct Pricing {
   double output_tokens{0.0};                // $ per 1 token
 };
 
+struct Usage {
+  int input_tokens{0};
+  int cache_creation_input_tokens{0};
+  int cache_read_input_tokens{0};
+  int output_tokens{0};
+
+  static Usage FromClaudeJson(json j) {
+    Usage result;
+    ReadNumber(j, "input_tokens", result.input_tokens);
+    ReadNumber(j, "cache_creation_input_tokens",
+               result.cache_creation_input_tokens);
+    ReadNumber(j, "cache_read_input_tokens", result.cache_read_input_tokens);
+    ReadNumber(j, "output_tokens", result.output_tokens);
+    return result;
+  }
+
+  /**
+   * @brief Calculates the total monetary cost based on token usage.
+   *
+   * @details Computes the cost by multiplying each token count from the
+   * provided Cost structure by the corresponding per-token rate stored in this
+   * object, then summing all components (input, cache creation, cache read, and
+   * output).
+   *
+   * @param cost A Cost structure containing the token counts for each category:
+   *             input tokens, cache creation input tokens, cache read input
+   * tokens, and output tokens.
+   *
+   * @return The total calculated cost as a double-precision floating-point
+   * value, representing the sum of all token-based cost components.
+   */
+  double CalculateCost(const Pricing& cost) const {
+    return (cost.input_tokens * static_cast<double>(input_tokens)) +
+           (cost.cache_creation_input_tokens *
+            static_cast<double>(cache_creation_input_tokens)) +
+           (cost.cache_read_input_tokens *
+            static_cast<double>(cache_read_input_tokens)) +
+           (cost.output_tokens * static_cast<double>(output_tokens));
+  }
+
+ private:
+  inline static void ReadNumber(const json& j, std::string_view name,
+                                int& output) {
+    if (j.contains(name) && j[name].is_number()) {
+      output = j[name].get<int>();
+    }
+  }
+};
+
 // Initialized map with per-token prices (USD)
 const inline std::unordered_map<std::string, Pricing> CLAUDE_PRICING = {
     {"claude-opus-4-20250514", {0.000015, 0.00001875, 0.0000015, 0.000075}},
@@ -313,14 +362,10 @@ class ClientBase {
   inline std::string GetModel() const { return m_endpoint.get_value().model_; }
 
   inline std::optional<Pricing> GetPricing() const {
-    std::optional<Pricing> cost;
-    m_cost.with([&cost](const std::optional<Pricing>& c) { cost = c; });
-    return cost;
+    return m_cost.get_value();
   }
 
-  inline void SetPricing(const Pricing& cost) {
-    m_cost.with_mut([&cost](std::optional<Pricing>& c) { c = cost; });
-  }
+  inline void SetPricing(const Pricing& cost) { m_cost.set_value(cost); }
 
   inline void SetLastRequestCost(double cost) {
     m_last_request_amount = cost;
@@ -332,6 +377,14 @@ class ClientBase {
   inline void ResetCost() {
     m_total_amount = 0;
     m_last_request_amount = 0;
+  }
+
+  inline std::optional<Usage> GetLastRequestUsage() const {
+    return m_last_request_usage.get_value();
+  }
+
+  inline void SetLastRequestUsage(const Usage& usage) {
+    m_last_request_usage.set_value(usage);
   }
 
  protected:
@@ -361,6 +414,7 @@ class ClientBase {
   Locker<std::optional<Pricing>> m_cost;
   std::atomic<double> m_total_amount{0.0};
   std::atomic<double> m_last_request_amount{0.0};
+  Locker<std::optional<Usage>> m_last_request_usage;
   friend struct ChatRequest;
 };
 }  // namespace assistant

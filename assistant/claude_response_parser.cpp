@@ -265,7 +265,7 @@ std::optional<Usage> ResponseParser::GetUsage(
     if (!j.contains("usage") || !j["usage"].is_object()) {
       return std::nullopt;
     }
-    return Usage::FromJson(j["usage"]);
+    return Usage::FromClaudeJson(j["usage"]);
 
   } catch (...) {
     return std::nullopt;

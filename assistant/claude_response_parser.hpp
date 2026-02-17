@@ -109,6 +109,8 @@ inline std::string_view ErrorCodeToString(ErrorCode ec) {
     case ErrorCode::general_error:
       return "General error.";
   }
+  // Satisfy false warnings by some compilers.
+  return "";
 }
 
 struct EventMessage {
@@ -132,55 +134,6 @@ inline std::ostream& operator<<(std::ostream& os, const ToolCall& tc) {
      << ", .json_str=" << tc.json_str << "}";
   return os;
 }
-
-struct Usage {
-  int input_tokens{0};
-  int cache_creation_input_tokens{0};
-  int cache_read_input_tokens{0};
-  int output_tokens{0};
-
-  static Usage FromJson(json j) {
-    Usage result;
-    ReadNumber(j, "input_tokens", result.input_tokens);
-    ReadNumber(j, "cache_creation_input_tokens",
-               result.cache_creation_input_tokens);
-    ReadNumber(j, "cache_read_input_tokens", result.cache_read_input_tokens);
-    ReadNumber(j, "output_tokens", result.output_tokens);
-    return result;
-  }
-
-  /**
-   * @brief Calculates the total monetary cost based on token usage.
-   *
-   * @details Computes the cost by multiplying each token count from the
-   * provided Cost structure by the corresponding per-token rate stored in this
-   * object, then summing all components (input, cache creation, cache read, and
-   * output).
-   *
-   * @param cost A Cost structure containing the token counts for each category:
-   *             input tokens, cache creation input tokens, cache read input
-   * tokens, and output tokens.
-   *
-   * @return The total calculated cost as a double-precision floating-point
-   * value, representing the sum of all token-based cost components.
-   */
-  double CalculateCost(const Pricing& cost) const {
-    return (cost.input_tokens * static_cast<double>(input_tokens)) +
-           (cost.cache_creation_input_tokens *
-            static_cast<double>(cache_creation_input_tokens)) +
-           (cost.cache_read_input_tokens *
-            static_cast<double>(cache_read_input_tokens)) +
-           (cost.output_tokens * static_cast<double>(output_tokens));
-  }
-
- private:
-  inline static void ReadNumber(const json& j, std::string_view name,
-                                int& output) {
-    if (j.contains(name) && j[name].is_number()) {
-      output = j[name].get<int>();
-    }
-  }
-};
 
 struct ParseResult {
   bool is_done{false};
