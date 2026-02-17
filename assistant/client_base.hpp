@@ -27,6 +27,8 @@ enum class Reason {
   kLogDebug,
   /// Request cancelled by the user.
   kCancelled,
+  /// Cost
+  kRequestCost,
 };
 
 enum class ModelCapabilities {
@@ -53,6 +55,35 @@ using OnResponseCallback = std::function<bool(
 
 /// Called when a tool is about to be invoked.
 using OnToolInvokeCallback = std::function<bool(const std::string& tool_name)>;
+
+/// Tokens pricing
+struct Pricing {
+  double input_tokens{0.0};                 // $ per 1 token
+  double cache_creation_input_tokens{0.0};  // $ per 1 token
+  double cache_read_input_tokens{0.0};      // $ per 1 token
+  double output_tokens{0.0};                // $ per 1 token
+};
+
+// Initialized map with per-token prices (USD)
+const inline std::unordered_map<std::string, Pricing> CLAUDE_PRICING = {
+    {"claude-opus-4-20250514", {0.000015, 0.00001875, 0.0000015, 0.000075}},
+    {"claude-opus-4", {0.000015, 0.00001875, 0.0000015, 0.000075}},
+    {"claude-sonnet-4", {0.000003, 0.00000375, 0.0000003, 0.000015}},
+    {"claude-opus-4-5-20251101", {0.000005, 0.00000625, 0.0000005, 0.000025}},
+    {"claude-opus-4-5", {0.000005, 0.00000625, 0.0000005, 0.000025}},
+    {"claude-sonnet-4-5-20250929", {0.000003, 0.00000375, 0.0000003, 0.000015}},
+    {"claude-sonnet-4-5", {0.000003, 0.00000375, 0.0000003, 0.000015}},
+    {"claude-haiku-4-5-20251001", {0.000001, 0.00000125, 0.0000001, 0.000005}},
+    {"claude-haiku-4-5", {0.000001, 0.00000125, 0.0000001, 0.000005}},
+    {"claude-opus-4-6", {0.000005, 0.00000625, 0.0000005, 0.000025}}};
+
+inline std::optional<Pricing> FindPricing(const std::string& model_name) {
+  auto iter = CLAUDE_PRICING.find(model_name);
+  if (iter == CLAUDE_PRICING.end()) {
+    return std::nullopt;
+  }
+  return iter->second;
+}
 
 class ClientBase;
 struct ChatRequest {
@@ -281,6 +312,28 @@ class ClientBase {
 
   inline std::string GetModel() const { return m_endpoint.get_value().model_; }
 
+  inline std::optional<Pricing> GetPricing() const {
+    std::optional<Pricing> cost;
+    m_cost.with([&cost](const std::optional<Pricing>& c) { cost = c; });
+    return cost;
+  }
+
+  inline void SetPricing(const Pricing& cost) {
+    m_cost.with_mut([&cost](std::optional<Pricing>& c) { c = cost; });
+  }
+
+  inline void SetLastRequestCost(double cost) {
+    m_last_request_amount = cost;
+    m_total_amount += cost;
+  }
+
+  inline double GetLastRequestCost() const { return m_last_request_amount; }
+  inline double GetTotalCost() const { return m_total_amount; }
+  inline void ResetCost() {
+    m_total_amount = 0;
+    m_last_request_amount = 0;
+  }
+
  protected:
   static bool OnResponse(const assistant::response& resp, void* user_data);
   static bool OnResponseRaw(const std::string& resp, void* user_data);
@@ -305,6 +358,9 @@ class ClientBase {
   std::atomic_bool m_stream{true};
   Locker<std::string> m_keep_alive{"5m"};
   OnToolInvokeCallback m_on_invoke_tool_cb{nullptr};
+  Locker<std::optional<Pricing>> m_cost;
+  std::atomic<double> m_total_amount{0.0};
+  std::atomic<double> m_last_request_amount{0.0};
   friend struct ChatRequest;
 };
 }  // namespace assistant

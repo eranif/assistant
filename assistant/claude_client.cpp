@@ -171,6 +171,14 @@ bool ClaudeClient::HandleResponse(const std::string& resp,
       } else {
         cb_result = req->callback_(token.content, token.GetReason(),
                                    token.IsThinking());
+        auto usage = token.GetUsage();
+        auto cost = GetPricing();
+        if (usage.has_value() && cost.has_value()) {
+          double total_cost = usage.value().CalculateCost(cost.value());
+          std::stringstream ss;
+          ss << "Request total cost: $" << total_cost << ".";
+          req->callback_(ss.str(), Reason::kRequestCost, false);
+        }
         chat_context->current_response += token.content;
       }
     }

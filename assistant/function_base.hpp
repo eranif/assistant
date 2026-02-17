@@ -66,20 +66,21 @@ inline std::ostream& operator<<(std::ostream& os,
   return os;
 }
 
+using ordered_json = nlohmann::ordered_json;
 class FunctionBase {
  public:
   FunctionBase(const std::string& name, const std::string& desc)
       : m_name(name), m_desc(desc) {}
   virtual ~FunctionBase() = default;
 
-  json ToJSON(EndpointKind kind) const {
+  ordered_json ToJSON(EndpointKind kind) const {
     switch (kind) {
       case EndpointKind::ollama:
         return ToOllamaJson();
       case EndpointKind::anthropic:
         return ToClaudeJSON();
     }
-    return json({});
+    return ordered_json({});
   }
 
   virtual FunctionResult Call(const json& params) const = 0;
@@ -89,16 +90,16 @@ class FunctionBase {
   inline void SetEnabled(bool b) { m_enabled = b; }
 
  private:
-  json ToOllamaJson() const {
-    json j;
+  ordered_json ToOllamaJson() const {
+    ordered_json j;
     j["type"] = "function";
     j["function"]["name"] = m_name;
     j["function"]["description"] = m_desc;
     j["function"]["parameters"]["type"] = "object";
 
     std::vector<std::string> required;
-    j["function"]["parameters"]["properties"] =
-        json({});  // Must always include the "properties" field, even if empty.
+    j["function"]["parameters"]["properties"] = ordered_json(
+        {});  // Must always include the "properties" field, even if empty.
     for (const auto& param : m_params) {
       j["function"]["parameters"]["properties"][param.GetName()] =
           param.ToJSON();
@@ -110,8 +111,8 @@ class FunctionBase {
     return j;
   }
 
-  json ToClaudeJSON() const {
-    json j;
+  ordered_json ToClaudeJSON() const {
+    ordered_json j;
     j["name"] = m_name;
     j["description"] = m_desc;
     j["input_schema"]["type"] = "object";
@@ -154,9 +155,9 @@ class FunctionTable {
    * @param kind The endpoint kind to filter or identify the functions
    * @return json A JSON object containing the enabled functions
    */
-  json ToJSON(EndpointKind kind) const FUNCTION_LOCKS(m_mutex) {
+  ordered_json ToJSON(EndpointKind kind) const FUNCTION_LOCKS(m_mutex) {
     std::scoped_lock lk{m_mutex};
-    std::vector<json> v;
+    std::vector<ordered_json> v;
     for (const auto& [_, f] : m_functions) {
       // Only collect enabled functions.
       if (!f->IsEnabled()) {
@@ -164,7 +165,13 @@ class FunctionTable {
       }
       v.push_back(f->ToJSON(kind));
     }
-    json j = v;
+
+    if (kind == assistant::EndpointKind::anthropic && !v.empty()) {
+      auto& tool = v.back();
+      tool["cache_control"] = {{"type", "ephemeral"}};
+    }
+
+    ordered_json j = v;
     return j;
   }
 

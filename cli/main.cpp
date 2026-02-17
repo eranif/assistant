@@ -219,6 +219,9 @@ void HandlePrompt(std::shared_ptr<assistant::ClientBase> cli,
             }
             std::cout.flush();
             break;
+          case assistant::Reason::kRequestCost:
+            std::cout << "\n\n" << Gray(output) << std::endl;
+            break;
           case assistant::Reason::kFatalError:
             OLOG_ERROR() << output;
             done = true;
@@ -261,6 +264,11 @@ int main(int argc, char** argv) {
     return 1;
   }
   std::shared_ptr<assistant::ClientBase> cli = cli_opt.value();
+  // Simulate cost based on claude-sonnet-4.5
+  auto pricing = assistant::FindPricing("claude-sonnet-4-5");
+  if (pricing.has_value()) {
+    cli->SetPricing(pricing.value());
+  }
 
   if (args.enable_builtin_mcps) {
     cli->GetFunctionTable().Add(

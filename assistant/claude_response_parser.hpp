@@ -133,6 +133,55 @@ inline std::ostream& operator<<(std::ostream& os, const ToolCall& tc) {
   return os;
 }
 
+struct Usage {
+  int input_tokens{0};
+  int cache_creation_input_tokens{0};
+  int cache_read_input_tokens{0};
+  int output_tokens{0};
+
+  static Usage FromJson(json j) {
+    Usage result;
+    ReadNumber(j, "input_tokens", result.input_tokens);
+    ReadNumber(j, "cache_creation_input_tokens",
+               result.cache_creation_input_tokens);
+    ReadNumber(j, "cache_read_input_tokens", result.cache_read_input_tokens);
+    ReadNumber(j, "output_tokens", result.output_tokens);
+    return result;
+  }
+
+  /**
+   * @brief Calculates the total monetary cost based on token usage.
+   *
+   * @details Computes the cost by multiplying each token count from the
+   * provided Cost structure by the corresponding per-token rate stored in this
+   * object, then summing all components (input, cache creation, cache read, and
+   * output).
+   *
+   * @param cost A Cost structure containing the token counts for each category:
+   *             input tokens, cache creation input tokens, cache read input
+   * tokens, and output tokens.
+   *
+   * @return The total calculated cost as a double-precision floating-point
+   * value, representing the sum of all token-based cost components.
+   */
+  double CalculateCost(const Pricing& cost) const {
+    return (cost.input_tokens * static_cast<double>(input_tokens)) +
+           (cost.cache_creation_input_tokens *
+            static_cast<double>(cache_creation_input_tokens)) +
+           (cost.cache_read_input_tokens *
+            static_cast<double>(cache_read_input_tokens)) +
+           (cost.output_tokens * static_cast<double>(output_tokens));
+  }
+
+ private:
+  inline static void ReadNumber(const json& j, std::string_view name,
+                                int& output) {
+    if (j.contains(name) && j[name].is_number()) {
+      output = j[name].get<int>();
+    }
+  }
+};
+
 struct ParseResult {
   bool is_done{false};
   bool need_more_data{false};
@@ -140,6 +189,7 @@ struct ParseResult {
   std::string content;
   std::optional<StopReason> stop_reason{std::nullopt};
   ToolCall tool_call;
+  std::optional<Usage> usage{std::nullopt};
 
   inline bool HasValue() const { return content_type.has_value(); }
   inline bool NeedMoreData() const { return need_more_data; }
@@ -149,6 +199,7 @@ struct ParseResult {
            content_type.value() == ContentType::tool_use;
   }
 
+  inline const std::optional<Usage> GetUsage() const { return usage; }
   inline const std::string& GetToolName() const { return tool_call.name; }
   inline const std::string& GetToolId() const { return tool_call.id; }
   inline const std::string& GetToolJsonStr() const {
@@ -220,6 +271,7 @@ class ResponseParser {
   /// This function might throw.
   std::string GetToolId(const EventMessage& event_message);
   std::optional<StopReason> GetStopReason(const EventMessage& event_message);
+  std::optional<Usage> GetUsage(const EventMessage& event_message);
 
   /// This function might throw.
   std::string GetContentBlockDeltaContent(const EventMessage& event_message);
