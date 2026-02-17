@@ -177,9 +177,11 @@ bool ClaudeClient::HandleResponse(const std::string& resp,
         auto usage = token.GetUsage();
         auto cost = GetPricing();
         if (usage.has_value() && cost.has_value()) {
-          double total_cost = usage.value().CalculateCost(cost.value());
+          double this_requests_cost = usage.value().CalculateCost(cost.value());
+          SetLastRequestCost(this_requests_cost);
           std::stringstream ss;
-          ss << "Request total cost: $" << total_cost << ".";
+          ss << "Request total cost: $" << GetLastRequestCost()
+             << ". Total cost: $" << GetTotalCost();
           req->callback_(ss.str(), Reason::kRequestCost, false);
         }
         chat_context->current_response += token.content;
