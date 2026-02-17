@@ -55,24 +55,27 @@ void ClaudeClient::CreateAndPushChatRequest(
 
   // System message: unlike Ollama, Claude accepts a single top level
   // "system" property in the request.
-  std::stringstream system_message;
+  std::vector<json> system_messages;
   m_system_messages.with(
-      [&system_message](const assistant::messages& sys_messages) {
+      [&system_messages](const assistant::messages& sys_messages) {
         if (sys_messages.empty()) {
           return;
         }
         for (const auto& msg : sys_messages) {
           if (msg.contains("content") && msg["content"].is_string()) {
-            system_message << msg["content"].get<std::string>() << "\n";
+            system_messages.push_back(json{
+                {"type", "text"}, {"text", msg["content"].get<std::string>()}});
           }
+        }
+
+        if (!system_messages.empty()) {
+          auto& last_msg = system_messages.back();
+          last_msg["cache_control"] = json{{"type", "ephemeral"}};
         }
       });
 
-  std::string joined_system_message = system_message.str();
-  joined_system_message = std::string{assistant::trim(joined_system_message)};
-
-  if (!joined_system_message.empty()) {
-    req["system"] = joined_system_message;
+  if (!system_messages.empty()) {
+    req["system"] = system_messages;
   }
 
   if (IsFlagSet(chat_options, ChatOptions::kNoTools)) {

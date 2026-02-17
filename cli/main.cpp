@@ -303,6 +303,9 @@ int main(int argc, char** argv) {
 
   // Set a Human-In-Loop callback.
   cli->SetTookInvokeCallback(CanRunTool);
+  cli->AddSystemMessage("You are an expert C++ & Rust coder");
+  cli->AddSystemMessage("Always answer briefly.");
+  cli->AddSystemMessage("If you use markdown, prefer bullets over tables.");
 
   if (args.print_to_stdout) {
     std::cout << "Waiting for: " << cli->GetUrl() << " to become available..."
