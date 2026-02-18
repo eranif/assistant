@@ -164,7 +164,6 @@ void ChatRequest::InvokeTools(ClientBase* client) {
         ss << std::setw(2) << "  " << name << " => " << value << "\n";
       }
 
-      callback_("\n", Reason::kPartialResult, false);
       callback_(ss.str(), Reason::kLogNotice, false);
 
       FunctionResult result;
@@ -174,11 +173,19 @@ void ChatRequest::InvokeTools(ClientBase* client) {
         std::stringstream ss;
         ss << "Permission to run tool: " << func_call.name << " is declined";
         result.text = ss.str();
+        ss = {};
+        ss << "❌ Permission to run tool: " << func_call.name
+           << " is declined.\n";
+        callback_(ss.str(), Reason::kPartialResult, false);
       } else {
         result = client->GetFunctionTable().Call(func_call);
         ss = {};
         ss << "Tool output: " << result;
         callback_(ss.str(), Reason::kLogNotice, false);
+        ss = {};
+        ss << "\u2705 Permission to run tool: " << func_call.name
+           << " is granted.\n";
+        callback_(ss.str(), Reason::kPartialResult, false);
       }
       assistant::message msg = client->FormatToolResponse(func_call, result);
       client->AddMessage(std::move(msg));
