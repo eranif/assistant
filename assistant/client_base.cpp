@@ -171,10 +171,10 @@ void ChatRequest::InvokeTools(ClientBase* client) {
           !client->m_on_invoke_tool_cb(func_call.name)) {
         result.isError = true;
         std::stringstream ss;
-        ss << "Permission to run tool: " << func_call.name << " is declined";
+        ss << "\nPermission to run tool: " << func_call.name << " is declined";
         result.text = ss.str();
         ss = {};
-        ss << "❌ Permission to run tool: " << func_call.name
+        ss << "\n\xE2\x9C\x96  Permission to run tool: " << func_call.name
            << " is declined.\n";
         callback_(ss.str(), Reason::kPartialResult, false);
       } else {
@@ -183,7 +183,7 @@ void ChatRequest::InvokeTools(ClientBase* client) {
         ss << "Tool output: " << result;
         callback_(ss.str(), Reason::kLogNotice, false);
         ss = {};
-        ss << "\u2705 Permission to run tool: " << func_call.name
+        ss << "\n\xE2\x9C\x85  Permission to run tool: " << func_call.name
            << " is granted.\n";
         callback_(ss.str(), Reason::kPartialResult, false);
       }

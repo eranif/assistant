@@ -180,8 +180,8 @@ bool ClaudeClient::HandleResponse(const std::string& resp,
           double this_requests_cost = usage.value().CalculateCost(cost.value());
           SetLastRequestCost(this_requests_cost);
           std::stringstream ss;
-          ss << "Request total cost: $" << GetLastRequestCost()
-             << ". Total cost: $" << GetTotalCost() << "\n";
+          ss << "Total cost: $" << GetTotalCost() << "\n"
+             << "Last request cost: $" << GetLastRequestCost();
           ss << "Cached tokens: "
              << GetAggregatedUsage().cache_creation_input_tokens
              << ", Cached tokens read: "

@@ -164,7 +164,7 @@ assistant::FunctionResult OpenFileInEditor(const assistant::json& args) {
 
 bool CanRunTool(const std::string& tool_name) {
   std::stringstream prompt;
-  prompt << "The model wants to run tool: \"" << tool_name
+  prompt << "\xE2\x9D\x93 The model wants to run tool: \"" << tool_name
          << "\", allow it [y/n]?";
   return ReadYesOrNoFromUser(prompt.str());
 }
