@@ -60,7 +60,7 @@ struct Args {
   std::string log_file;
   bool print_to_stdout{true};
   bool enable_builtin_mcps{true};
-  OLogLevel log_level{OLogLevel::kInfo};
+  std::optional<OLogLevel> log_level{std::nullopt};
   std::string config_file;
 };
 
@@ -72,6 +72,7 @@ Args ParseCommandLine(int argc, char** argv) {
     iter.Next();
     if ((arg == "--loglevel" || arg == "--log-level") && iter.Valid()) {
       args.log_level = assistant::Logger::FromString(iter.GetArgument());
+      std::cout << "Using Log Level: " << iter.GetArgument() << std::endl;
       iter.Next();
     } else if ((arg == "-c" || arg == "--config") && iter.Valid()) {
       args.config_file = iter.GetArgument();
@@ -164,7 +165,7 @@ assistant::FunctionResult OpenFileInEditor(const assistant::json& args) {
 
 bool CanRunTool(const std::string& tool_name) {
   std::stringstream prompt;
-  prompt << "\xE2\x9D\x93 The model wants to run tool: \"" << tool_name
+  prompt << "\n\xE2\x9D\x93 The model wants to run tool: \"" << tool_name
          << "\", allow it [y/n]?";
   return ReadYesOrNoFromUser(prompt.str());
 }
@@ -255,6 +256,11 @@ int main(int argc, char** argv) {
       std::cerr << "Failed to parse configuration file." << std::endl;
       return 1;
     }
+  }
+
+  if (args.log_level.has_value()) {
+    assistant::SetLogLevel(args.log_level.value());
+  } else if (conf.has_value()) {
     assistant::SetLogLevel(conf.value().GetLogLevel());
   }
 

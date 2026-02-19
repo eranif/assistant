@@ -28,8 +28,8 @@ class ClaudeClient : public OllamaClient {
                                 OnResponseCallback cb, std::string model,
                                 ChatOptions chat_options) override;
 
-  assistant::message FormatToolResponse(
-      const FunctionCall& fcall, const FunctionResult& func_result) override;
+  void AddToolsResult(
+      std::vector<std::pair<FunctionCall, FunctionResult>> result) override;
 
  protected:
   void ProcessChatRquest(std::shared_ptr<ChatRequest> chat_request) override;

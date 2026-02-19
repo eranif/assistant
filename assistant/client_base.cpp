@@ -139,7 +139,6 @@ void ClientBase::ApplyConfig(const assistant::Config* conf) {
   m_server_timeout.set_value(conf->GetServerTimeoutSettings());
   m_keep_alive.set_value(conf->GetKeepAlive());
   m_stream = conf->IsStream();
-  SetLogLevel(conf->GetLogLevel());
 }
 
 void ChatRequest::InvokeTools(ClientBase* client) {
@@ -147,6 +146,7 @@ void ChatRequest::InvokeTools(ClientBase* client) {
     return;
   }
 
+  std::vector<std::pair<FunctionCall, FunctionResult>> tool_call_results;
   for (auto [msg, calls] : func_calls_) {
     if (client->m_interrupt.load()) {
       return;
@@ -187,10 +187,14 @@ void ChatRequest::InvokeTools(ClientBase* client) {
            << " is granted.\n";
         callback_(ss.str(), Reason::kPartialResult, false);
       }
-      assistant::message msg = client->FormatToolResponse(func_call, result);
-      client->AddMessage(std::move(msg));
+      tool_call_results.push_back({func_call, result});
     }
   }
+
+  if (!tool_call_results.empty()) {
+    client->AddToolsResult(std::move(tool_call_results));
+  }
+
   client->CreateAndPushChatRequest(std::nullopt, callback_, model_,
                                    ChatOptions::kDefault);
 }

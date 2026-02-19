@@ -46,6 +46,9 @@ class OllamaClient : public ClientBase {
   std::optional<ModelCapabilities> GetModelCapabilities(
       const std::string& model) override;
 
+  void AddToolsResult(
+      std::vector<std::pair<FunctionCall, FunctionResult>> result) override;
+
   /// This method should be called from another thread.
   void Interrupt() override;
 
@@ -55,9 +58,6 @@ class OllamaClient : public ClientBase {
   void CreateAndPushChatRequest(std::optional<assistant::message> msg,
                                 OnResponseCallback cb, std::string model,
                                 ChatOptions chat_options) override;
-
-  assistant::message FormatToolResponse(
-      const FunctionCall& fcall, const FunctionResult& func_result) override;
 
   ///===---------------------------------------
   /// Client interface implementation ends here.

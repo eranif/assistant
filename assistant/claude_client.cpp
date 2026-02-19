@@ -3,7 +3,9 @@
 namespace assistant {
 ClaudeClient::ClaudeClient(const Endpoint& endpoint)
     : OllamaClient(endpoint),
-      m_responseParser(std::make_shared<claude::ResponseParser>()) {}
+      m_responseParser(std::make_shared<claude::ResponseParser>()) {
+  m_multi_tool_reply_as_array = true;
+}
 
 void ClaudeClient::PullModel(const std::string& name, OnResponseCallback cb) {
   OLOG(LogLevel::kWarning) << "Pull model is supported by Ollama clients only";
@@ -217,29 +219,25 @@ bool ClaudeClient::HandleResponse(const std::string& resp,
   }
 }
 
-assistant::message ClaudeClient::FormatToolResponse(
-    const FunctionCall& fcall, const FunctionResult& func_result) {
-  std::stringstream ss;
-  // Add the tool response
-  if (func_result.isError) {
-    ss << "An error occurred while executing tool: '" << fcall.name
-       << "'. Reason: " << func_result.text;
-  } else {
-    ss << "Tool '" << fcall.name << "' completed successfully. Output:\n"
-       << func_result.text;
+void ClaudeClient::AddToolsResult(
+    std::vector<std::pair<FunctionCall, FunctionResult>> result) {
+  if (result.empty()) {
+    return;
   }
 
-  assistant::message msg{"user", ""};
+  OLOG(LogLevel::kDebug) << "Processing " << result.size()
+                         << " tool calls responses";
   json content_array = json::array();
-  json res = json::object();
-  res["type"] = "tool_result";
-  res["tool_use_id"] = fcall.invocation_id.value_or("");
-  res["content"] = ss.str();
-  content_array.push_back(res);
+  for (const auto& [fcall, reply] : result) {
+    json res = json::object();
+    res["type"] = "tool_result";
+    res["tool_use_id"] = fcall.invocation_id.value_or("");
+    res["content"] = reply.text;
+    content_array.push_back(res);
+  }
+  assistant::message msg{"user", ""};
   msg["content"] = content_array;
-
-  OLOG(LogLevel::kDebug) << std::setw(2) << msg;
-  return msg;
+  AddMessage(std::move(msg));
 }
 
 assistant::messages ClaudeClient::GetMessages() const {

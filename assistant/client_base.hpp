@@ -284,9 +284,8 @@ class ClientBase {
                                         std::string model,
                                         ChatOptions chat_options) = 0;
 
-  /// Format client specific call response message.
-  virtual assistant::message FormatToolResponse(
-      const FunctionCall& fcall, const FunctionResult& func_result) = 0;
+  virtual void AddToolsResult(
+      std::vector<std::pair<FunctionCall, FunctionResult>> result) = 0;
 
   ///===---------------------------
   /// Client API - END
@@ -453,6 +452,7 @@ class ClientBase {
   std::atomic<double> m_last_request_amount{0.0};
   Locker<std::optional<Usage>> m_last_request_usage;
   Locker<Usage> m_aggregated_usage;
+  std::atomic_bool m_multi_tool_reply_as_array{false};
   friend struct ChatRequest;
 };
 }  // namespace assistant

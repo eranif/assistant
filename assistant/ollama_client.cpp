@@ -245,20 +245,31 @@ void OllamaClient::CreateAndPushChatRequest(
   m_queue.push_back(std::make_shared<ChatRequest>(ctx));
 }
 
-assistant::message OllamaClient::FormatToolResponse(
-    const FunctionCall& fcall, const FunctionResult& func_result) {
-  std::stringstream ss;
-  // Add the tool response
-  if (func_result.isError) {
-    ss << "An error occurred while executing tool: '" << fcall.name
-       << "'. Reason: " << func_result.text;
-    OLOG(LogLevel::kWarning) << ss.str();
-  } else {
-    ss << "Tool '" << fcall.name << "' completed successfully. Output:\n"
-       << func_result.text;
-    OLOG(LogLevel::kInfo) << ss.str();
+void OllamaClient::AddToolsResult(
+    std::vector<std::pair<FunctionCall, FunctionResult>> result) {
+  if (result.empty()) {
+    return;
   }
-  assistant::message msg{"tool", ss.str()};
-  return msg;
+
+  OLOG(LogLevel::kDebug) << "Processing " << result.size()
+                         << " tool calls responses";
+  // Ollama expects a message per tool invocation, in the order of calling.
+  for (const auto& [fcall, reply] : result) {
+    // Add the tool response
+    std::stringstream ss;
+    if (reply.isError) {
+      ss << "An error occurred while executing tool: '" << fcall.name
+         << "'. Reason: " << reply.text;
+      OLOG(LogLevel::kWarning) << ss.str();
+    } else {
+      // In case of a success, do not manipulate the response.
+      ss << reply.text;
+      OLOG(LogLevel::kInfo) << ss.str();
+    }
+
+    assistant::message msg{"tool", ss.str()};
+    AddMessage(std::move(msg));
+  }
 }
+
 }  // namespace assistant
