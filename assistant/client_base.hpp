@@ -134,7 +134,11 @@ struct Usage {
 };
 
 // Initialized map with per-token prices (USD)
-const inline std::unordered_map<std::string, Pricing> CLAUDE_PRICING = {
+// All units are in: $ per 1 token
+// input_tokens, cache_creation_input_tokens, cache_read_input_tokens,
+// output_tokens
+inline static std::unordered_map<std::string, Pricing> PRICING_TABLE = {
+    {"claude-sonnet-4-6", {0.000003, 0.00000375, 0.0000003, 0.000015}},
     {"claude-opus-4-20250514", {0.000015, 0.00001875, 0.0000015, 0.000075}},
     {"claude-opus-4", {0.000015, 0.00001875, 0.0000015, 0.000075}},
     {"claude-sonnet-4", {0.000003, 0.00000375, 0.0000003, 0.000015}},
@@ -145,13 +149,21 @@ const inline std::unordered_map<std::string, Pricing> CLAUDE_PRICING = {
     {"claude-haiku-4-5-20251001", {0.000001, 0.00000125, 0.0000001, 0.000005}},
     {"claude-haiku-4-5", {0.000001, 0.00000125, 0.0000001, 0.000005}},
     {"claude-opus-4-6", {0.000005, 0.00000625, 0.0000005, 0.000025}}};
+inline static std::mutex CLAUDE_PRICING_mutex;
 
 inline std::optional<Pricing> FindPricing(const std::string& model_name) {
-  auto iter = CLAUDE_PRICING.find(model_name);
-  if (iter == CLAUDE_PRICING.end()) {
+  std::lock_guard lock{CLAUDE_PRICING_mutex};
+  auto iter = PRICING_TABLE.find(model_name);
+  if (iter == PRICING_TABLE.end()) {
     return std::nullopt;
   }
   return iter->second;
+}
+
+inline void AddPricing(const std::string& model_name, const Pricing& pricing) {
+  std::lock_guard lock{CLAUDE_PRICING_mutex};
+  PRICING_TABLE.find(model_name);
+  PRICING_TABLE.insert({model_name, pricing});
 }
 
 class ClientBase;
