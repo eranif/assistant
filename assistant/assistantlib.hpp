@@ -82,7 +82,7 @@ enum class EndpointKind {
   anthropic,
 };
 
-using json = nlohmann::json;
+using json = nlohmann::ordered_json;
 using base64 = macaron::Base64;
 
 static bool use_exceptions = true;  // Change this to false to avoid throwing
@@ -182,21 +182,21 @@ class images : public std::vector<std::string> {
 
 class options : public json {
  public:
-  options() : json() { this->emplace("options", nlohmann::json::object()); }
+  options() : json() { this->emplace("options", nlohmann::ordered_json::object()); }
 
-  nlohmann::json& operator[](const std::string& key) {
+  nlohmann::ordered_json& operator[](const std::string& key) {
     if (!this->at("options").contains(key))
-      this->at("options").emplace(key, nlohmann::json::object());
+      this->at("options").emplace(key, nlohmann::ordered_json::object());
     return this->at("options").at(key);
   }
-  nlohmann::json& operator[](const char* key) {
+  nlohmann::ordered_json& operator[](const char* key) {
     return this->operator[](std::string(key));
   };
 
-  const nlohmann::json& operator[](const std::string& key) const {
+  const nlohmann::ordered_json& operator[](const std::string& key) const {
     return this->at("options").at(key);
   }
-  const nlohmann::json& operator[](const char* key) const {
+  const nlohmann::ordered_json& operator[](const char* key) const {
     return this->operator[](std::string(key));
   };
 };
@@ -402,7 +402,7 @@ using on_respons_callback =
 using on_raw_respons_callback = std::function<bool(const std::string&, void*)>;
 
 class ClientImpl {
-  using json = nlohmann::json;
+  using json = nlohmann::ordered_json;
 
  public:
   ClientImpl(const std::string& url) {

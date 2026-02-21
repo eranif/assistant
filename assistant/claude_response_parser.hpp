@@ -8,7 +8,7 @@
 
 namespace assistant::claude {
 
-using nlohmann::json;
+using json = nlohmann::ordered_json;
 
 enum class Event {
   message_start,

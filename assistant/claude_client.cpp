@@ -52,14 +52,23 @@ void ClaudeClient::CreateAndPushChatRequest(
   }
 
   // Build the request
-  assistant::request req{model, history, nullptr, m_stream, "json", ""};
-  req["max_tokens"] = GetMaxTokens();
+  assistant::request req{assistant::message_type::chat};
+  // Toosl goes first, followed by "system" block
+  // this is done like this to allow caching on the server side
+  // for cost reduction.
+  if (IsFlagSet(chat_options, ChatOptions::kNoTools)) {
+    OLOG(LogLevel::kInfo) << "The 'tools' are disabled for the model: '"
+                          << model << "' (per user request).";
+  } else if (!m_function_table.IsEmpty()) {
+    req["tools"] =
+        m_function_table.ToJSON(EndpointKind::anthropic, GetCachingPolicy());
+  }
 
   // System message: unlike Ollama, Claude accepts a single top level
   // "system" property in the request.
   std::vector<json> system_messages;
   m_system_messages.with(
-      [&system_messages](const assistant::messages& sys_messages) {
+      [&system_messages, this](const assistant::messages& sys_messages) {
         if (sys_messages.empty()) {
           return;
         }
@@ -70,9 +79,10 @@ void ClaudeClient::CreateAndPushChatRequest(
           }
         }
 
-        if (!system_messages.empty()) {
-          auto& last_msg = system_messages.back();
-          last_msg["cache_control"] = json{{"type", "ephemeral"}};
+        if (!system_messages.empty() &&
+            GetCachingPolicy() == CachePolicy::kStatic) {
+          auto& last_message = system_messages.back();
+          last_message["cache_control"] = {{"type", "ephemeral"}};
         }
       });
 
@@ -80,12 +90,16 @@ void ClaudeClient::CreateAndPushChatRequest(
     req["system"] = system_messages;
   }
 
-  if (IsFlagSet(chat_options, ChatOptions::kNoTools)) {
-    OLOG(LogLevel::kInfo) << "The 'tools' are disabled for the model: '"
-                          << model << "' (per user request).";
-  } else if (!m_function_table.IsEmpty()) {
-    req["tools"] = m_function_table.ToJSON(EndpointKind::anthropic);
+  if (GetCachingPolicy() == CachePolicy::kAuto) {
+    // Enable auto caching. as per the docs:
+    // https://platform.claude.com/docs/en/build-with-claude/prompt-caching#automatic-caching
+    req["cache_control"] = {{"type", "ephemeral"}};
   }
+
+  req["model"] = model;
+  req["stream"] = m_stream.load();
+  req["max_tokens"] = GetMaxTokens();
+  req["messages"] = history.to_json();
 
   ChatRequest ctx = {
       .callback_ = cb,
@@ -184,7 +198,7 @@ bool ClaudeClient::HandleResponse(const std::string& resp,
           std::stringstream ss;
           ss << "Total cost: $" << GetTotalCost() << "\n"
              << "Last request cost: $" << GetLastRequestCost();
-          ss << "Cached tokens: "
+          ss << " Cached tokens: "
              << GetAggregatedUsage().cache_creation_input_tokens
              << ", Cached tokens read: "
              << GetAggregatedUsage().cache_read_input_tokens << "\n";

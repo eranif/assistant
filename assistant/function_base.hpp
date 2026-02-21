@@ -4,6 +4,7 @@
 
 #include "assistant/assistantlib.hpp"
 #include "assistant/attributes.hpp"
+#include "assistant/common.hpp"
 #include "assistant/logger.hpp"
 
 namespace assistant {
@@ -66,21 +67,21 @@ inline std::ostream& operator<<(std::ostream& os,
   return os;
 }
 
-using ordered_json = nlohmann::ordered_json;
+using json = nlohmann::ordered_json;
 class FunctionBase {
  public:
   FunctionBase(const std::string& name, const std::string& desc)
       : m_name(name), m_desc(desc) {}
   virtual ~FunctionBase() = default;
 
-  ordered_json ToJSON(EndpointKind kind) const {
+  json ToJSON(EndpointKind kind) const {
     switch (kind) {
       case EndpointKind::ollama:
         return ToOllamaJson();
       case EndpointKind::anthropic:
         return ToClaudeJSON();
     }
-    return ordered_json({});
+    return json({});
   }
 
   virtual FunctionResult Call(const json& params) const = 0;
@@ -90,16 +91,16 @@ class FunctionBase {
   inline void SetEnabled(bool b) { m_enabled = b; }
 
  private:
-  ordered_json ToOllamaJson() const {
-    ordered_json j;
+  json ToOllamaJson() const {
+    json j;
     j["type"] = "function";
     j["function"]["name"] = m_name;
     j["function"]["description"] = m_desc;
     j["function"]["parameters"]["type"] = "object";
 
     std::vector<std::string> required;
-    j["function"]["parameters"]["properties"] = ordered_json(
-        {});  // Must always include the "properties" field, even if empty.
+    j["function"]["parameters"]["properties"] =
+        json({});  // Must always include the "properties" field, even if empty.
     for (const auto& param : m_params) {
       j["function"]["parameters"]["properties"][param.GetName()] =
           param.ToJSON();
@@ -111,8 +112,8 @@ class FunctionBase {
     return j;
   }
 
-  ordered_json ToClaudeJSON() const {
-    ordered_json j;
+  json ToClaudeJSON() const {
+    json j;
     j["name"] = m_name;
     j["description"] = m_desc;
     j["input_schema"]["type"] = "object";
@@ -155,23 +156,25 @@ class FunctionTable {
    * @param kind The endpoint kind to filter or identify the functions
    * @return json A JSON object containing the enabled functions
    */
-  ordered_json ToJSON(EndpointKind kind) const FUNCTION_LOCKS(m_mutex) {
+  json ToJSON(EndpointKind kind, CachePolicy cache_policy) const
+      FUNCTION_LOCKS(m_mutex) {
     std::scoped_lock lk{m_mutex};
-    std::vector<ordered_json> v;
+    std::vector<json> v;
     for (const auto& [_, f] : m_functions) {
       // Only collect enabled functions.
       if (!f->IsEnabled()) {
         continue;
       }
+
       v.push_back(f->ToJSON(kind));
     }
 
-    if (kind == assistant::EndpointKind::anthropic && !v.empty()) {
-      auto& tool = v.back();
-      tool["cache_control"] = {{"type", "ephemeral"}};
+    if (!v.empty() && cache_policy == CachePolicy::kStatic &&
+        kind == assistant::EndpointKind::anthropic) {
+      auto& last_tool = v.back();
+      last_tool["cache_control"] = {{"type", "ephemeral"}};
     }
-
-    ordered_json j = v;
+    json j = v;
     return j;
   }
 

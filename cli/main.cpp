@@ -270,6 +270,7 @@ int main(int argc, char** argv) {
     return 1;
   }
   std::shared_ptr<assistant::ClientBase> cli = cli_opt.value();
+
   // Simulate cost based on claude-sonnet-4.5
   auto pricing = assistant::FindPricing("claude-sonnet-4-5");
   if (pricing.has_value()) {
@@ -351,6 +352,12 @@ int main(int argc, char** argv) {
         << std::endl;
     std::cout << Yellow("#") << " Use " << Cyan("/int")
               << " to interrupt the connection." << std::endl;
+    std::cout << Yellow("#") << " Use " << Cyan("/cache_static")
+              << " to cache static content" << std::endl;
+    std::cout << Yellow("#") << " Use " << Cyan("/cache_auto")
+              << " to enable static caching" << std::endl;
+    std::cout << Yellow("#") << " Use " << Cyan("/cache_none")
+              << " to disable caching" << std::endl;
     std::cout << "" << std::endl;
     PrintPrompt();
   }
@@ -372,6 +379,21 @@ int main(int argc, char** argv) {
     } else if (prompt == "/int") {
       cli->Interrupt();
       break;
+    } else if (prompt == "/cache_static") {
+      cli->SetCachingPolicy(assistant::CachePolicy::kStatic);
+      std::cout << ">> Static caching is enabled" << std::endl;
+      PrintPrompt();
+      continue;
+    } else if (prompt == "/cache_auto") {
+      cli->SetCachingPolicy(assistant::CachePolicy::kAuto);
+      std::cout << ">> Auto caching is enabled" << std::endl;
+      PrintPrompt();
+      continue;
+    } else if (prompt == "/cache_none") {
+      cli->SetCachingPolicy(assistant::CachePolicy::kNone);
+      std::cout << ">> Cache is disabled" << std::endl;
+      PrintPrompt();
+      continue;
     } else if (prompt == "/reset") {
       cli->ClearHistoryMessages();
       cli->ClearMessageQueue();

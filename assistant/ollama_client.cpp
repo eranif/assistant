@@ -224,19 +224,28 @@ void OllamaClient::CreateAndPushChatRequest(
   }
 
   // Build the request
-  assistant::request req{model,    history, opts,
-                         m_stream, "json",  m_keep_alive.get_value()};
+  assistant::request req{assistant::message_type::chat};
   if (IsFlagSet(chat_options, ChatOptions::kNoTools)) {
     OLOG(LogLevel::kInfo) << "The 'tools' are disabled for the model: '"
                           << model << "' (per user request).";
   } else if (ModelHasCapability(model, ModelCapabilities::kTools) &&
              !m_function_table.IsEmpty()) {
-    req["tools"] = m_function_table.ToJSON(EndpointKind::ollama);
+    req["tools"] =
+        m_function_table.ToJSON(EndpointKind::ollama, GetCachingPolicy());
   } else {
     OLOG(LogLevel::kWarning)
         << "The selected model: " << model << " does not support 'tools'";
   }
-
+  req["messages"] = history.to_json();
+  req["model"] = model;
+  req["stream"] = m_stream.load();
+  auto keep_alive_duration = m_keep_alive.get_value();
+  if (!keep_alive_duration.empty()) {
+    req["keep_alive"] = keep_alive_duration;
+  }
+  if (opts != nullptr) {
+    req["options"] = opts["options"];
+  }
   ChatRequest ctx = {
       .callback_ = cb,
       .request_ = req,
