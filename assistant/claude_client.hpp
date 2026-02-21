@@ -24,9 +24,10 @@ class ClaudeClient : public OllamaClient {
   void Chat(std::string msg, OnResponseCallback cb,
             ChatOptions chat_options) override;
 
-  void CreateAndPushChatRequest(std::optional<assistant::message> msg,
-                                OnResponseCallback cb, std::string model,
-                                ChatOptions chat_options) override;
+  void CreateAndPushChatRequest(
+      std::optional<assistant::message> msg, OnResponseCallback cb,
+      std::string model, ChatOptions chat_options,
+      std::shared_ptr<ChatRequestFinaliser> finaliser) override;
 
   void AddToolsResult(
       std::vector<std::pair<FunctionCall, FunctionResult>> result) override;

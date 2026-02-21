@@ -91,16 +91,8 @@ bool ClientBase::OnResponse(const assistant::response& resp, void* user_data) {
 }
 
 void ClientBase::AddMessage(std::optional<assistant::message> msg) {
-  m_messages.with_mut([msg = std::move(msg), this](assistant::messages& msgs) {
-    if (!msg.has_value()) {
-      return;
-    }
-    msgs.push_back(std::move(*msg));
-    // truncate the history to fit the window size
-    if (msgs.size() >= m_windows_size) {
-      msgs.erase(msgs.begin());
-    }
-  });
+  m_history.AddMessage(msg);
+  m_history.ShrinkToFit(m_windows_size);
 }
 
 assistant::messages ClientBase::GetMessages() const {
@@ -114,12 +106,8 @@ assistant::messages ClientBase::GetMessages() const {
   });
 
   // Following by the user messages
-  m_messages.with([&msgs](const assistant::messages& m) {
-    if (m.empty()) {
-      return;
-    }
-    msgs.insert(msgs.end(), m.begin(), m.end());
-  });
+  auto user_messages = m_history.GetMessages();
+  msgs.insert(msgs.end(), user_messages.begin(), user_messages.end());
   return msgs;
 }
 
@@ -141,7 +129,8 @@ void ClientBase::ApplyConfig(const assistant::Config* conf) {
   m_stream = conf->IsStream();
 }
 
-void ChatRequest::InvokeTools(ClientBase* client) {
+void ChatRequest::InvokeTools(ClientBase* client,
+                              std::shared_ptr<ChatRequestFinaliser> finaliser) {
   if (func_calls_.empty()) {
     return;
   }
@@ -196,7 +185,7 @@ void ChatRequest::InvokeTools(ClientBase* client) {
   }
 
   client->CreateAndPushChatRequest(std::nullopt, callback_, model_,
-                                   ChatOptions::kDefault);
+                                   ChatOptions::kDefault, finaliser);
 }
 
 bool ClientBase::ModelHasCapability(const std::string& model_name,

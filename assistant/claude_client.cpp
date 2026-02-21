@@ -32,13 +32,22 @@ std::optional<ModelCapabilities> ClaudeClient::GetModelCapabilities(
 void ClaudeClient::Chat(std::string msg, OnResponseCallback cb,
                         ChatOptions chat_options) {
   assistant::message json_message{"user", msg};
-  CreateAndPushChatRequest(json_message, cb, GetModel(), chat_options);
+  std::shared_ptr<ChatRequestFinaliser> finaliser{nullptr};
+  if (assistant::IsFlagSet(chat_options, ChatOptions::kNoHistory)) {
+    m_history.SwapToTempHistory();
+    finaliser = std::make_shared<ChatRequestFinaliser>([this]() {
+      m_history.SwapToMainHistory();
+    });
+  }
+  CreateAndPushChatRequest(json_message, cb, GetModel(), chat_options,
+                           finaliser);
   ProcessChatRequestQueue();
 }
 
 void ClaudeClient::CreateAndPushChatRequest(
     std::optional<assistant::message> msg, OnResponseCallback cb,
-    std::string model, ChatOptions chat_options) {
+    std::string model, ChatOptions chat_options,
+    std::shared_ptr<ChatRequestFinaliser> finaliser) {
   assistant::options opts;
 
   assistant::messages history;
@@ -105,6 +114,7 @@ void ClaudeClient::CreateAndPushChatRequest(
       .callback_ = cb,
       .request_ = req,
       .model_ = std::move(model),
+      .finaliser_ = finaliser,
   };
   m_queue.push_back(std::make_shared<ChatRequest>(ctx));
 }
@@ -133,7 +143,7 @@ void ClaudeClient::ProcessChatRquest(
     }
 
     if (!chat_request->func_calls_.empty()) {
-      chat_request->InvokeTools(this);
+      chat_request->InvokeTools(this, chat_request->finaliser_);
     }
   } catch (std::exception& e) {
     chat_request->callback_(e.what(), Reason::kFatalError, false);
@@ -255,15 +265,7 @@ void ClaudeClient::AddToolsResult(
 }
 
 assistant::messages ClaudeClient::GetMessages() const {
-  assistant::messages msgs;
-  // Following by the user messages
-  m_messages.with([&msgs](const assistant::messages& m) {
-    if (m.empty()) {
-      return;
-    }
-    msgs.insert(msgs.end(), m.begin(), m.end());
-  });
-  return msgs;
+  return m_history.GetMessages();
 }
 
 }  // namespace assistant

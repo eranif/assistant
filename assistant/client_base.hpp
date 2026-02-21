@@ -16,17 +16,34 @@ namespace assistant {
 constexpr std::string_view kAssistantRole = "assistant";
 
 class ClientBase;
+class ChatRequestFinaliser {
+ public:
+  ChatRequestFinaliser(std::function<void()> cb)
+      : finalise_callback_{std::move(cb)} {}
+  ~ChatRequestFinaliser() {
+    if (finalise_callback_) {
+      finalise_callback_();
+    }
+  }
+
+ private:
+  std::function<void()> finalise_callback_{nullptr};
+};
+
 struct ChatRequest {
   OnResponseCallback callback_;
   assistant::request request_;
   std::string model_;
+  std::shared_ptr<ChatRequestFinaliser> finaliser_{nullptr};
+
   /// If a tool(s) invocation is required, it will be placed here. Once we
   /// invoke the tool and push the tool response + the request to the history
   /// and remove it from here.
   std::vector<
       std::pair<std::optional<assistant::message>, std::vector<FunctionCall>>>
       func_calls_;
-  void InvokeTools(ClientBase* client);
+  void InvokeTools(ClientBase* client,
+                   std::shared_ptr<ChatRequestFinaliser> finaliser);
 };
 
 /// We pass this struct to provide context in the callback.
@@ -97,6 +114,194 @@ struct Message {
   }
 };
 
+struct History {
+  /**
+   * @brief Constructs a History object with the active history pointing to the
+   * main message store.
+   *
+   * Initializes the swap counter to zero and sets the history pointer to
+   * reference the main messages container. The initialization is performed
+   * under lock protection.
+   */
+  History() {
+    std::scoped_lock lock{mutex_};
+    active_history_ = &messages_;
+    swap_count_ = 0;
+  }
+
+  /**
+   * @brief Destroys the History object.
+   *
+   * Default destructor that performs standard cleanup of all member variables.
+   */
+  ~History() = default;
+
+  /**
+   * @brief Swaps the active history to the temporary message store.
+   *
+   * On the first call (when swap_count_ is 0), switches the active history
+   * pointer to temp_messages_. Subsequent calls increment the swap counter
+   * without changing the pointer, supporting nested swap operations.
+   * Thread-safe.
+   */
+  void SwapToTempHistory() {
+    std::scoped_lock lock{mutex_};
+    if (swap_count_ == 0) {
+      active_history_ = &temp_messages_;
+    }
+    swap_count_++;
+  }
+
+  /**
+   * @brief Swaps the active history back to the main message store.
+   *
+   * Decrements the swap counter and switches back to the main messages_ store
+   * only when the counter reaches zero, properly handling nested swaps. Does
+   * nothing if already at the main history (swap_count_ is 0). Thread-safe.
+   */
+  void SwapToMainHistory() {
+    std::scoped_lock lock{mutex_};
+    if (swap_count_ == 0) {
+      return;
+    }
+    if (swap_count_ == 1) {
+      active_history_ = &messages_;
+    }
+    --swap_count_;
+  }
+
+  /**
+   * @brief Checks if the active history is the temporary message store.
+   *
+   * @return true if currently pointing to temp_messages_, false otherwise.
+   */
+  inline bool IsTempHistory() const {
+    std::scoped_lock lock{mutex_};
+    return active_history_ == &temp_messages_;
+  }
+
+  /**
+   * @brief Returns the current swap depth counter.
+   *
+   * @return The number of unmatched SwapToTempHistory() calls (swap nesting
+   * level).
+   */
+  inline size_t GetSwapCount() const {
+    std::scoped_lock lock{mutex_};
+    return swap_count_;
+  }
+
+  /**
+   * @brief Adds a message to the currently active history.
+   *
+   * @param msg The message to add (moved into the container).
+   */
+  void AddMessage(assistant::message msg) {
+    std::scoped_lock lock{mutex_};
+    active_history_->push_back(std::move(msg));
+  }
+
+  /**
+   * @brief Adds a message to the currently active history if the optional
+   * contains a value.
+   *
+   * @param msg Optional message to add. If empty, the function returns without
+   * modification.
+   */
+  void AddMessage(std::optional<assistant::message> msg) {
+    if (!msg.has_value()) {
+      return;
+    }
+    std::scoped_lock lock{mutex_};
+    active_history_->push_back(std::move(msg.value()));
+  }
+
+  /**
+   * @brief Retrieves a copy of all messages in the currently active history.
+   *
+   * @return A copy of the active message container. Thread-safe.
+   */
+  assistant::messages GetMessages() const {
+    std::scoped_lock lock{mutex_};
+    return *active_history_;
+  }
+
+  /**
+   * @brief Replaces all messages in the currently active history with the
+   * provided messages.
+   *
+   * @param msgs The messages to set (copied into the active history after
+   * clearing it).
+   */
+  void SetMessages(const assistant::messages& msgs) {
+    std::scoped_lock lock{mutex_};
+    active_history_->clear();
+    active_history_->insert(active_history_->end(), msgs.begin(), msgs.end());
+  }
+
+  /**
+   * @brief Reduces the active history size to a maximum by removing the oldest
+   * messages.
+   *
+   * Removes messages from the beginning of the active history until the size is
+   * at or below max_size. Does nothing if the current size is already within
+   * the limit.
+   *
+   * @param max_size The maximum number of messages to retain.
+   */
+  void ShrinkToFit(size_t max_size) {
+    std::scoped_lock lock{mutex_};
+    if (active_history_->size() <= max_size) {
+      return;
+    }
+
+    // Remove messages from the start ("old messages")
+    while (!active_history_->empty() && (active_history_->size() > max_size)) {
+      active_history_->erase(active_history_->begin());
+    }
+  }
+
+  /**
+   * @brief Clears all messages from the currently active history.
+   *
+   * Removes all messages from whichever history is currently active (main or
+   * temporary).
+   */
+  void Clear() {
+    std::scoped_lock lock{mutex_};
+    active_history_->clear();
+  }
+
+  /**
+   * @brief Clears all messages from both the main and temporary message stores.
+   *
+   * Unconditionally clears both messages_ and temp_messages_, regardless of
+   * which is active.
+   */
+  void ClearAll() {
+    std::scoped_lock lock{mutex_};
+    messages_.clear();
+    temp_messages_.clear();
+  }
+
+  /**
+   * @brief Checks if the currently active history is empty.
+   *
+   * @return true if the active history contains no messages, false otherwise.
+   */
+  inline bool IsEmpty() const {
+    std::scoped_lock lock{mutex_};
+    return active_history_->empty();
+  }
+
+ private:
+  mutable std::mutex mutex_;
+  assistant::messages messages_ GUARDED_BY(mutex_);
+  assistant::messages temp_messages_ GUARDED_BY(mutex_);
+  assistant::messages* active_history_ GUARDED_BY(mutex_){nullptr};
+  size_t swap_count_ GUARDED_BY(mutex_){0};
+};
+
 class ClientBase {
  public:
   ClientBase() = default;
@@ -128,10 +333,10 @@ class ClientBase {
   virtual std::optional<ModelCapabilities> GetModelCapabilities(
       const std::string& model) = 0;
 
-  virtual void CreateAndPushChatRequest(std::optional<assistant::message> msg,
-                                        OnResponseCallback cb,
-                                        std::string model,
-                                        ChatOptions chat_options) = 0;
+  virtual void CreateAndPushChatRequest(
+      std::optional<assistant::message> msg, OnResponseCallback cb,
+      std::string model, ChatOptions chat_options,
+      std::shared_ptr<ChatRequestFinaliser> finaliser) = 0;
 
   virtual void AddToolsResult(
       std::vector<std::pair<FunctionCall, FunctionResult>> result) = 0;
@@ -182,33 +387,30 @@ class ClientBase {
   }
 
   /// Clear all history messages.
-  void ClearHistoryMessages() {
-    m_messages.with_mut([](assistant::messages& msgs) { msgs.clear(); });
-  }
+  void ClearHistoryMessages() { m_history.Clear(); }
 
   /// Return the history messages.
   std::vector<Message> GetHistory() const {
     std::vector<Message> history;
-    m_messages.with([&history](const assistant::messages& m) {
-      for (const auto& msg : m) {
-        auto message = Message::from_message(msg);
-        if (message.has_value()) {
-          history.push_back(message.value());
-        }
+    auto msgs = m_history.GetMessages();
+    for (const auto& msg : msgs) {
+      auto message = Message::from_message(msg);
+      if (message.has_value()) {
+        history.push_back(message.value());
       }
-    });
+    }
     return history;
   }
 
   /// Replace the history.
   void SetHistory(const std::vector<Message>& history) {
-    m_messages.with_mut([&history](assistant::messages& m) {
-      m.clear();
-      m.reserve(history.size());
-      for (const auto& msg : history) {
-        m.push_back(msg.as_message());
-      }
-    });
+    assistant::messages m;
+    m.reserve(history.size());
+
+    for (const auto& msg : history) {
+      m.push_back(msg.as_message());
+    }
+    m_history.SetMessages(m);
   }
 
   inline std::string GetUrl() const { return m_endpoint.get_value().url_; }
@@ -293,9 +495,9 @@ class ClientBase {
   FunctionTable m_function_table;
   ChatRequestQueue m_queue;
   Locker<Endpoint> m_endpoint;
-  std::atomic_size_t m_windows_size{50};
+  std::atomic_size_t m_windows_size{500};
   /// Messages that were sent to the AI, will be placed here
-  Locker<assistant::messages> m_messages;
+  History m_history;
   Locker<assistant::messages> m_system_messages;
   Locker<ServerTimeout> m_server_timeout;
   Locker<std::unordered_map<std::string, ModelCapabilities>>

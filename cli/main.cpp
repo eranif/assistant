@@ -342,10 +342,15 @@ int main(int argc, char** argv) {
               << " or " << Cyan("exit") << " to exit." << std::endl;
     std::cout << Yellow("#") << " Type " << Cyan("/info")
               << " to get model information." << std::endl;
+    std::cout << Yellow("#") << " Type " << Cyan("/default")
+              << " restore to chat default options." << std::endl;
     std::cout << Yellow("#") << " To read prompt from a file, use " << Cyan("@")
               << "filename followed by ENTER" << std::endl;
     std::cout << Yellow("#") << " Use " << Cyan("/no_tools")
               << " to disable tool calls." << std::endl;
+    std::cout << Yellow("#") << " Use " << Cyan("/no_history")
+              << " to run requests without storing them in the history"
+              << std::endl;
     std::cout
         << Yellow("#") << " Use " << Cyan("/reset")
         << " to restore chat options to default and clear the chat history."
@@ -394,9 +399,23 @@ int main(int argc, char** argv) {
       std::cout << ">> Cache is disabled" << std::endl;
       PrintPrompt();
       continue;
+    } else if (prompt == "/no_history") {
+      std::cout << ">> History is disabled!" << std::endl;
+      assistant::AddFlagSet(options, assistant::ChatOptions::kNoHistory);
+      PrintPrompt();
+      continue;
     } else if (prompt == "/reset") {
       cli->ClearHistoryMessages();
       cli->ClearMessageQueue();
+      options = assistant::ChatOptions::kDefault;
+      if (args.print_to_stdout) {
+        std::cout
+            << ">> Chat history is cleared + options restored to defaults."
+            << std::endl;
+      }
+      PrintPrompt();
+      continue;
+    } else if (prompt == "/default") {
       options = assistant::ChatOptions::kDefault;
       if (args.print_to_stdout) {
         std::cout << ">> Chat options restored to defaults." << std::endl;
