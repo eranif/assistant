@@ -63,6 +63,7 @@ constexpr size_t kDefaultContextSize = 32 * 1024;
 constexpr std::string_view kEndpointOllamaLocal = "http://127.0.0.1:11434";
 constexpr std::string_view kEndpointAnthropic = "https://api.anthropic.com";
 constexpr std::string_view kEndpointOllamaCloud = "https://ollama.com";
+constexpr std::string_view kEndpointOpenAI = "https://api.openai.com";
 
 static std::unordered_map<std::string, std::string> kDefaultOllamaHeaders = {
     {"Host", "127.0.0.1"}};
@@ -82,6 +83,13 @@ struct AnthropicEndpoint : public Endpoint {
   AnthropicEndpoint() {
     url_ = kEndpointAnthropic;
     type_ = EndpointKind::anthropic;
+  }
+};
+
+struct OpenAIEndpoint : public Endpoint {
+  OpenAIEndpoint() {
+    url_ = kEndpointOpenAI;
+    type_ = EndpointKind::openai;
   }
 };
 

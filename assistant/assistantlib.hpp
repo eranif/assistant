@@ -80,6 +80,7 @@ namespace assistant {
 enum class EndpointKind {
   ollama,
   anthropic,
+  openai,
 };
 
 using json = nlohmann::ordered_json;
@@ -342,8 +343,16 @@ class response {
       else if (type == message_type::chat && json_data.contains("message"))
         simple_string = json_data["message"]["content"].get<std::string>();
 
-      if (json_data.contains("error"))
+      if (json_data.contains("error") && json_data["error"].is_string()) {
+        // Ollama error message
         error_string = json_data["error"].get<std::string>();
+      } else if (json_data.contains("error") &&
+                 json_data["error"].is_object() &&
+                 json_data["error"].contains("message") &&
+                 json_data["error"]["message"].is_string()) {
+        // OpenAI error message
+        error_string = json_data["error"]["message"].get<std::string>();
+      }
     } catch (const std::exception& e) {
       if (assistant::use_exceptions) {
         std::stringstream ss;
@@ -465,6 +474,8 @@ class ITransport {
     switch (endpoint_kind_) {
       case assistant::EndpointKind::anthropic:
         return "/v1/messages";
+      case assistant::EndpointKind::openai:
+        return "/v1/chat/completions";
       default:
       case assistant::EndpointKind::ollama:
         return "/api/chat";
@@ -668,61 +679,48 @@ class ClientImpl : public ITransport {
     auto stream_callback = [on_receive_token, user_data, partial_responses](
                                const char* data, size_t data_length) -> bool {
       std::string message(data, data_length);
-      bool continue_stream = true;
 
       if (assistant::log_replies) {
         std::cout << message << std::endl;
       }
 
       partial_responses->append(message);
-      // we can have multiple messages
-      auto lines = split_into_lines(*partial_responses);
-      for (const auto& line : lines.first) {
-        if (!continue_stream) {
-          return false;
-        }
+
+      auto result = assistant::try_read_jsons_from_string(*partial_responses);
+      if (result.first.empty()) {
+        // no complete jsons
+        return true;
+      }
+
+      // "second" holds the remainder
+      *partial_responses = result.second;
+
+      // Process the jsons
+      for (const auto& j : result.first) {
         try {
-          assistant::response response(line, assistant::message_type::chat);
+          assistant::response response(j.dump(), assistant::message_type::chat);
           if (response.has_error()) {
             if (assistant::use_exceptions)
-              throw assistant::exception("Ollama response returned error: " +
+              throw assistant::exception("Server response returned error: " +
                                          response.get_error());
           }
-          continue_stream = on_receive_token(response, user_data);
+          if (!on_receive_token(response, user_data)) {
+            return false;
+          }
         } catch (const assistant::invalid_json_exception& e) {
-          // since we are dealing with complete lines, we don't expect invalid
-          // JSON input.
+          // Could not parse a response object.
           if (assistant::use_exceptions) {
             std::stringstream ss;
-            ss << "Ollama responded with an invalid JSON. " << e.what()
-               << ". JSON:\n"
-               << line << "\nComplete message is:\n"
-               << *partial_responses;
+            ss << "Could not parse response." << e.what() << "\n"
+               << "Response JSON:\n"
+               << j.dump(2) << "\n";
             throw assistant::exception(ss.str());
           }
           // Abort the stream.
           return false;
         }
       }
-      // try to process the last incomplete line.
-      try {
-        assistant::response response(lines.second,
-                                     assistant::message_type::chat);
-        if (response.has_error()) {
-          if (assistant::use_exceptions)
-            throw assistant::exception("Ollama response returned error: " +
-                                       response.get_error());
-        }
-        continue_stream = on_receive_token(response, user_data);
-        // if we got here, it means we were able to process the complete
-        // output.
-        partial_responses->clear();
-
-      } catch (...) {
-        // keep the last line for next iteration.
-        partial_responses->swap(lines.second);
-      }
-      return continue_stream;
+      return true;
     };
 
     if (auto res = this->cli->Post(GetChatPath(), headers_, request_string,
@@ -878,6 +876,10 @@ class ClientImpl : public ITransport {
         }
         return false;
       } break;
+      case assistant::EndpointKind::openai: {
+        auto res = cli->Get("/", headers_);
+        return res;
+      } break;
       case assistant::EndpointKind::anthropic: {
         time_t secs, usecs;
         cli->get_connection_timeout(secs, usecs);
@@ -915,6 +917,11 @@ class ClientImpl : public ITransport {
       case assistant::EndpointKind::ollama: {
         for (auto& model : json_response["models"]) {
           models.push_back(model["name"]);
+        }
+      } break;
+      case assistant::EndpointKind::openai: {
+        for (auto& model : json_response["data"]) {
+          models.push_back(model["id"]);
         }
       } break;
       case assistant::EndpointKind::anthropic: {
@@ -1291,6 +1298,8 @@ class ClientImpl : public ITransport {
   std::string GetListPath() const {
     switch (endpoint_kind_) {
       case assistant::EndpointKind::anthropic:
+        return "/v1/models";
+      case assistant::EndpointKind::openai:
         return "/v1/models";
       default:
       case assistant::EndpointKind::ollama:

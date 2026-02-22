@@ -3,6 +3,7 @@
 #include "assistant/claude_response_parser.hpp"
 #include "assistant/client/claude_client.hpp"
 #include "assistant/client/ollama_client.hpp"
+#include "assistant/client/openai_client.hpp"
 #include "assistant/config.hpp"
 #include "assistant/function.hpp"
 #include "assistant/tool.hpp"
@@ -27,6 +28,9 @@ inline std::optional<std::shared_ptr<ClientBase>> MakeClient(
       break;
     case EndpointKind::anthropic:
       client = std::make_shared<ClaudeClient>(*endpoint);
+      break;
+    case EndpointKind::openai:
+      client = std::make_shared<OpenAIClient>(*endpoint);
       break;
   }
   if (conf.has_value()) {

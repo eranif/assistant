@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "assistant/attributes.hpp"
+#include "common/json.hpp"
 
 #define CONCAT_IMPL(a, b) a##b
 #define CONCAT(a, b) CONCAT_IMPL(a, b)
@@ -118,6 +119,77 @@ inline std::string_view after_first(const std::string_view& str,
     return str.substr(pos + delimiter.length());
   }
   return "";  // Return empty string_view if delimiter is not found
+}
+
+/**
+ * @brief Parses as many complete JSON objects as possible from the input
+ * string.
+ *
+ * This function attempts to extract all valid JSON objects from the beginning
+ * of the input string. It first counts how many complete JSON objects can be
+ * parsed, then extracts them into a vector. Any remaining unparsed content is
+ * returned as the second element of the pair.
+ *
+ * @param instr The input string containing one or more JSON objects to be
+ * parsed.
+ *
+ * @return A pair containing:
+ *         - first: A vector of successfully parsed nlohmann::ordered_json
+ * objects (empty if none could be parsed).
+ *         - second: The remaining unparsed portion of the input string (the
+ * entire input string if no JSON objects were parsed, or the remainder after
+ * the last successfully parsed JSON object).
+ *
+ * @note This function does not throw exceptions. All parsing errors are caught
+ * and handled internally. If parsing fails, the function returns an empty
+ * vector and the entire input string.
+ */
+inline std::pair<std::vector<nlohmann::ordered_json>, std::string>
+try_read_jsons_from_string(const std::string& instr) {
+  std::vector<nlohmann::ordered_json> result;
+  std::stringstream ss{instr};
+  std::streampos last_good_pos = 0;
+
+  while (true) {
+    try {
+      nlohmann::ordered_json j;
+
+      // Save position before parsing attempt
+      std::streampos pos_before = ss.tellg();
+      if (pos_before == -1) {
+        pos_before = 0;
+      }
+
+      ss >> j;
+
+      // Check if parsing succeeded (stream is still good)
+      if (ss.fail()) {
+        break;
+      }
+
+      result.push_back(std::move(j));
+
+      // Update last good position after successful parse
+      last_good_pos = ss.tellg();
+      if (last_good_pos == -1) {
+        // End of stream reached
+        last_good_pos = instr.size();
+        break;
+      }
+
+    } catch (const nlohmann::json::exception& e) {
+      // JSON parsing threw an exception, stop here
+      break;
+    } catch (...) {
+      // Unexpected exception, stop parsing
+      break;
+    }
+  }
+
+  // Extract remainder from the last successful position
+  std::string remainder = instr.substr(static_cast<size_t>(last_good_pos));
+
+  return {result, remainder};
 }
 
 }  // namespace assistant

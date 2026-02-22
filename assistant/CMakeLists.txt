@@ -6,6 +6,8 @@ add_library(
   assistantlib STATIC
   ${CMAKE_CURRENT_LIST_DIR}/client/ollama_client.cpp
   ${CMAKE_CURRENT_LIST_DIR}/client/ollama_client.hpp
+  ${CMAKE_CURRENT_LIST_DIR}/client/openai_client.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/client/openai_client.hpp
   ${CMAKE_CURRENT_LIST_DIR}/client/claude_client.cpp
   ${CMAKE_CURRENT_LIST_DIR}/client/claude_client.hpp
   ${CMAKE_CURRENT_LIST_DIR}/client/client_base.cpp

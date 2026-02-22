@@ -78,6 +78,8 @@ class FunctionBase {
     switch (kind) {
       case EndpointKind::ollama:
         return ToOllamaJson();
+      case EndpointKind::openai:
+        return ToOpenAIJson();
       case EndpointKind::anthropic:
         return ToClaudeJSON();
     }
@@ -109,6 +111,13 @@ class FunctionBase {
       }
     }
     j["function"]["parameters"]["required"] = required;
+    return j;
+  }
+
+  json ToOpenAIJson() const {
+    auto j = ToOllamaJson();
+    j["function"]["strict"] = true;
+    j["function"]["parameters"]["additionalProperties"] = false;
     return j;
   }
 
