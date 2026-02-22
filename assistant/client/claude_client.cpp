@@ -1,4 +1,4 @@
-#include "assistant/claude_client.hpp"
+#include "assistant/client/claude_client.hpp"
 
 namespace assistant {
 ClaudeClient::ClaudeClient(const Endpoint& endpoint)

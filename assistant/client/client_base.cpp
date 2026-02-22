@@ -1,4 +1,4 @@
-#include "assistant/client_base.hpp"
+#include "assistant/client/client_base.hpp"
 
 #include "assistant/logger.hpp"
 #include "assistant/tool.hpp"

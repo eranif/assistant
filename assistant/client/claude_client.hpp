@@ -1,7 +1,7 @@
 #pragma once
 
 #include "assistant/claude_response_parser.hpp"
-#include "assistant/ollama_client.hpp"
+#include "assistant/client/ollama_client.hpp"
 
 namespace assistant {
 class ClaudeClient : public OllamaClient {

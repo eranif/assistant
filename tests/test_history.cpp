@@ -3,7 +3,7 @@
 #include <thread>
 #include <vector>
 
-#include "assistant/client_base.hpp"
+#include "assistant/client/client_base.hpp"
 
 using namespace assistant;
 

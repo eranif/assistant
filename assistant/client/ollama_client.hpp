@@ -2,7 +2,7 @@
 
 #include <unordered_map>
 
-#include "assistant/client_base.hpp"
+#include "assistant/client/client_base.hpp"
 
 namespace assistant {
 

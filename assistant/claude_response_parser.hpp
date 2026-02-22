@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-#include "assistant/client_base.hpp"
+#include "assistant/client/client_base.hpp"
 #include "assistant/common/json.hpp"
 
 namespace assistant::claude {
