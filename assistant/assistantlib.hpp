@@ -182,7 +182,9 @@ class images : public std::vector<std::string> {
 
 class options : public json {
  public:
-  options() : json() { this->emplace("options", nlohmann::ordered_json::object()); }
+  options() : json() {
+    this->emplace("options", nlohmann::ordered_json::object());
+  }
 
   nlohmann::ordered_json& operator[](const std::string& key) {
     if (!this->at("options").contains(key))
@@ -401,7 +403,80 @@ using on_respons_callback =
 
 using on_raw_respons_callback = std::function<bool(const std::string&, void*)>;
 
-class ClientImpl {
+class ITransport {
+ public:
+  ITransport() = default;
+  virtual ~ITransport() = default;
+
+  ////---------------------------------
+  /// Pure virtual methods
+  ///---------------------------------
+
+  virtual bool chat_raw_output(assistant::request& request,
+                               on_raw_respons_callback on_receive_token,
+                               void* user_data) = 0;
+  virtual bool chat(assistant::request& request,
+                    on_respons_callback on_receive_token, void* user_data) = 0;
+  virtual std::vector<std::string> list_models() = 0;
+  virtual json list_model_json() = 0;
+
+  virtual void setReadTimeout(const int seconds, const int usecs = 0) = 0;
+  virtual void setWriteTimeout(const int seconds, const int usecs = 0) = 0;
+  virtual void setConnectTimeout(const int secs, const int usecs = 0) = 0;
+
+  virtual void interrupt() = 0;
+  virtual json show_model_info(const std::string& model,
+                               bool verbose = false) = 0;
+  virtual bool pull_model(const std::string& model,
+                          bool allow_insecure = false) = 0;
+  virtual bool is_running() = 0;
+
+#if CPPHTTPLIB_OPENSSL_SUPPORT
+  virtual void verifySSLCertificate(bool b) = 0;
+#endif
+
+  ///---------------------------------
+  /// Pure virtual methods END
+  ///---------------------------------
+
+  virtual void setHttpHeaders(httplib::Headers headers) {
+    headers_ = std::move(headers);
+    if (this->endpoint_kind_ == EndpointKind::anthropic) {
+      // Mandatory header for "claude"
+      headers_.insert({"anthropic-version", "2023-06-01"});
+    }
+  }
+  virtual void clearHttpHeaders() { headers_.clear(); }
+  virtual bool setServerURL(const std::string& server_url) {
+    if (this->server_url == server_url) {
+      // No need to change
+      return false;
+    }
+    this->server_url = server_url;
+    return true;
+  }
+  std::string getServerURL() const { return this->server_url; }
+
+  void setEndpointKind(EndpointKind kind) { endpoint_kind_ = kind; }
+  EndpointKind getEndpointKind() const { return endpoint_kind_; }
+
+ protected:
+  std::string GetChatPath() const {
+    switch (endpoint_kind_) {
+      case assistant::EndpointKind::anthropic:
+        return "/v1/messages";
+      default:
+      case assistant::EndpointKind::ollama:
+        return "/api/chat";
+    }
+  }
+
+  EndpointKind endpoint_kind_{EndpointKind::ollama};
+  std::string server_url;
+  httplib::Headers headers_;
+};
+
+class ClientImpl : public ITransport {
   using json = nlohmann::ordered_json;
 
  public:
@@ -580,7 +655,7 @@ class ClientImpl {
   }
 
   bool chat(assistant::request& request, on_respons_callback on_receive_token,
-            void* user_data) {
+            void* user_data) override {
     assistant::response response;
     request["stream"] = true;
 
@@ -678,7 +753,7 @@ class ClientImpl {
   /// Useful for non-ollama servers, like Anthropic's "claude".
   bool chat_raw_output(assistant::request& request,
                        on_raw_respons_callback on_receive_token,
-                       void* user_data) {
+                       void* user_data) override {
     assistant::response response;
     request["stream"] = true;
 
@@ -793,7 +868,7 @@ class ClientImpl {
     return false;
   }
 
-  bool is_running() {
+  bool is_running() override {
     switch (endpoint_kind_) {
       case assistant::EndpointKind::ollama: {
         auto res = cli->Get("/", headers_);
@@ -816,7 +891,7 @@ class ClientImpl {
     return false;
   }
 
-  json list_model_json() {
+  json list_model_json() override {
     json models;
     if (auto res = cli->Get(GetListPath(), headers_)) {
       if (assistant::log_replies) std::cout << res->body << std::endl;
@@ -831,7 +906,7 @@ class ClientImpl {
     return models;
   }
 
-  std::vector<std::string> list_models() {
+  std::vector<std::string> list_models() override {
     std::vector<std::string> models;
 
     json json_response = list_model_json();
@@ -941,7 +1016,8 @@ class ClientImpl {
     return false;
   }
 
-  json show_model_info(const std::string& model, bool verbose = false) {
+  json show_model_info(const std::string& model,
+                       bool verbose = false) override {
     json request, response;
     request["name"] = model;
     if (verbose) request["verbose"] = true;
@@ -1023,7 +1099,8 @@ class ClientImpl {
     return false;
   }
 
-  bool pull_model(const std::string& model, bool allow_insecure = false) {
+  bool pull_model(const std::string& model,
+                  bool allow_insecure = false) override {
     json request, response;
     request["name"] = model;
     request["insecure"] = allow_insecure;
@@ -1164,57 +1241,43 @@ class ClientImpl {
     }
   }
 
-  bool setServerURL(const std::string& server_url) {
-    if (this->server_url == server_url) {
-      // No need to change
+  bool setServerURL(const std::string& server_url) override {
+    if (!ITransport::setServerURL(server_url)) {
       return false;
     }
-    this->server_url = server_url;
     delete (this->cli);
     this->cli = new httplib::Client(server_url);
     return true;
   }
 
-  std::string getServerURL() const { return this->server_url; }
-
-  void interrupt() {
+  void interrupt() override {
     httplib::detail::shutdown_socket(this->cli->socket());
     httplib::detail::close_socket(this->cli->socket());
   }
 
-  void setEndpointKind(EndpointKind kind) { endpoint_kind_ = kind; }
-  EndpointKind getEndpointKind() const { return endpoint_kind_; }
-
-  void setReadTimeout(const int seconds, const int usecs = 0) {
+  void setReadTimeout(const int seconds, const int usecs = 0) override {
     if (this->cli == nullptr) {
       return;
     }
     this->cli->set_read_timeout(seconds, usecs);
   }
 
-  void setWriteTimeout(const int seconds, const int usecs = 0) {
+  void setWriteTimeout(const int seconds, const int usecs = 0) override {
     if (this->cli == nullptr) {
       return;
     }
     this->cli->set_write_timeout(seconds, usecs);
   }
 
-  void setConnectTimeout(const int secs, const int usecs = 0) {
+  void setConnectTimeout(const int secs, const int usecs = 0) override {
     if (this->cli == nullptr) {
       return;
     }
     this->cli->set_connection_timeout(secs, usecs);
   }
-  void setHttpHeaders(httplib::Headers headers) {
-    headers_ = std::move(headers);
-    if (this->endpoint_kind_ == EndpointKind::anthropic) {
-      // Mandatory header for "claude"
-      headers_.insert({"anthropic-version", "2023-06-01"});
-    }
-  }
 
 #if CPPHTTPLIB_OPENSSL_SUPPORT
-  void verifySSLCertificate(bool b) {
+  void verifySSLCertificate(bool b) override {
     if (!this->cli) {
       return;
     }
@@ -1223,16 +1286,6 @@ class ClientImpl {
 #endif
 
  private:
-  std::string GetChatPath() const {
-    switch (endpoint_kind_) {
-      case assistant::EndpointKind::anthropic:
-        return "/v1/messages";
-      default:
-      case assistant::EndpointKind::ollama:
-        return "/api/chat";
-    }
-  }
-
   std::string GetGeneratePath() const { return "/api/generate"; }
   std::string GetShowPath() const { return "/api/show"; }
   std::string GetListPath() const {
@@ -1244,10 +1297,6 @@ class ClientImpl {
         return "/api/tags";
     }
   }
-
-  EndpointKind endpoint_kind_{EndpointKind::ollama};
-  std::string server_url;
-  httplib::Headers headers_;
   httplib::Client* cli;
 };
 

@@ -67,17 +67,17 @@ class OllamaClient : public ClientBase {
  protected:
   virtual void ProcessChatRquest(std::shared_ptr<ChatRequest> chat_request);
   virtual void ProcessChatRequestQueue();
-  void SetClientForInterrupt(ClientImpl* c) {
+  void SetClientForInterrupt(ITransport* c) {
     std::scoped_lock lk{m_client_impl_ptr_mutex};
     m_client_impl_ptr = c;
   }
-  std::unique_ptr<ClientImpl> CreateClient();
+  virtual std::unique_ptr<ITransport> CreateClient();
 
   std::optional<ModelCapabilities> GetOllamaModelCapabilities(
       const std::string& model);
 
   mutable std::mutex m_client_impl_ptr_mutex;
-  ClientImpl* m_client_impl_ptr GUARDED_BY(m_client_impl_ptr_mutex) = nullptr;
+  ITransport* m_client_impl_ptr GUARDED_BY(m_client_impl_ptr_mutex) = nullptr;
   friend class ClaudeClient;
   friend struct SetInterruptClientLocker;
 };
@@ -85,7 +85,7 @@ class OllamaClient : public ClientBase {
 struct SetInterruptClientLocker final {
   OllamaClient* m_ollama_client{nullptr};
   explicit SetInterruptClientLocker(OllamaClient* ollama_client,
-                                    ClientImpl* ptr)
+                                    ITransport* ptr)
       : m_ollama_client{ollama_client} {
     m_ollama_client->SetClientForInterrupt(ptr);
   }
