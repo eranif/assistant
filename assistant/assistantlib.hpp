@@ -265,7 +265,7 @@ class request : public json {
     (*this)["prompt"] = prompt;
     (*this)["stream"] = stream;
 
-    if (options != nullptr) (*this)["options"] = options["options"];
+    if (options.is_object()) (*this)["options"] = options["options"];
     if (!images.empty()) (*this)["images"] = images;
 
     type = message_type::generation;
@@ -281,7 +281,7 @@ class request : public json {
     (*this)["messages"] = messages.to_json();
     (*this)["stream"] = stream;
 
-    if (options != nullptr) (*this)["options"] = options["options"];
+    if (options.is_object()) (*this)["options"] = options["options"];
     (void)format;  //(*this)["format"] = format; // Commented out as providing
     // the format causes issues with some models.
     if (!keep_alive_duration.empty()) {
@@ -310,7 +310,7 @@ class request : public json {
 
     request["model"] = model;
     request["input"] = input;
-    if (options != nullptr) request["options"] = options["options"];
+    if (options.is_object()) request["options"] = options["options"];
     request["truncate"] = truncate;
     request["keep_alive"] = keep_alive_duration;
 
@@ -780,7 +780,7 @@ class ClientImpl {
                                    kApplicationJson)) {
       if (assistant::log_replies) std::cout << res->body << std::endl;
       json response = json::parse(res->body);
-      return response["done"];
+      return response["done"].get<bool>();
     } else {
       if (assistant::use_exceptions)
         throw assistant::exception(
@@ -839,12 +839,12 @@ class ClientImpl {
     switch (endpoint_kind_) {
       case assistant::EndpointKind::ollama: {
         for (auto& model : json_response["models"]) {
-          models.push_back(model["name"]);
+          models.push_back(model["name"].get<std::string>());
         }
       } break;
       case assistant::EndpointKind::anthropic: {
         for (auto& model : json_response["data"]) {
-          models.push_back(model["id"]);
+          models.push_back(model["id"].get<std::string>());
         }
       } break;
     }
@@ -883,7 +883,7 @@ class ClientImpl {
     json json_response = running_model_json();
 
     for (auto& model : json_response["models"]) {
-      models.push_back(model["name"]);
+      models.push_back(model["name"].get<std::string>());
     }
 
     return models;
@@ -1149,7 +1149,7 @@ class ClientImpl {
 
     if (res) {
       json response = json::parse(res->body);
-      version = response["version"];
+      version = response["version"].get<std::string>();
     } else {
       throw assistant::exception(std::string{"Error retrieving version: "} +
                                  std::to_string(res->status));
