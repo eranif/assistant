@@ -278,6 +278,91 @@ TEST(ProcessTest, RunProcessAndWait_ArgumentsWithSpaces) {
   EXPECT_TRUE(result.out.find("Hello World With Spaces") != std::string::npos);
 }
 
+// Test shell execution with pipes
+TEST(ProcessTest, RunProcessAndWait_ShellWithPipe) {
+#ifdef _WIN32
+  ProcessResult result = Process::RunProcessAndWait(
+      {"echo", "hello", "|", "findstr", "hello"}, true);
+#else
+  ProcessResult result =
+      Process::RunProcessAndWait({"echo", "hello", "|", "grep", "hello"}, true);
+#endif
+
+  EXPECT_EQ(result.exit_code, 0);
+  EXPECT_NE(result.process_id, -1);
+  EXPECT_FALSE(result.out.empty());
+  EXPECT_TRUE(result.out.find("hello") != std::string::npos);
+}
+
+// Test shell execution with command chaining (&&)
+TEST(ProcessTest, RunProcessAndWait_ShellWithChaining) {
+#ifdef _WIN32
+  ProcessResult result = Process::RunProcessAndWait(
+      {"echo", "first", "&&", "echo", "second"}, true);
+#else
+  ProcessResult result = Process::RunProcessAndWait(
+      {"echo", "first", "&&", "echo", "second"}, true);
+#endif
+
+  EXPECT_EQ(result.exit_code, 0);
+  EXPECT_NE(result.process_id, -1);
+  EXPECT_FALSE(result.out.empty());
+  EXPECT_TRUE(result.out.find("first") != std::string::npos);
+  EXPECT_TRUE(result.out.find("second") != std::string::npos);
+}
+
+// Test shell execution with redirection
+TEST(ProcessTest, RunProcessAndWait_ShellWithRedirection) {
+#ifdef _WIN32
+  ProcessResult result =
+      Process::RunProcessAndWait({"echo", "error_msg", "1>&2"}, true);
+#else
+  ProcessResult result =
+      Process::RunProcessAndWait({"echo", "error_msg", ">&2"}, true);
+#endif
+
+  EXPECT_EQ(result.exit_code, 0);
+  EXPECT_NE(result.process_id, -1);
+  EXPECT_FALSE(result.err.empty());
+  EXPECT_TRUE(result.err.find("error_msg") != std::string::npos);
+}
+
+// Test async shell execution with pipes
+TEST(ProcessTest, RunProcessAsync_ShellWithPipe) {
+  bool callback_invoked = false;
+  ProcessResult async_result;
+
+#ifdef _WIN32
+  int pid = Process::RunProcessAsync(
+      {"echo", "async_test", "|", "findstr", "async"},
+      [&callback_invoked, &async_result](const ProcessResult& result) {
+        callback_invoked = true;
+        async_result = result;
+      },
+      true);
+#else
+  int pid = Process::RunProcessAsync(
+      {"echo", "async_test", "|", "grep", "async"},
+      [&callback_invoked, &async_result](const ProcessResult& result) {
+        callback_invoked = true;
+        async_result = result;
+      },
+      true);
+#endif
+
+  EXPECT_NE(pid, -1);
+
+  // Wait for the callback to be invoked (with timeout)
+  for (int i = 0; i < 50 && !callback_invoked; ++i) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  }
+
+  EXPECT_TRUE(callback_invoked);
+  EXPECT_EQ(async_result.exit_code, 0);
+  EXPECT_FALSE(async_result.out.empty());
+  EXPECT_TRUE(async_result.out.find("async") != std::string::npos);
+}
+
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

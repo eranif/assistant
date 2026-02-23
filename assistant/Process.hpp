@@ -18,6 +18,9 @@ class Process {
   /**
    * @brief Run process and wait for completion. Synchronous method.
    *
+   * If use_shell is true, the command will be executed through a shell,
+   * allowing the use of shell features like pipes (|), redirections, etc.
+   *
    * Launches a process with the given arguments and waits for it to complete.
    * Captures stdout and stderr streams. The first element of argv is the
    * executable path/name, and subsequent elements are the arguments.
@@ -26,13 +29,19 @@ class Process {
    * @return ProcessResult containing captured output, error, exit code, and
    * process ID.
    *
+   * @param use_shell If true, run command through shell (cmd.exe on Windows,
+   *                  /bin/bash on Unix). Default is false.
+   *
    * @throws None. Returns a ProcessResult with exit_code=-1 and process_id=-1
    *         on failure.
    */
-  static ProcessResult RunProcessAndWait(const std::vector<std::string>& argv);
+  static ProcessResult RunProcessAndWait(const std::vector<std::string>& argv,
+                                         bool use_shell = false);
 
   /**
    * @brief Run process asynchronously.
+   *
+   * If use_shell is true, the command will be executed through a shell.
    *
    * Launches a process with the given arguments and returns immediately.
    * When the process exits, the completion_cb callback is invoked with the
@@ -42,11 +51,15 @@ class Process {
    * @param completion_cb Callback function invoked when process completes.
    * @return The process ID on success, or -1 in case of process start error.
    *
+   * @param use_shell If true, run command through shell (cmd.exe on Windows,
+   *                  /bin/bash on Unix). Default is false.
+   *
    * @throws None. Returns -1 on failure.
    */
   static int RunProcessAsync(
       const std::vector<std::string>& argv,
-      std::function<void(const ProcessResult&)> completion_cb);
+      std::function<void(const ProcessResult&)> completion_cb,
+      bool use_shell = false);
 
   /**
    * @brief Terminate process with a given PID.

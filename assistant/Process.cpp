@@ -85,7 +85,23 @@ std::string BuildCommandLine(const std::vector<std::string>& argv) {
 
 }  // namespace
 
-ProcessResult Process::RunProcessAndWait(const std::vector<std::string>& argv) {
+ProcessResult Process::RunProcessAndWait(const std::vector<std::string>& argv,
+                                         bool use_shell) {
+  // If use_shell is true, wrap the command with cmd.exe
+  if (use_shell) {
+    std::vector<std::string> shell_argv = {"cmd.exe", "/c"};
+
+    // Join all arguments into a single command string
+    std::string command;
+    for (size_t i = 0; i < argv.size(); ++i) {
+      if (i > 0) command += " ";
+      command += argv[i];
+    }
+    shell_argv.push_back(command);
+
+    return RunProcessAndWait(shell_argv, false);
+  }
+
   ProcessResult result;
 
   if (argv.empty()) {
@@ -189,7 +205,22 @@ ProcessResult Process::RunProcessAndWait(const std::vector<std::string>& argv) {
 
 int Process::RunProcessAsync(
     const std::vector<std::string>& argv,
-    std::function<void(const ProcessResult&)> completion_cb) {
+    std::function<void(const ProcessResult&)> completion_cb, bool use_shell) {
+  // If use_shell is true, wrap the command with cmd.exe
+  if (use_shell) {
+    std::vector<std::string> shell_argv = {"cmd.exe", "/c"};
+
+    // Join all arguments into a single command string
+    std::string command;
+    for (size_t i = 0; i < argv.size(); ++i) {
+      if (i > 0) command += " ";
+      command += argv[i];
+    }
+    shell_argv.push_back(command);
+
+    return RunProcessAsync(shell_argv, completion_cb, false);
+  }
+
   if (argv.empty() || !completion_cb) {
     return -1;
   }
@@ -340,7 +371,23 @@ std::string ReadFromFd(int fd) {
 
 }  // namespace
 
-ProcessResult Process::RunProcessAndWait(const std::vector<std::string>& argv) {
+ProcessResult Process::RunProcessAndWait(const std::vector<std::string>& argv,
+                                         bool use_shell) {
+  // If use_shell is true, wrap the command with /bin/bash
+  if (use_shell) {
+    std::vector<std::string> shell_argv = {"/bin/bash", "-c"};
+
+    // Join all arguments into a single command string
+    std::string command;
+    for (size_t i = 0; i < argv.size(); ++i) {
+      if (i > 0) command += " ";
+      command += argv[i];
+    }
+    shell_argv.push_back(command);
+
+    return RunProcessAndWait(shell_argv, false);
+  }
+
   ProcessResult result;
 
   if (argv.empty()) {
@@ -444,7 +491,22 @@ ProcessResult Process::RunProcessAndWait(const std::vector<std::string>& argv) {
 
 int Process::RunProcessAsync(
     const std::vector<std::string>& argv,
-    std::function<void(const ProcessResult&)> completion_cb) {
+    std::function<void(const ProcessResult&)> completion_cb, bool use_shell) {
+  // If use_shell is true, wrap the command with /bin/bash
+  if (use_shell) {
+    std::vector<std::string> shell_argv = {"/bin/bash", "-c"};
+
+    // Join all arguments into a single command string
+    std::string command;
+    for (size_t i = 0; i < argv.size(); ++i) {
+      if (i > 0) command += " ";
+      command += argv[i];
+    }
+    shell_argv.push_back(command);
+
+    return RunProcessAsync(shell_argv, completion_cb, false);
+  }
+
   if (argv.empty() || !completion_cb) {
     return -1;
   }
