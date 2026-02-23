@@ -403,6 +403,30 @@ void SetNonBlocking(int fd) {
   }
 }
 
+enum class WaitResult {
+  kTimeout,
+  kError,
+  kDataAvailable,
+};
+
+WaitResult WaitOnFd(int fd) {
+  fd_set fds;
+  FD_ZERO(&fds);
+  FD_SET(fd, &fds);
+  struct timeval tv;
+  tv.tv_sec = 0;
+  tv.tv_usec = 5000;
+  int rc = ::select(fd + 1, &fds, nullptr, nullptr, &tv);
+  if (rc > 0 && FD_ISSET(fd, &fds)) {
+    return WaitResult::kDataAvailable;
+  }
+
+  if (rc == 0) {
+    return WaitResult::kTimeout;
+  }
+  return WaitResult::kError;
+}
+
 // Helper to read available data from a file descriptor (non-blocking)
 std::string ReadAvailableFromFd(int fd) {
   std::string result;
@@ -443,7 +467,9 @@ int Process::RunProcessAndWait(const std::vector<std::string>& argv,
     // Join all arguments into a single command string
     std::string command;
     for (size_t i = 0; i < argv.size(); ++i) {
-      if (i > 0) command += " ";
+      if (i > 0) {
+        command += " ";
+      }
       command += argv[i];
     }
     shell_argv.push_back(command);
@@ -523,24 +549,38 @@ int Process::RunProcessAndWait(const std::vector<std::string>& argv,
 
   // Poll for output while process is running
   while (true) {
-    // Check if process has exited
-    int status = 0;
-    pid_t wait_result = waitpid(pid, &status, WNOHANG);
-
     // Read available output
-    std::string new_out = ReadAvailableFromFd(stdout_pipe[0]);
-    std::string new_err = ReadAvailableFromFd(stderr_pipe[0]);
+    std::string new_out, new_err;
+    auto rc = WaitOnFd(stdout_pipe[0]);
+    switch (rc) {
+      case WaitResult::kDataAvailable:
+        new_out = ReadAvailableFromFd(stdout_pipe[0]);
+        break;
+      default:
+        break;
+    }
 
-    if (!new_out.empty() || !new_err.empty()) {
-      if (output_cb) {
-        should_continue = output_cb(new_out, new_err);
-        if (!should_continue) {
-          kill(pid, SIGTERM);
-          break;
-        }
+    rc = WaitOnFd(stderr_pipe[0]);
+    switch (rc) {
+      case WaitResult::kDataAvailable:
+        new_err = ReadAvailableFromFd(stderr_pipe[0]);
+        break;
+      default:
+        break;
+    }
+
+    // Always call the callback (even with no output) so it can terminate early
+    if (output_cb) {
+      should_continue = output_cb(new_out, new_err);
+      if (!should_continue) {
+        kill(pid, SIGKILL);
+        break;
       }
     }
 
+    // Check if process has exited
+    int status{0};
+    pid_t wait_result = waitpid(pid, &status, WNOHANG);
     if (wait_result == pid) {
       // Process has exited, read any remaining output
       std::string final_out = ReadFromFd(stdout_pipe[0]);
@@ -564,9 +604,6 @@ int Process::RunProcessAndWait(const std::vector<std::string>& argv,
         return -1;
       }
     }
-
-    // Sleep briefly before next poll
-    usleep(10000);  // 10ms
   }
 
   // If we get here, process was terminated by callback
@@ -690,7 +727,7 @@ bool Process::RunProcessAsync(const std::vector<std::string>& argv,
         if (output_cb) {
           should_continue = output_cb(accumulated_out, accumulated_err);
           if (!should_continue) {
-            kill(pid, SIGTERM);
+            kill(pid, SIGKILL);
             break;
           }
         }

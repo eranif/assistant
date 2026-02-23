@@ -24,8 +24,8 @@ ProcessResult RunProcessSync(const std::vector<std::string>& argv,
   result.exit_code = Process::RunProcessAndWait(
       argv,
       [&result](const std::string& out, const std::string& err) {
-        result.out = out;
-        result.err = err;
+        result.out.append(out);
+        result.err.append(err);
         return true;  // Continue
       },
       use_shell);
@@ -195,7 +195,7 @@ TEST(ProcessTest, RunProcessAndWait_CallbackTermination) {
   int exit_code = Process::RunProcessAndWait(
       {"cmd", "/c", "ping", "127.0.0.1", "-n", "10"}, cb);
 #else
-  int exit_code = Process::RunProcessAndWait({"sleep", "10"}, cb);
+  int exit_code = Process::RunProcessAndWait({"sleep", "1"}, cb);
 #endif
 
   // Process should have been terminated
@@ -220,7 +220,7 @@ TEST(ProcessTest, RunProcessAsync_CallbackTermination) {
       });
 #else
   bool success = Process::RunProcessAsync(
-      {"sleep", "10"},
+      {"sleep", "1"},
       [](const std::string& out, const std::string& err) {
         // Terminate immediately
         return false;
