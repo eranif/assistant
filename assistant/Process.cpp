@@ -5,6 +5,8 @@
 #include <memory>
 #include <thread>
 
+#include "assistant/assistantlib.hpp"
+
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 // clang-format off
@@ -22,24 +24,57 @@
 #endif
 
 namespace assistant {
+static bool enable_exec_log{false};
 
+void Process::EnableExecLog(bool b) { enable_exec_log = b; }
+bool Process::IsExecLogEnabled() { return enable_exec_log; }
+
+constexpr int kBufferSize = 256;
+constexpr int kMaxChunkSize = 1024;
 #ifdef _WIN32
 
 namespace {
 
-// Helper to read from a pipe on Windows
-std::string ReadFromPipe(HANDLE hPipe) {
+// Helper to read available data from a pipe on Windows (non-blocking)
+std::string ReadAvailableFromPipe(HANDLE hPipe) {
   std::string result;
-  const DWORD kBufferSize = 4096;
   char buffer[kBufferSize];
-  DWORD bytesRead = 0;
 
   while (true) {
-    BOOL success = ReadFile(hPipe, buffer, kBufferSize, &bytesRead, nullptr);
+    DWORD bytesRead = 0;
+    DWORD bytesAvail = 0;
+    // Check if data is available
+    if (!PeekNamedPipe(hPipe, nullptr, 0, nullptr, &bytesAvail, nullptr) ||
+        bytesAvail == 0) {
+      break;
+    }
+
+    DWORD toRead = (bytesAvail < kBufferSize) ? bytesAvail : kBufferSize;
+    memset(buffer, 0, sizeof(buffer));
+    BOOL success = ReadFile(hPipe, buffer, toRead, &bytesRead, nullptr);
     if (!success || bytesRead == 0) {
       break;
     }
     result.append(buffer, bytesRead);
+    if (result.size() > kMaxChunkSize) {
+      break;
+    }
+  }
+
+  return result;
+}
+
+// Helper to read all remaining data from a pipe on Windows
+std::string ReadAllFromPipe(HANDLE hPipe) {
+  std::string result;
+  char buffer[kBufferSize];
+  DWORD bytesRead = 0;
+  memset(buffer, 0, sizeof(buffer));
+
+  while (ReadFile(hPipe, buffer, kBufferSize, &bytesRead, nullptr) &&
+         bytesRead > 0) {
+    result.append(buffer, bytesRead);
+    memset(buffer, 0, sizeof(buffer));
   }
 
   return result;
@@ -58,26 +93,7 @@ std::string BuildCommandLine(const std::vector<std::string>& argv) {
     }
 
     const auto& arg = argv[i];
-    // Simple quoting: if the argument contains spaces, wrap it in quotes
-    bool needsQuote = arg.find(' ') != std::string::npos ||
-                      arg.find('\t') != std::string::npos;
-
-    if (needsQuote) {
-      cmdline += "\"";
-      // Escape any existing quotes
-      for (char ch : arg) {
-        if (ch == '"') {
-          cmdline += "\\\"";
-        } else if (ch == '\\') {
-          cmdline += "\\\\";
-        } else {
-          cmdline += ch;
-        }
-      }
-      cmdline += "\"";
-    } else {
-      cmdline += arg;
-    }
+    cmdline += arg;
   }
 
   return cmdline;
@@ -85,30 +101,18 @@ std::string BuildCommandLine(const std::vector<std::string>& argv) {
 
 }  // namespace
 
-ProcessResult Process::RunProcessAndWait(const std::vector<std::string>& argv,
-                                         bool use_shell) {
-  // If use_shell is true, wrap the command with cmd.exe
+int Process::RunProcessAndWait(const std::vector<std::string>& argv,
+                               on_output_callback output_cb, bool use_shell) {
+  // If use_shell is true, prepend the shell command and call again with
+  // use_shell = false
   if (use_shell) {
     std::vector<std::string> shell_argv = {"cmd.exe", "/c"};
-
-    // Join all arguments into a single command string
-    std::string command;
-    for (size_t i = 0; i < argv.size(); ++i) {
-      if (i > 0) command += " ";
-      command += argv[i];
-    }
-    shell_argv.push_back(command);
-
-    return RunProcessAndWait(shell_argv, false);
+    shell_argv.insert(shell_argv.end(), argv.begin(), argv.end());
+    return RunProcessAndWait(shell_argv, output_cb, false);
   }
 
-  ProcessResult result;
-
   if (argv.empty()) {
-    result.exit_code = -1;
-    result.process_id = -1;
-    result.err = "Empty command";
-    return result;
+    return -1;
   }
 
   // Create pipes for stdout and stderr
@@ -122,21 +126,19 @@ ProcessResult Process::RunProcessAndWait(const std::vector<std::string>& argv,
 
   if (!CreatePipe(&hStdoutRead, &hStdoutWrite, &sa, 0) ||
       !SetHandleInformation(hStdoutRead, HANDLE_FLAG_INHERIT, 0)) {
-    result.exit_code = -1;
-    result.process_id = -1;
-    result.err = "Failed to create stdout pipe";
-    return result;
+    return -1;
   }
-
   if (!CreatePipe(&hStderrRead, &hStderrWrite, &sa, 0) ||
       !SetHandleInformation(hStderrRead, HANDLE_FLAG_INHERIT, 0)) {
     CloseHandle(hStdoutRead);
     CloseHandle(hStdoutWrite);
-    result.exit_code = -1;
-    result.process_id = -1;
-    result.err = "Failed to create stderr pipe";
-    return result;
+    return -1;
   }
+
+  // Set pipe to byte mode
+  DWORD mode = PIPE_READMODE_BYTE;
+  SetNamedPipeHandleState(hStdoutWrite, &mode, NULL, NULL);
+  SetNamedPipeHandleState(hStderrRead, &mode, NULL, NULL);
 
   // Setup process startup info
   STARTUPINFOA si;
@@ -155,6 +157,10 @@ ProcessResult Process::RunProcessAndWait(const std::vector<std::string>& argv,
   // CreateProcess modifies the command line, so we need a mutable buffer
   std::vector<char> cmdlineBuf(cmdline.begin(), cmdline.end());
   cmdlineBuf.push_back('\0');
+
+  if (Process::IsExecLogEnabled()) {
+    std::cout << "\n" << cmdlineBuf.data() << std::endl;
+  }
 
   BOOL success = CreateProcessA(nullptr,            // Application name
                                 cmdlineBuf.data(),  // Command line
@@ -175,24 +181,46 @@ ProcessResult Process::RunProcessAndWait(const std::vector<std::string>& argv,
   if (!success) {
     CloseHandle(hStdoutRead);
     CloseHandle(hStderrRead);
-    result.exit_code = -1;
-    result.process_id = -1;
-    result.err = "Failed to create process";
-    return result;
+    return -1;
   }
 
-  result.process_id = static_cast<int>(pi.dwProcessId);
+  int process_id = static_cast<int>(pi.dwProcessId);
+  bool should_continue = true;
 
-  // Read stdout and stderr
-  result.out = ReadFromPipe(hStdoutRead);
-  result.err = ReadFromPipe(hStderrRead);
+  // Poll for output while process is running
+  while (true) {
+    DWORD wait_result = WaitForSingleObject(pi.hProcess, 100);
 
-  // Wait for process to complete
-  WaitForSingleObject(pi.hProcess, INFINITE);
+    // Read available output
+    std::string new_out = ReadAvailableFromPipe(hStdoutRead);
+    std::string new_err = ReadAvailableFromPipe(hStderrRead);
+
+    if (!new_out.empty() || !new_err.empty()) {
+      if (output_cb) {
+        should_continue = output_cb(new_out, new_err);
+        if (!should_continue) {
+          TerminateProcess(process_id);
+          break;
+        }
+      }
+    }
+
+    if (wait_result == WAIT_OBJECT_0) {
+      // Process has exited, read any remaining output
+      std::string final_out = ReadAllFromPipe(hStdoutRead);
+      std::string final_err = ReadAllFromPipe(hStderrRead);
+
+      if (!final_out.empty() || !final_err.empty()) {
+        if (output_cb) {
+          output_cb(final_out, final_err);
+        }
+      }
+      break;
+    }
+  }
 
   DWORD exitCode = 0;
   GetExitCodeProcess(pi.hProcess, &exitCode);
-  result.exit_code = static_cast<int>(exitCode);
 
   // Clean up
   CloseHandle(hStdoutRead);
@@ -200,12 +228,13 @@ ProcessResult Process::RunProcessAndWait(const std::vector<std::string>& argv,
   CloseHandle(pi.hProcess);
   CloseHandle(pi.hThread);
 
-  return result;
+  return static_cast<int>(exitCode);
 }
 
-int Process::RunProcessAsync(
-    const std::vector<std::string>& argv,
-    std::function<void(const ProcessResult&)> completion_cb, bool use_shell) {
+bool Process::RunProcessAsync(const std::vector<std::string>& argv,
+                              on_output_callback output_cb,
+                              on_process_end_callback completion_cb,
+                              bool use_shell) {
   // If use_shell is true, wrap the command with cmd.exe
   if (use_shell) {
     std::vector<std::string> shell_argv = {"cmd.exe", "/c"};
@@ -218,25 +247,14 @@ int Process::RunProcessAsync(
     }
     shell_argv.push_back(command);
 
-    return RunProcessAsync(shell_argv, completion_cb, false);
+    return RunProcessAsync(shell_argv, output_cb, completion_cb, false);
   }
 
   if (argv.empty() || !completion_cb) {
-    return -1;
+    return false;
   }
 
-  // Launch a thread to run the process
-  std::thread([argv, completion_cb]() {
-    ProcessResult result = RunProcessAndWait(argv);
-    completion_cb(result);
-  }).detach();
-
-  // Note: We return -1 here because we don't have the actual PID yet
-  // This is a limitation of the async design. A better approach would be
-  // to use synchronization to wait for the process to start.
-  // For now, we'll do a simple implementation.
-
-  // Better implementation: create the process first, get the PID, then monitor
+  // Create pipes for stdout and stderr
   HANDLE hStdoutRead = nullptr, hStdoutWrite = nullptr;
   HANDLE hStderrRead = nullptr, hStderrWrite = nullptr;
 
@@ -247,14 +265,14 @@ int Process::RunProcessAsync(
 
   if (!CreatePipe(&hStdoutRead, &hStdoutWrite, &sa, 0) ||
       !SetHandleInformation(hStdoutRead, HANDLE_FLAG_INHERIT, 0)) {
-    return -1;
+    return false;
   }
 
   if (!CreatePipe(&hStderrRead, &hStderrWrite, &sa, 0) ||
       !SetHandleInformation(hStderrRead, HANDLE_FLAG_INHERIT, 0)) {
     CloseHandle(hStdoutRead);
     CloseHandle(hStdoutWrite);
-    return -1;
+    return false;
   }
 
   STARTUPINFOA si;
@@ -281,37 +299,67 @@ int Process::RunProcessAsync(
   if (!success) {
     CloseHandle(hStdoutRead);
     CloseHandle(hStderrRead);
-    return -1;
+    return false;
   }
 
   int pid = static_cast<int>(pi.dwProcessId);
 
   // Launch a thread to monitor the process
-  std::thread([pi, hStdoutRead, hStderrRead, completion_cb, pid]() {
-    ProcessResult result;
-    result.process_id = pid;
+  std::thread([pi, hStdoutRead, hStderrRead, output_cb, completion_cb, pid]() {
+    std::string accumulated_out;
+    std::string accumulated_err;
+    bool should_continue = true;
 
-    // Read output
-    result.out = ReadFromPipe(hStdoutRead);
-    result.err = ReadFromPipe(hStderrRead);
+    // Poll for output while process is running
+    while (true) {
+      DWORD wait_result = WaitForSingleObject(pi.hProcess, 100);
 
-    // Wait for process
-    WaitForSingleObject(pi.hProcess, INFINITE);
+      // Read available output
+      std::string new_out = ReadAvailableFromPipe(hStdoutRead);
+      std::string new_err = ReadAvailableFromPipe(hStderrRead);
+
+      if (!new_out.empty() || !new_err.empty()) {
+        accumulated_out += new_out;
+        accumulated_err += new_err;
+
+        if (output_cb) {
+          should_continue = output_cb(accumulated_out, accumulated_err);
+          if (!should_continue) {
+            TerminateProcess(pid);
+            break;
+          }
+        }
+      }
+
+      if (wait_result == WAIT_OBJECT_0) {
+        // Process has exited, read any remaining output
+        std::string final_out = ReadAllFromPipe(hStdoutRead);
+        std::string final_err = ReadAllFromPipe(hStderrRead);
+
+        if (!final_out.empty() || !final_err.empty()) {
+          accumulated_out += final_out;
+          accumulated_err += final_err;
+
+          if (output_cb) {
+            output_cb(accumulated_out, accumulated_err);
+          }
+        }
+        break;
+      }
+    }
 
     DWORD exitCode = 0;
     GetExitCodeProcess(pi.hProcess, &exitCode);
-    result.exit_code = static_cast<int>(exitCode);
 
-    // Clean up
     CloseHandle(hStdoutRead);
     CloseHandle(hStderrRead);
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
 
-    completion_cb(result);
+    completion_cb(static_cast<int>(exitCode));
   }).detach();
 
-  return pid;
+  return true;
 }
 
 void Process::TerminateProcess(int process_id) {
@@ -355,10 +403,25 @@ void SetNonBlocking(int fd) {
   }
 }
 
+// Helper to read available data from a file descriptor (non-blocking)
+std::string ReadAvailableFromFd(int fd) {
+  std::string result;
+  char buffer[kBufferSize];
+  ssize_t bytesRead = 0;
+
+  while ((bytesRead = read(fd, buffer, kBufferSize)) > 0) {
+    result.append(buffer, bytesRead);
+    if (result.size() > kMaxChunkSize) {
+      break;
+    }
+  }
+
+  return result;
+}
+
 // Helper to read from a file descriptor until EOF
 std::string ReadFromFd(int fd) {
   std::string result;
-  const size_t kBufferSize = 4096;
   char buffer[kBufferSize];
   ssize_t bytesRead = 0;
 
@@ -371,8 +434,8 @@ std::string ReadFromFd(int fd) {
 
 }  // namespace
 
-ProcessResult Process::RunProcessAndWait(const std::vector<std::string>& argv,
-                                         bool use_shell) {
+int Process::RunProcessAndWait(const std::vector<std::string>& argv,
+                               on_output_callback output_cb, bool use_shell) {
   // If use_shell is true, wrap the command with /bin/bash
   if (use_shell) {
     std::vector<std::string> shell_argv = {"/bin/bash", "-c"};
@@ -385,16 +448,11 @@ ProcessResult Process::RunProcessAndWait(const std::vector<std::string>& argv,
     }
     shell_argv.push_back(command);
 
-    return RunProcessAndWait(shell_argv, false);
+    return RunProcessAndWait(shell_argv, output_cb, false);
   }
 
-  ProcessResult result;
-
   if (argv.empty()) {
-    result.exit_code = -1;
-    result.process_id = -1;
-    result.err = "Empty command";
-    return result;
+    return -1;
   }
 
   // Create pipes for stdout and stderr
@@ -402,19 +460,13 @@ ProcessResult Process::RunProcessAndWait(const std::vector<std::string>& argv,
   int stderr_pipe[2];
 
   if (pipe(stdout_pipe) != 0) {
-    result.exit_code = -1;
-    result.process_id = -1;
-    result.err = "Failed to create stdout pipe";
-    return result;
+    return -1;
   }
 
   if (pipe(stderr_pipe) != 0) {
     close(stdout_pipe[0]);
     close(stdout_pipe[1]);
-    result.exit_code = -1;
-    result.process_id = -1;
-    result.err = "Failed to create stderr pipe";
-    return result;
+    return -1;
   }
 
   pid_t pid = fork();
@@ -425,10 +477,7 @@ ProcessResult Process::RunProcessAndWait(const std::vector<std::string>& argv,
     close(stdout_pipe[1]);
     close(stderr_pipe[0]);
     close(stderr_pipe[1]);
-    result.exit_code = -1;
-    result.process_id = -1;
-    result.err = "Failed to fork process";
-    return result;
+    return -1;
   }
 
   if (pid == 0) {
@@ -460,38 +509,87 @@ ProcessResult Process::RunProcessAndWait(const std::vector<std::string>& argv,
   }
 
   // Parent process
-  result.process_id = static_cast<int>(pid);
+  int process_id = static_cast<int>(pid);
 
   // Close write ends
   close(stdout_pipe[1]);
   close(stderr_pipe[1]);
 
-  // Read from stdout and stderr
-  result.out = ReadFromFd(stdout_pipe[0]);
-  result.err = ReadFromFd(stderr_pipe[0]);
+  // Set pipes to non-blocking mode
+  SetNonBlocking(stdout_pipe[0]);
+  SetNonBlocking(stderr_pipe[0]);
 
-  // Close read ends
+  bool should_continue = true;
+
+  // Poll for output while process is running
+  while (true) {
+    // Check if process has exited
+    int status = 0;
+    pid_t wait_result = waitpid(pid, &status, WNOHANG);
+
+    // Read available output
+    std::string new_out = ReadAvailableFromFd(stdout_pipe[0]);
+    std::string new_err = ReadAvailableFromFd(stderr_pipe[0]);
+
+    if (!new_out.empty() || !new_err.empty()) {
+      if (output_cb) {
+        should_continue = output_cb(new_out, new_err);
+        if (!should_continue) {
+          kill(pid, SIGTERM);
+          break;
+        }
+      }
+    }
+
+    if (wait_result == pid) {
+      // Process has exited, read any remaining output
+      std::string final_out = ReadFromFd(stdout_pipe[0]);
+      std::string final_err = ReadFromFd(stderr_pipe[0]);
+
+      if (!final_out.empty() || !final_err.empty()) {
+        if (output_cb) {
+          output_cb(final_out, final_err);
+        }
+      }
+
+      // Close read ends
+      close(stdout_pipe[0]);
+      close(stderr_pipe[0]);
+
+      if (WIFEXITED(status)) {
+        return WEXITSTATUS(status);
+      } else if (WIFSIGNALED(status)) {
+        return 128 + WTERMSIG(status);
+      } else {
+        return -1;
+      }
+    }
+
+    // Sleep briefly before next poll
+    usleep(10000);  // 10ms
+  }
+
+  // If we get here, process was terminated by callback
   close(stdout_pipe[0]);
   close(stderr_pipe[0]);
 
-  // Wait for child process to complete
+  // Wait for process to actually terminate
   int status = 0;
   waitpid(pid, &status, 0);
 
   if (WIFEXITED(status)) {
-    result.exit_code = WEXITSTATUS(status);
+    return WEXITSTATUS(status);
   } else if (WIFSIGNALED(status)) {
-    result.exit_code = 128 + WTERMSIG(status);
+    return 128 + WTERMSIG(status);
   } else {
-    result.exit_code = -1;
+    return -1;
   }
-
-  return result;
 }
 
-int Process::RunProcessAsync(
-    const std::vector<std::string>& argv,
-    std::function<void(const ProcessResult&)> completion_cb, bool use_shell) {
+bool Process::RunProcessAsync(const std::vector<std::string>& argv,
+                              on_output_callback output_cb,
+                              on_process_end_callback completion_cb,
+                              bool use_shell) {
   // If use_shell is true, wrap the command with /bin/bash
   if (use_shell) {
     std::vector<std::string> shell_argv = {"/bin/bash", "-c"};
@@ -504,11 +602,11 @@ int Process::RunProcessAsync(
     }
     shell_argv.push_back(command);
 
-    return RunProcessAsync(shell_argv, completion_cb, false);
+    return RunProcessAsync(shell_argv, output_cb, completion_cb, false);
   }
 
   if (argv.empty() || !completion_cb) {
-    return -1;
+    return false;
   }
 
   // Create pipes for stdout and stderr
@@ -516,13 +614,13 @@ int Process::RunProcessAsync(
   int stderr_pipe[2];
 
   if (pipe(stdout_pipe) != 0) {
-    return -1;
+    return false;
   }
 
   if (pipe(stderr_pipe) != 0) {
     close(stdout_pipe[0]);
     close(stdout_pipe[1]);
-    return -1;
+    return false;
   }
 
   pid_t pid = fork();
@@ -533,7 +631,7 @@ int Process::RunProcessAsync(
     close(stdout_pipe[1]);
     close(stderr_pipe[0]);
     close(stderr_pipe[1]);
-    return -1;
+    return false;
   }
 
   if (pid == 0) {
@@ -565,34 +663,90 @@ int Process::RunProcessAsync(
   close(stderr_pipe[1]);
 
   // Launch a thread to monitor the process
-  std::thread([pid, stdout_pipe, stderr_pipe, completion_cb, process_id]() {
-    ProcessResult result;
-    result.process_id = process_id;
+  std::thread([pid, stdout_pipe, stderr_pipe, output_cb, completion_cb,
+               process_id]() {
+    // Set pipes to non-blocking mode
+    SetNonBlocking(stdout_pipe[0]);
+    SetNonBlocking(stderr_pipe[0]);
 
-    // Read output
-    result.out = ReadFromFd(stdout_pipe[0]);
-    result.err = ReadFromFd(stderr_pipe[0]);
+    std::string accumulated_out;
+    std::string accumulated_err;
+    bool should_continue = true;
 
-    // Close read ends
+    // Poll for output while process is running
+    while (true) {
+      // Check if process has exited
+      int status = 0;
+      pid_t wait_result = waitpid(pid, &status, WNOHANG);
+
+      // Read available output
+      std::string new_out = ReadAvailableFromFd(stdout_pipe[0]);
+      std::string new_err = ReadAvailableFromFd(stderr_pipe[0]);
+
+      if (!new_out.empty() || !new_err.empty()) {
+        accumulated_out += new_out;
+        accumulated_err += new_err;
+
+        if (output_cb) {
+          should_continue = output_cb(accumulated_out, accumulated_err);
+          if (!should_continue) {
+            kill(pid, SIGTERM);
+            break;
+          }
+        }
+      }
+
+      if (wait_result == pid) {
+        // Process has exited, read any remaining output
+        std::string final_out = ReadFromFd(stdout_pipe[0]);
+        std::string final_err = ReadFromFd(stderr_pipe[0]);
+
+        if (!final_out.empty() || !final_err.empty()) {
+          accumulated_out += final_out;
+          accumulated_err += final_err;
+
+          if (output_cb) {
+            output_cb(accumulated_out, accumulated_err);
+          }
+        }
+
+        close(stdout_pipe[0]);
+        close(stderr_pipe[0]);
+
+        int exit_code = -1;
+        if (WIFEXITED(status)) {
+          exit_code = WEXITSTATUS(status);
+        } else if (WIFSIGNALED(status)) {
+          exit_code = 128 + WTERMSIG(status);
+        }
+
+        completion_cb(exit_code);
+        return;
+      }
+
+      // Sleep briefly before next poll
+      usleep(10000);  // 10ms
+    }
+
+    // If we get here, process was terminated by callback
     close(stdout_pipe[0]);
     close(stderr_pipe[0]);
 
-    // Wait for child process
+    // Wait for process to actually terminate
     int status = 0;
     waitpid(pid, &status, 0);
 
+    int exit_code = -1;
     if (WIFEXITED(status)) {
-      result.exit_code = WEXITSTATUS(status);
+      exit_code = WEXITSTATUS(status);
     } else if (WIFSIGNALED(status)) {
-      result.exit_code = 128 + WTERMSIG(status);
-    } else {
-      result.exit_code = -1;
+      exit_code = 128 + WTERMSIG(status);
     }
 
-    completion_cb(result);
+    completion_cb(exit_code);
   }).detach();
 
-  return process_id;
+  return true;
 }
 
 void Process::TerminateProcess(int process_id) {

@@ -1,5 +1,6 @@
 #include "assistant/client/ollama_client.hpp"
 
+#include "assistant/Curl.hpp"
 #include "assistant/assistantlib.hpp"
 #include "assistant/config.hpp"
 #include "assistant/cpp-mcp/mcp_logger.h"
@@ -10,15 +11,15 @@ namespace assistant {
 
 OllamaClient::OllamaClient(const Endpoint& ep) {
   m_endpoint.with_mut([ep](Endpoint& endpoint) { endpoint = ep; });
-  assistant::show_requests(false);
-  assistant::show_replies(false);
   assistant::allow_exceptions(true);
   mcp::set_log_level(mcp::log_level::error);
   Startup();
 }
 
 std::unique_ptr<ITransport> OllamaClient::CreateClient() {
-  std::unique_ptr<ITransport> client = std::make_unique<ClientImpl>();
+  std::unique_ptr<ITransport> client =
+      //std::make_unique<Curl>(R"(C:\msys64\clang64\bin\curl.exe)");
+      std::make_unique<ClientImpl>();
   auto server_timeout_settings = m_server_timeout.get_value();
   client->setConnectTimeout(server_timeout_settings.GetConnectTimeout().first,
                             server_timeout_settings.GetConnectTimeout().second);
@@ -129,26 +130,6 @@ std::optional<ModelCapabilities> OllamaClient::GetOllamaModelCapabilities(
 std::optional<ModelCapabilities> OllamaClient::GetModelCapabilities(
     const std::string& model) {
   return GetOllamaModelCapabilities(model);
-}
-
-void OllamaClient::PullModel(const std::string& name, OnResponseCallback cb) {
-  try {
-    auto client = CreateClient();
-    if (client->getEndpointKind() != EndpointKind::ollama) {
-      OLOG(LogLevel::kWarning)
-          << "Pull model is supported by Ollama clients only";
-      cb("Pull model is supported by Ollama clients only", Reason::kFatalError,
-         false);
-      return;
-    }
-    std::stringstream ss;
-    ss << "Pulling model: " << name;
-    cb(ss.str(), Reason::kLogNotice, false);
-    client->pull_model(name, true);
-    cb("Model successfully pulled.", Reason::kDone, false);
-  } catch (std::exception& e) {
-    cb(e.what(), Reason::kFatalError, false);
-  }
 }
 
 bool OllamaClient::IsRunning() {

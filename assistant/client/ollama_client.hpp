@@ -38,10 +38,8 @@ class OllamaClient : public ClientBase {
   /// Return list of models available using JSON format.
   json ListJSON() override;
 
-  /// Pull model from Ollama registry
-  void PullModel(const std::string& name, OnResponseCallback cb) override;
-
   std::optional<json> GetModelInfo(const std::string& model) override;
+
   /// Return a bitwise operator model capabilities.
   std::optional<ModelCapabilities> GetModelCapabilities(
       const std::string& model) override;

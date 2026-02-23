@@ -175,12 +175,59 @@ void ResponseParser::Parse(const std::string& text,
   }
 }
 
+std::optional<std::string> ResponseParser::PopLine() {
+  std::string current_line;
+  enum class State { kStart, kCollect } state = State::kStart;
+  for (size_t pos = 0; pos < m_content.size(); ++pos) {
+    char c = m_content[pos];
+    switch (state) {
+      case State::kStart:
+        if (c != '\n') {
+          current_line += c;
+          state = State::kCollect;
+        } else {
+          // found "\n", skip it.
+        }
+        break;
+      case State::kCollect:
+        if (c == '\n') {
+          state = State::kStart;
+          m_content.erase(0, pos + 1);  // consume the \n as well.
+          return current_line;
+        } else {
+          current_line += c;
+        }
+        break;
+    }
+  }
+  return std::nullopt;
+}
+
+void ResponseParser::PushLineFront(const std::string& line) {
+  std::string line_to_restore = line;
+  if (!line_to_restore.ends_with("\n")) {
+    line_to_restore += "\n";
+  }
+
+  auto new_content = line_to_restore + m_content;
+  m_content.swap(new_content);
+}
+
 std::optional<EventMessage> ResponseParser::NextMessage() {
-  if (m_lines.size() < 2) {
+  auto event_str_opt = PopLine();
+  if (!event_str_opt.has_value()) {
     return std::nullopt;
   }
 
-  std::string event_str = m_lines.front();
+  auto data_str_opt = PopLine();
+  if (!data_str_opt.has_value()) {
+    PushLineFront(event_str_opt.value());
+    return std::nullopt;
+  }
+
+  std::string event_str = event_str_opt.value();
+  std::string data_str = data_str_opt.value();
+
   auto event_type_str = assistant::after_first(event_str, ":");
   if (event_type_str.empty()) {
     std::stringstream ss;
@@ -198,14 +245,18 @@ std::optional<EventMessage> ResponseParser::NextMessage() {
     throw std::runtime_error(ss.str());
   }
 
-  m_lines.erase(m_lines.begin());
-  std::string data_line = m_lines.front();
-  m_lines.erase(m_lines.begin());
+  // Make sure the data_line is a complete json.
+  data_str = assistant::after_first(data_str, ":");
+  data_str = assistant::trim(data_str);
 
-  data_line = assistant::after_first(data_line, ":");
-  data_line = assistant::trim(data_line);
+  auto result = assistant::try_read_jsons_from_string(data_str);
+  if (result.first.empty()) {
+    std::cout << "\n! Could not parse:\n"
+              << data_str << "\ninto a json." << std::endl;
+    return std::nullopt;
+  }
 
-  EventMessage em{.event = event_type.value(), .data = data_line};
+  EventMessage em{.event = event_type.value(), .data = data_str};
   return em;
 }
 
@@ -318,42 +369,6 @@ ContentType ResponseParser::GetContentBlock(const EventMessage& event_message) {
 void ResponseParser::AppendText(
     const std::string& text) {  // Split the message into lines.
   m_content.append(text);
-  auto res = split_into_lines(m_content, false /* do not return empty lines */);
-
-  if (res.second.starts_with("data:")) {
-    // Check if this is a complete line
-    auto json_part = trim(after_first(res.second, "data:"));
-    auto as_json = TryJson(json_part);
-    if (as_json.has_value()) {
-      res.first.push_back(res.second);
-      res.second.clear();
-    } else {
-      m_content = res.second;  // the remainder
-    }
-  } else {
-    // Try to see if this line is an error JSON
-    auto as_json = TryJson(text);
-    if (as_json.has_value()) {
-      auto j = as_json.value();
-      if (j.contains("type") && j["type"].is_string() &&
-          j["type"].get<std::string>() == "error") {
-        std::optional<std::string> errmsg{std::nullopt};
-        try {
-          errmsg = j["error"]["message"].get<std::string>();
-        } catch (...) {
-        }
-
-        if (errmsg.has_value()) {
-          std::stringstream ss;
-          ss << "Internal error. " << errmsg.value();
-          throw std::runtime_error(ss.str());
-        }
-      }
-    }
-  }
-
-  m_content = res.second;
-  m_lines.insert(m_lines.end(), res.first.begin(), res.first.end());
 }
 
 std::optional<json> ResponseParser::TryJson(std::string_view text) {

@@ -90,12 +90,12 @@ static bool use_exceptions = true;  // Change this to false to avoid throwing
                                     // exceptions within the library.
 static bool log_requests =
     false;  // Log raw requests to the Ollama server. Useful when debugging.
-static bool log_replies =
+static bool log_transport =
     false;  // Log raw replies from the Ollama server. Useful when debugging.
 
 inline void allow_exceptions(bool enable) { use_exceptions = enable; }
 inline void show_requests(bool enable) { log_requests = enable; }
-inline void show_replies(bool enable) { log_replies = enable; }
+inline void show_replies(bool enable) { log_transport = enable; }
 
 enum class message_type { generation, chat, embedding };
 
@@ -426,7 +426,32 @@ class ITransport {
                                void* user_data) = 0;
   virtual bool chat(assistant::request& request,
                     on_respons_callback on_receive_token, void* user_data) = 0;
-  virtual std::vector<std::string> list_models() = 0;
+  virtual std::vector<std::string> list_models() {
+    std::vector<std::string> models;
+
+    json json_response = list_model_json();
+
+    switch (endpoint_kind_) {
+      case assistant::EndpointKind::ollama: {
+        for (auto& model : json_response["models"]) {
+          models.push_back(model["name"]);
+        }
+      } break;
+      case assistant::EndpointKind::openai: {
+        for (auto& model : json_response["data"]) {
+          models.push_back(model["id"]);
+        }
+      } break;
+      case assistant::EndpointKind::anthropic: {
+        for (auto& model : json_response["data"]) {
+          models.push_back(model["id"]);
+        }
+      } break;
+    }
+
+    return models;
+  }
+
   virtual json list_model_json() = 0;
 
   virtual void setReadTimeout(const int seconds, const int usecs = 0) = 0;
@@ -436,8 +461,6 @@ class ITransport {
   virtual void interrupt() = 0;
   virtual json show_model_info(const std::string& model,
                                bool verbose = false) = 0;
-  virtual bool pull_model(const std::string& model,
-                          bool allow_insecure = false) = 0;
   virtual bool is_running() = 0;
 
 #if CPPHTTPLIB_OPENSSL_SUPPORT
@@ -470,7 +493,20 @@ class ITransport {
   EndpointKind getEndpointKind() const { return endpoint_kind_; }
 
  protected:
-  std::string GetChatPath() const {
+  virtual std::string GetGeneratePath() const { return "/api/generate"; }
+  virtual std::string GetShowPath() const { return "/api/show"; }
+  virtual std::string GetListPath() const {
+    switch (endpoint_kind_) {
+      case assistant::EndpointKind::anthropic:
+        return "/v1/models";
+      case assistant::EndpointKind::openai:
+        return "/v1/models";
+      default:
+      case assistant::EndpointKind::ollama:
+        return "/api/tags";
+    }
+  }
+  virtual std::string GetChatPath() const {
     switch (endpoint_kind_) {
       case assistant::EndpointKind::anthropic:
         return "/v1/messages";
@@ -528,7 +564,7 @@ class ClientImpl : public ITransport {
 
     if (auto res = this->cli->Post(GetGeneratePath(), headers_, request_string,
                                    kApplicationJson)) {
-      if (assistant::log_replies) std::cout << res->body << std::endl;
+      if (assistant::log_transport) std::cout << res->body << std::endl;
 
       response = assistant::response(res->body);
       if (response.has_error()) {
@@ -584,7 +620,7 @@ class ClientImpl : public ITransport {
       std::string message(data, data_length);
       bool continue_stream = true;
 
-      if (assistant::log_replies) std::cout << message << std::endl;
+      if (assistant::log_transport) std::cout << message << std::endl;
       try {
         partial_responses->push_back(message);
         std::string total_response =
@@ -637,7 +673,7 @@ class ClientImpl : public ITransport {
 
     if (auto res = this->cli->Post(GetChatPath(), headers_, request_string,
                                    kApplicationJson)) {
-      if (assistant::log_replies) std::cout << res->body << std::endl;
+      if (assistant::log_transport) std::cout << res->body << std::endl;
 
       response = assistant::response(res->body, assistant::message_type::chat);
       if (response.has_error()) {
@@ -680,7 +716,7 @@ class ClientImpl : public ITransport {
                                const char* data, size_t data_length) -> bool {
       std::string message(data, data_length);
 
-      if (assistant::log_replies) {
+      if (assistant::log_transport) {
         std::cout << message << std::endl;
       }
 
@@ -820,7 +856,7 @@ class ClientImpl : public ITransport {
 
     if (auto res = this->cli->Post("/api/create", headers_, request_string,
                                    kApplicationJson)) {
-      if (assistant::log_replies) std::cout << res->body << std::endl;
+      if (assistant::log_transport) std::cout << res->body << std::endl;
 
       json chunk = json::parse(res->body);
       if (chunk["status"] == "success") return true;
@@ -851,7 +887,7 @@ class ClientImpl : public ITransport {
     // the model into memory.
     if (auto res = this->cli->Post(GetGeneratePath(), headers_, request_string,
                                    kApplicationJson)) {
-      if (assistant::log_replies) std::cout << res->body << std::endl;
+      if (assistant::log_transport) std::cout << res->body << std::endl;
       json response = json::parse(res->body);
       return response["done"];
     } else {
@@ -896,39 +932,13 @@ class ClientImpl : public ITransport {
   json list_model_json() override {
     json models;
     if (auto res = cli->Get(GetListPath(), headers_)) {
-      if (assistant::log_replies) std::cout << res->body << std::endl;
+      if (assistant::log_transport) std::cout << res->body << std::endl;
       models = json::parse(res->body);
     } else {
       if (assistant::use_exceptions)
         throw assistant::exception(
             "No response returned from server when querying model list: " +
             httplib::to_string(res.error()));
-    }
-
-    return models;
-  }
-
-  std::vector<std::string> list_models() override {
-    std::vector<std::string> models;
-
-    json json_response = list_model_json();
-
-    switch (endpoint_kind_) {
-      case assistant::EndpointKind::ollama: {
-        for (auto& model : json_response["models"]) {
-          models.push_back(model["name"]);
-        }
-      } break;
-      case assistant::EndpointKind::openai: {
-        for (auto& model : json_response["data"]) {
-          models.push_back(model["id"]);
-        }
-      } break;
-      case assistant::EndpointKind::anthropic: {
-        for (auto& model : json_response["data"]) {
-          models.push_back(model["id"]);
-        }
-      } break;
     }
 
     return models;
@@ -946,7 +956,7 @@ class ClientImpl : public ITransport {
 
     json models;
     if (auto res = cli->Get("/api/ps", headers_)) {
-      if (assistant::log_replies) std::cout << res->body << std::endl;
+      if (assistant::log_transport) std::cout << res->body << std::endl;
       models = json::parse(res->body);
     } else {
       if (assistant::use_exceptions)
@@ -1034,7 +1044,7 @@ class ClientImpl : public ITransport {
 
     if (auto res = cli->Post(GetShowPath(), headers_, request_string,
                              kApplicationJson)) {
-      if (assistant::log_replies)
+      if (assistant::log_transport)
         std::cout << "Reply was " << res->body << std::endl;
       try {
         response = json::parse(res->body);
@@ -1106,44 +1116,6 @@ class ClientImpl : public ITransport {
     return false;
   }
 
-  bool pull_model(const std::string& model,
-                  bool allow_insecure = false) override {
-    json request, response;
-    request["name"] = model;
-    request["insecure"] = allow_insecure;
-    request["stream"] = false;
-
-    std::string request_string = request.dump();
-    if (assistant::log_requests) std::cout << request_string << std::endl;
-
-    if (auto res = cli->Post("/api/pull", headers_, request_string,
-                             kApplicationJson)) {
-      if (res->status == httplib::StatusCode::OK_200) return true;
-      if (res->status == httplib::StatusCode::NotFound_404) {
-        if (assistant::use_exceptions)
-          throw assistant::exception(
-              "Model not found when trying to pull (Code 404).");
-        return false;
-      }
-
-      response = json::parse(res->body);
-      if (response.contains("error")) {
-        if (assistant::use_exceptions)
-          throw assistant::exception(
-              "Error returned from ollama when pulling model: " +
-              response["error"].get<std::string>());
-        return false;
-      }
-    } else {
-      if (assistant::use_exceptions)
-        throw assistant::exception(
-            "No response returned from server when pulling model: " +
-            httplib::to_string(res.error()));
-    }
-
-    return false;
-  }
-
   bool push_model(const std::string& model, bool allow_insecure = false) {
     json request, response;
     request["name"] = model;
@@ -1198,7 +1170,7 @@ class ClientImpl : public ITransport {
 
     if (auto res = cli->Post("/api/embed", headers_, request_string,
                              kApplicationJson)) {
-      if (assistant::log_replies) std::cout << res->body << std::endl;
+      if (assistant::log_transport) std::cout << res->body << std::endl;
 
       if (res->status == httplib::StatusCode::OK_200) {
         response = assistant::response(res->body);
@@ -1293,19 +1265,6 @@ class ClientImpl : public ITransport {
 #endif
 
  private:
-  std::string GetGeneratePath() const { return "/api/generate"; }
-  std::string GetShowPath() const { return "/api/show"; }
-  std::string GetListPath() const {
-    switch (endpoint_kind_) {
-      case assistant::EndpointKind::anthropic:
-        return "/v1/models";
-      case assistant::EndpointKind::openai:
-        return "/v1/models";
-      default:
-      case assistant::EndpointKind::ollama:
-        return "/api/tags";
-    }
-  }
   httplib::Client* cli;
 };
 
@@ -1428,10 +1387,6 @@ inline bool copy_model(const std::string& source_model,
 
 inline bool delete_model(const std::string& model) {
   return client_impl.delete_model(model);
-}
-
-inline bool pull_model(const std::string& model, bool allow_insecure = false) {
-  return client_impl.pull_model(model, allow_insecure);
 }
 
 inline bool push_model(const std::string& model, bool allow_insecure = false) {

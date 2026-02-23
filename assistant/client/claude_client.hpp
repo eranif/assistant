@@ -13,9 +13,6 @@ class ClaudeClient : public OllamaClient {
   /// Override Ollama's behavior with Claude's
   ///===--------------------------------------
 
-  /// Pull model from Ollama registry
-  void PullModel(const std::string& name, OnResponseCallback cb) override;
-
   std::optional<json> GetModelInfo(const std::string& model) override;
   /// Return a bitwise operator model capabilities.
   std::optional<ModelCapabilities> GetModelCapabilities(

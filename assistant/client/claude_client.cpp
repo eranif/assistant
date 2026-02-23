@@ -7,11 +7,6 @@ ClaudeClient::ClaudeClient(const Endpoint& endpoint)
   m_multi_tool_reply_as_array = true;
 }
 
-void ClaudeClient::PullModel(const std::string& name, OnResponseCallback cb) {
-  OLOG(LogLevel::kWarning) << "Pull model is supported by Ollama clients only";
-  cb("Pull model is not supported by Claude", Reason::kFatalError, false);
-}
-
 std::optional<json> ClaudeClient::GetModelInfo(
     [[maybe_unused]] const std::string& model) {
   OLOG(LogLevel::kWarning)
@@ -35,9 +30,8 @@ void ClaudeClient::Chat(std::string msg, OnResponseCallback cb,
   std::shared_ptr<ChatRequestFinaliser> finaliser{nullptr};
   if (assistant::IsFlagSet(chat_options, ChatOptions::kNoHistory)) {
     m_history.SwapToTempHistory();
-    finaliser = std::make_shared<ChatRequestFinaliser>([this]() {
-      m_history.SwapToMainHistory();
-    });
+    finaliser = std::make_shared<ChatRequestFinaliser>(
+        [this]() { m_history.SwapToMainHistory(); });
   }
   CreateAndPushChatRequest(json_message, cb, GetModel(), chat_options,
                            finaliser);
@@ -174,6 +168,9 @@ bool ClaudeClient::HandleResponse(const std::string& resp,
     bool cb_result{true};
     bool is_done{false};
     for (const auto& token : tokens) {
+      if (token.NeedMoreData()) {
+        return true;
+      }
       if (!is_done) {
         is_done = token.IsDone();
       }

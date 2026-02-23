@@ -8,6 +8,7 @@
 #include <iostream>
 #include <thread>
 
+#include "assistant/Process.hpp"
 #include "assistant/assistant.hpp"
 #include "utils.hpp"
 
@@ -318,6 +319,8 @@ int main(int argc, char** argv) {
     std::cout << "Waiting for: " << cli->GetUrl() << " to become available..."
               << std::endl;
   }
+
+  assistant::Process::EnableExecLog(false);
 
   while (true) {
     if (cli->IsRunning()) {

@@ -325,9 +325,6 @@ class ClientBase {
   /// Return list of models available using JSON format.
   virtual json ListJSON() = 0;
 
-  /// Pull model from Ollama registry
-  virtual void PullModel(const std::string& name, OnResponseCallback cb) = 0;
-
   virtual std::optional<json> GetModelInfo(const std::string& model) = 0;
   /// Return a bitwise operator model capabilities.
   virtual std::optional<ModelCapabilities> GetModelCapabilities(

@@ -203,7 +203,6 @@ class ResponseParser {
   void Parse(const std::string& text, std::function<void(ParseResult)> cb);
   inline void Reset() {
     m_content.clear();
-    m_lines.clear();
     m_state = ParserState::initial;
     m_tool_call.Reset();
   }
@@ -217,6 +216,10 @@ class ResponseParser {
 
   /// This function might throw.
   std::optional<EventMessage> NextMessage();
+
+  std::optional<std::string> PopLine();
+  void PushLineFront(const std::string& line);
+
   /// This function might throw.
   ContentType GetContentBlock(const EventMessage& event_message);
   /// This function might throw.
@@ -229,7 +232,6 @@ class ResponseParser {
   /// This function might throw.
   std::string GetContentBlockDeltaContent(const EventMessage& event_message);
   std::string m_content;
-  std::vector<std::string> m_lines;
   ParserState m_state{ParserState::initial};
   ToolCall m_tool_call;
 };

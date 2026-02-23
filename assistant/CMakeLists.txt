@@ -20,6 +20,8 @@ add_library(
   ${CMAKE_CURRENT_LIST_DIR}/function_base.hpp
   ${CMAKE_CURRENT_LIST_DIR}/config.cpp
   ${CMAKE_CURRENT_LIST_DIR}/config.hpp
+  ${CMAKE_CURRENT_LIST_DIR}/Curl.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/Curl.hpp
   ${CMAKE_CURRENT_LIST_DIR}/claude_response_parser.cpp
   ${CMAKE_CURRENT_LIST_DIR}/claude_response_parser.hpp
   ${CMAKE_CURRENT_LIST_DIR}/Process.cpp

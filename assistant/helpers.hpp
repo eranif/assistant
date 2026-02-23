@@ -1,8 +1,12 @@
 #pragma once
 
+#include <filesystem>
+#include <fstream>
 #include <functional>
 #include <iostream>
 #include <mutex>
+#include <optional>
+#include <random>
 #include <sstream>
 #include <string>
 #include <type_traits>
@@ -184,5 +188,156 @@ try_read_jsons_from_string(const std::string& instr) {
 
   return {result, remainder};
 }
+
+/**
+ * @brief Writes a string content to a file. The string is not assumed to be
+ * null-terminated.
+ *
+ * This function writes the specified number of bytes from the given string
+ * to a file. It's useful for writing binary data or strings that may
+ * contain embedded null characters.
+ *
+ * @param filepath The path to the file to write.
+ * @param content The string content to write to the file.
+ * @return true if the write operation was successful, false otherwise.
+ */
+inline bool WriteStringToFile(const std::string& filepath,
+                              const std::string& content) {
+  std::ofstream file(filepath, std::ios::binary);
+  if (!file.is_open()) {
+    return false;
+  }
+  file.write(content.data(), content.size());
+  return file.good();
+}
+
+/**
+ * @brief Generates a unique random filename and writes the string content to
+ * it.
+ *
+ * This function creates a file with a randomly generated name in the system's
+ * temporary directory and writes the specified data to it. The string is not
+ * assumed to be null-terminated.
+ *
+ * @param content The string content to write to the file.
+ * @return std::optional<std::string> containing the full path to the created
+ *         file on success, or std::nullopt on failure.
+ */
+inline std::optional<std::string> WriteStringToRandomFile(
+    const std::string& content) {
+  namespace fs = std::filesystem;
+
+  // Get the system's temporary directory
+  std::error_code ec;
+  fs::path temp_dir = fs::temp_directory_path(ec);
+  if (ec) {
+    return std::nullopt;
+  }
+
+  // Random number generation setup
+  std::random_device rd;
+  std::mt19937_64 gen(rd());
+  std::uniform_int_distribution<uint64_t> dis;
+
+  // Try to create a unique file (with retry logic in case of collision)
+  constexpr int max_attempts = 100;
+  for (int attempt = 0; attempt < max_attempts; ++attempt) {
+    // Generate random filename
+    uint64_t random_num = dis(gen);
+    std::ostringstream oss;
+    oss << "temp_" << std::hex << random_num << ".tmp";
+
+    fs::path filepath = temp_dir / oss.str();
+
+    // Check if file already exists (very unlikely but possible)
+    if (fs::exists(filepath)) {
+      continue;
+    }
+
+    // Try to write to the file
+    if (WriteStringToFile(filepath.string(), content)) {
+      return filepath.string();
+    } else {
+      return std::nullopt;
+    }
+  }
+
+  // Failed to generate a unique filename after max attempts
+  return std::nullopt;
+}
+
+/**
+ * @brief Deletes a file at the specified path.
+ *
+ * @param filepath The path to the file to delete.
+ * @return true if the file was successfully deleted, false otherwise.
+ */
+inline bool DeleteFileFromDisk(const std::string& filepath) {
+  std::error_code ec;
+  return std::filesystem::remove(filepath, ec);
+}
+
+/**
+ * @brief RAII wrapper for automatic file deletion.
+ *
+ * This class provides automatic cleanup of temporary files. The file at the
+ * specified path will be deleted when the object goes out of scope.
+ */
+class ScopedFileDeleter {
+ public:
+  /**
+   * @brief Constructs a ScopedFileDeleter with the given file path.
+   *
+   * @param filepath The path to the file that should be deleted on destruction.
+   */
+  explicit ScopedFileDeleter(const std::string& filepath)
+      : filepath_(filepath), enabled_(true) {}
+
+  /**
+   * @brief Constructs a ScopedFileDeleter with an optional file path.
+   *
+   * @param filepath Optional file path. If nullopt, no deletion occurs.
+   */
+  explicit ScopedFileDeleter(const std::optional<std::string>& filepath)
+      : filepath_(filepath.value_or("")), enabled_(filepath.has_value()) {}
+
+  // Disable copying
+  ScopedFileDeleter(const ScopedFileDeleter&) = delete;
+  ScopedFileDeleter& operator=(const ScopedFileDeleter&) = delete;
+
+  // Enable moving
+  ScopedFileDeleter(ScopedFileDeleter&&) = default;
+  ScopedFileDeleter& operator=(ScopedFileDeleter&&) = default;
+
+  /**
+   * @brief Destructor that deletes the file.
+   */
+  ~ScopedFileDeleter() {
+    if (enabled_ && !filepath_.empty()) {
+      DeleteFileFromDisk(filepath_);
+    }
+  }
+
+  /**
+   * @brief Releases ownership of the file, preventing deletion.
+   *
+   * @return The file path that was being managed.
+   */
+  std::string Release() {
+    enabled_ = false;
+    return filepath_;
+  }
+
+  /**
+   * @brief Gets the file path being managed.
+   *
+   * @return The file path.
+   */
+  const std::string& GetPath() const { return filepath_; }
+
+ private:
+  std::string filepath_;
+  bool enabled_;
+};
 
 }  // namespace assistant
