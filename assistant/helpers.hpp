@@ -30,6 +30,7 @@
   ASSIGN_OPT_OR_RETURN(Decl, Expr, std::nullopt)
 
 namespace assistant {
+
 /**
  * @brief Joins the elements of a container into a single string with a
  * separator.
@@ -66,7 +67,7 @@ std::string JoinArray(const Container& elements, const std::string& separator) {
 
 template <typename T>
 inline std::ostream& operator<<(std::ostream& o, const std::vector<T>& v) {
-  o << JoinArray(v, ", ");
+  o << JoinArray(v, ",");
   return o;
 }
 
@@ -339,5 +340,12 @@ class ScopedFileDeleter {
   std::string filepath_;
   bool enabled_;
 };
+
+inline std::ostream& operator<<(std::ostream& o,
+                                const std::vector<std::string>& v) {
+  auto str = assistant::JoinArray(v, ",");
+  o << str;
+  return o;
+}
 
 }  // namespace assistant

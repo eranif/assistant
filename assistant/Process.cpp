@@ -31,6 +31,7 @@ bool Process::IsExecLogEnabled() { return enable_exec_log; }
 
 constexpr int kBufferSize = 256;
 constexpr int kMaxChunkSize = 1024;
+
 #ifdef _WIN32
 
 namespace {
@@ -444,17 +445,58 @@ std::string ReadAvailableFromFd(int fd) {
 }
 
 // Helper to read from a file descriptor until EOF
-std::string ReadFromFd(int fd) {
+std::string ReadFromFdUntilEOF(int fd) {
   std::string result;
   char buffer[kBufferSize];
   ssize_t bytesRead = 0;
 
+  SetNonBlocking(fd);
   while ((bytesRead = read(fd, buffer, kBufferSize)) > 0) {
     result.append(buffer, bytesRead);
   }
-
   return result;
 }
+
+class Argv {
+  struct Deleter {
+    size_t size;
+    void operator()(char** argv) const {
+      for (size_t i = 0; i < size; ++i) {
+        delete[] argv[i];
+      }
+      delete[] argv;
+    }
+  };
+
+  std::unique_ptr<char*[], Deleter> argv_;
+  size_t size_;
+
+ public:
+  Argv(const std::vector<std::string>& args) : size_(args.size()) {
+    char** argv = new char*[size_ + 1];
+    for (size_t i = 0; i < size_; ++i) {
+      argv[i] = new char[args[i].size() + 1];
+      std::strcpy(argv[i], args[i].c_str());
+    }
+    argv[size_] = nullptr;
+    argv_ = std::unique_ptr<char*[], Deleter>(argv, Deleter{size_});
+  }
+
+  char** get() { return argv_.get(); }
+  int argc() const { return static_cast<int>(size_); }
+
+  std::string to_string() const {
+    std::string result;
+    for (size_t i = 0; i < size_; ++i) {
+      if (i > 0) result += ' ';
+      std::string arg = argv_.get()[i];
+      result += arg;
+    }
+    return result;
+  }
+};
+
+bool IsProcessAlive(pid_t pid) { return kill(pid, 0) == 0; }
 
 }  // namespace
 
@@ -485,134 +527,142 @@ int Process::RunProcessAndWait(const std::vector<std::string>& argv,
   int stdout_pipe[2];
   int stderr_pipe[2];
 
-  if (pipe(stdout_pipe) != 0) {
+  if (::pipe(stdout_pipe) != 0) {
     return -1;
   }
 
   if (pipe(stderr_pipe) != 0) {
-    close(stdout_pipe[0]);
-    close(stdout_pipe[1]);
+    ::close(stdout_pipe[0]);
+    ::close(stdout_pipe[1]);
     return -1;
   }
 
+  // Prepare arguments for execvp
+  Argv exec_argv{argv};
   pid_t pid = fork();
 
   if (pid < 0) {
     // Fork failed
-    close(stdout_pipe[0]);
-    close(stdout_pipe[1]);
-    close(stderr_pipe[0]);
-    close(stderr_pipe[1]);
+    ::close(stdout_pipe[0]);
+    ::close(stdout_pipe[1]);
+    ::close(stderr_pipe[0]);
+    ::close(stderr_pipe[1]);
     return -1;
   }
 
   if (pid == 0) {
     // Child process
     // Close read ends
-    close(stdout_pipe[0]);
-    close(stderr_pipe[0]);
+    ::close(stdout_pipe[0]);
+    ::close(stderr_pipe[0]);
 
     // Redirect stdout and stderr
-    dup2(stdout_pipe[1], STDOUT_FILENO);
-    dup2(stderr_pipe[1], STDERR_FILENO);
+    ::dup2(stdout_pipe[1], STDOUT_FILENO);
+    ::dup2(stderr_pipe[1], STDERR_FILENO);
 
     // Close write ends after duplication
-    close(stdout_pipe[1]);
-    close(stderr_pipe[1]);
+    ::close(stdout_pipe[1]);
+    ::close(stderr_pipe[1]);
 
-    // Prepare arguments for execvp
-    std::vector<char*> exec_argv;
-    for (const auto& arg : argv) {
-      exec_argv.push_back(const_cast<char*>(arg.c_str()));
-    }
-    exec_argv.push_back(nullptr);
-
-    // Execute the command
-    execvp(exec_argv[0], exec_argv.data());
+    ::execvp(exec_argv.get()[0], exec_argv.get());
 
     // If execvp returns, it failed
-    _exit(127);
+    ::_exit(127);
   }
 
   // Parent process
   int process_id = static_cast<int>(pid);
 
   // Close write ends
-  close(stdout_pipe[1]);
-  close(stderr_pipe[1]);
-
-  // Set pipes to non-blocking mode
-  SetNonBlocking(stdout_pipe[0]);
-  SetNonBlocking(stderr_pipe[0]);
+  ::close(stdout_pipe[1]);
+  ::close(stderr_pipe[1]);
 
   bool should_continue = true;
 
   // Poll for output while process is running
-  while (true) {
-    // Read available output
-    std::string new_out, new_err;
-    auto rc = WaitOnFd(stdout_pipe[0]);
-    switch (rc) {
-      case WaitResult::kDataAvailable:
-        new_out = ReadAvailableFromFd(stdout_pipe[0]);
-        break;
-      default:
-        break;
+  int process_out_fd = stdout_pipe[0];
+  int process_err_fd = stderr_pipe[0];
+  bool stdout_open = true;
+  bool stderr_open = true;
+
+  while (IsProcessAlive(pid) && (stdout_open || stderr_open)) {
+    fd_set read_set;
+    FD_ZERO(&read_set);
+
+    int max_fd = -1;
+    if (stdout_open) {
+      FD_SET(process_out_fd, &read_set);
+      max_fd = std::max(max_fd, process_out_fd);
+    }
+    if (stderr_open) {
+      FD_SET(process_err_fd, &read_set);
+      max_fd = std::max(max_fd, process_err_fd);
     }
 
-    rc = WaitOnFd(stderr_pipe[0]);
-    switch (rc) {
-      case WaitResult::kDataAvailable:
-        new_err = ReadAvailableFromFd(stderr_pipe[0]);
-        break;
-      default:
-        break;
-    }
+    if (max_fd == -1) break;
 
-    // Always call the callback (even with no output) so it can terminate early
-    if (output_cb) {
-      should_continue = output_cb(new_out, new_err);
-      if (!should_continue) {
-        kill(pid, SIGKILL);
-        break;
-      }
-    }
+    timeval tv;
+    tv.tv_sec = 0;
+    tv.tv_usec = 10000;
 
-    // Check if process has exited
-    int status{0};
-    pid_t wait_result = waitpid(pid, &status, WNOHANG);
-    if (wait_result == pid) {
-      // Process has exited, read any remaining output
-      std::string final_out = ReadFromFd(stdout_pipe[0]);
-      std::string final_err = ReadFromFd(stderr_pipe[0]);
+    int rc = ::select(max_fd + 1, &read_set, nullptr, nullptr, &tv);
+    if (rc > 0) {
+      std::string new_out;
+      std::string new_err;
 
-      if (!final_out.empty() || !final_err.empty()) {
-        if (output_cb) {
-          output_cb(final_out, final_err);
+      if (stdout_open && FD_ISSET(process_out_fd, &read_set)) {
+        char buffer[4096];
+        ssize_t n = ::read(process_out_fd, buffer, sizeof(buffer));
+        if (n > 0) {
+          new_out.append(buffer, n);
+        } else {
+          stdout_open = false;  // EOF or error
         }
       }
 
-      // Close read ends
-      close(stdout_pipe[0]);
-      close(stderr_pipe[0]);
-
-      if (WIFEXITED(status)) {
-        return WEXITSTATUS(status);
-      } else if (WIFSIGNALED(status)) {
-        return 128 + WTERMSIG(status);
-      } else {
-        return -1;
+      if (stderr_open && FD_ISSET(process_err_fd, &read_set)) {
+        char buffer[4096];
+        ssize_t n = ::read(process_err_fd, buffer, sizeof(buffer));
+        if (n > 0) {
+          new_err.append(buffer, n);
+        } else {
+          stderr_open = false;  // EOF or error
+        }
       }
+
+      if (output_cb && !output_cb(new_out, new_err)) {
+        break;
+      }
+    } else if (rc == 0) {
+      // Let the caller a chance to terminate the process.
+      if (output_cb && !output_cb("", "")) {
+        break;
+      }
+    } else {
+      // select error.
+      break;
     }
   }
 
-  // If we get here, process was terminated by callback
-  close(stdout_pipe[0]);
-  close(stderr_pipe[0]);
+  if (IsProcessAlive(pid)) {
+    // Terminate it
+    ::kill(pid, SIGKILL);
+  }
 
-  // Wait for process to actually terminate
+  std::string out = ReadFromFdUntilEOF(process_out_fd);
+  std::string err = ReadFromFdUntilEOF(process_err_fd);
+
+  // Close read ends
+  ::close(process_out_fd);
+  ::close(process_err_fd);
+
+  if (output_cb) {
+    output_cb(out, err);
+  }
+
+  // Wait for process to actually terminate (we get here when SIGKILL is fired).
   int status = 0;
-  waitpid(pid, &status, 0);
+  ::waitpid(pid, &status, 0);
 
   if (WIFEXITED(status)) {
     return WEXITSTATUS(status);
@@ -735,8 +785,8 @@ bool Process::RunProcessAsync(const std::vector<std::string>& argv,
 
       if (wait_result == pid) {
         // Process has exited, read any remaining output
-        std::string final_out = ReadFromFd(stdout_pipe[0]);
-        std::string final_err = ReadFromFd(stderr_pipe[0]);
+        std::string final_out = ReadFromFdUntilEOF(stdout_pipe[0]);
+        std::string final_err = ReadFromFdUntilEOF(stderr_pipe[0]);
 
         if (!final_out.empty() || !final_err.empty()) {
           accumulated_out += final_out;

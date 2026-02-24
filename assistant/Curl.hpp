@@ -7,8 +7,14 @@
 namespace assistant {
 struct BuildCommandResult {
   bool ok{true};
-  std::vector<std::string> cmd;
-  std::string filepath;
+  std::string request_path;
+  std::string data_path;
+  std::vector<std::string> command;
+  
+  ~BuildCommandResult() {
+    assistant::DeleteFileFromDisk(request_path);
+    assistant::DeleteFileFromDisk(data_path);
+  }
 };
 
 class Curl : public ITransport {
@@ -34,10 +40,9 @@ class Curl : public ITransport {
 #if CPPHTTPLIB_OPENSSL_SUPPORT
   void verifySSLCertificate(bool b) override;
 #endif
-  BuildCommandResult BuildRequestCommand(const std::string& path,
-                                         const httplib::Headers& headers,
-                                         const std::string& content_type,
-                                         std::optional<std::string> payload);
+  std::unique_ptr<BuildCommandResult> BuildRequestCommand(
+      const std::string& path, const httplib::Headers& headers,
+      const std::string& content_type, std::optional<std::string> payload);
 
  private:
   int m_runningProcessId{-1};

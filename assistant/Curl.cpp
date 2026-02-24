@@ -13,48 +13,44 @@ Curl::~Curl() {
 }
 
 namespace {
-void AddHeader(std::vector<std::string>& command,
-               const std::string& header_name,
+void AddHeader(std::stringstream& ss, const std::string& header_name,
                const std::string& header_value) {
-  std::stringstream ss;
   if (header_value.empty()) {
     return;
   }
-  ss << "\"" << header_name << ": " << header_value << "\"";
-  command.push_back("-H");
-  command.push_back(ss.str());
+  ss << "header = \"" << header_name << ": " << header_value << "\"\n";
 }
 }  // namespace
 
-BuildCommandResult Curl::BuildRequestCommand(
+std::unique_ptr<BuildCommandResult> Curl::BuildRequestCommand(
     const std::string& path, const httplib::Headers& headers,
     const std::string& content_type, std::optional<std::string> payload) {
-  std::vector<std::string> command_line = {m_curl, "-s", "-L"};
-  AddHeader(command_line, "Content-Type", content_type);
+  // Create the request file.
+  auto result = std::make_unique<BuildCommandResult>();
+  std::stringstream request_data;
+  request_data << "url = " << getServerURL() << path << "\n";
+  request_data << "silent\n";
+  request_data << "location\n";
+  request_data << "insecure\n";
+
+  AddHeader(request_data, "Content-Type", content_type);
   for (const auto& [h_name, h_value] : headers) {
-    AddHeader(command_line, h_name, h_value);
+    AddHeader(request_data, h_name, h_value);
   }
 
-  std::string server_endpoint = getServerURL();
-  if (server_endpoint.starts_with("https://")) {
-    command_line.push_back("--insecure");
-  }
-
-  std::stringstream url;
-  url << server_endpoint << path;
-  command_line.push_back(url.str());
-
-  BuildCommandResult result{.ok = true};
   if (payload.has_value()) {
     auto file = assistant::WriteStringToRandomFile(payload.value());
     if (!file.has_value()) {
-      return BuildCommandResult{.ok = false};
+      result->ok = false;
+      return result;
     }
-    command_line.push_back("-d");
-    command_line.push_back("@" + file.value());
-    result.filepath = file.value();
+    request_data << "data = @" << file.value() << "\n";
+    result->data_path = file.value();
   }
-  result.cmd = command_line;
+
+  auto request_path = assistant::WriteStringToRandomFile(request_data.str());
+  result->request_path = request_path.value_or("");
+  result->command = {m_curl, "--config", request_path.value_or("")};
   return result;
 }
 
@@ -77,15 +73,12 @@ bool Curl::chat_raw_output(assistant::request& request,
 
   auto result = BuildRequestCommand(GetChatPath(), headers_, kApplicationJson,
                                     request_string);
-  if (!result.ok) {
+  if (!result->ok) {
     return false;
   }
 
-  // Its ok to accept an empty path
-  assistant::ScopedFileDeleter deleter{result.filepath};
-
   int exit_code =
-      Process::RunProcessAndWait(result.cmd, stream_callback, false);
+      Process::RunProcessAndWait(result->command, stream_callback, false);
   if (exit_code == 0) {
     return true;
   }
@@ -159,15 +152,12 @@ bool Curl::chat(assistant::request& request,
 
   auto result = BuildRequestCommand(GetChatPath(), headers_, kApplicationJson,
                                     request_string);
-  if (!result.ok) {
+  if (!result->ok) {
     return false;
   }
 
-  // Its ok to accept an empty path
-  assistant::ScopedFileDeleter deleter{result.filepath};
-
   int exit_code =
-      Process::RunProcessAndWait(result.cmd, stream_callback, false);
+      Process::RunProcessAndWait(result->command, stream_callback, false);
   if (exit_code == 0) {
     return true;
   }
@@ -183,10 +173,11 @@ json Curl::list_model_json() {
   json models;
   auto result = BuildRequestCommand(GetListPath(), headers_, kApplicationJson,
                                     std::nullopt);
-  if (!result.ok) {
+  if (!result->ok) {
     return models;
   }
-  auto res = Process::RunProcessAndWait(result.cmd);
+
+  auto res = Process::RunProcessAndWait(result->command);
   if (res.ok) {
     models = json::parse(res.out);
   }
@@ -222,14 +213,11 @@ json Curl::show_model_info(const std::string& model, bool verbose) {
 
   auto result = BuildRequestCommand(GetShowPath(), headers_, kApplicationJson,
                                     request_string);
-  if (!result.ok) {
+  if (!result->ok) {
     return response;
   }
 
-  // Its ok to accept an empty path
-  assistant::ScopedFileDeleter deleter{result.filepath};
-
-  auto res = Process::RunProcessAndWait(result.cmd);
+  auto res = Process::RunProcessAndWait(result->command);
   if (res.ok) {
     if (Process::IsExecLogEnabled()) {
       std::cout << "<== " << res.out << std::endl;
@@ -255,10 +243,10 @@ json Curl::show_model_info(const std::string& model, bool verbose) {
 
 bool Curl::is_running() {
   auto res = BuildRequestCommand("/", headers_, "", std::nullopt);
-  if (!res.ok) {
+  if (!res->ok) {
     return false;
   }
-  return Process::RunProcessAndWait(res.cmd).ok;
+  return Process::RunProcessAndWait(res->command).ok;
 }
 
 #if CPPHTTPLIB_OPENSSL_SUPPORT

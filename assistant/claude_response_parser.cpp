@@ -259,8 +259,6 @@ std::optional<EventMessage> ResponseParser::NextMessage() {
 
   auto result = assistant::try_read_jsons_from_string(data_str);
   if (result.first.empty()) {
-    std::cout << "\n! Could not parse:\n"
-              << data_str << "\ninto a json." << std::endl;
     return std::nullopt;
   }
 

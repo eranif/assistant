@@ -17,9 +17,7 @@ OllamaClient::OllamaClient(const Endpoint& ep) {
 }
 
 std::unique_ptr<ITransport> OllamaClient::CreateClient() {
-  std::unique_ptr<ITransport> client =
-      //std::make_unique<Curl>(R"(C:\msys64\clang64\bin\curl.exe)");
-      std::make_unique<ClientImpl>();
+  std::unique_ptr<ITransport> client = std::make_unique<ClientImpl>();
   auto server_timeout_settings = m_server_timeout.get_value();
   client->setConnectTimeout(server_timeout_settings.GetConnectTimeout().first,
                             server_timeout_settings.GetConnectTimeout().second);
