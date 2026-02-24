@@ -22,17 +22,23 @@ inline std::optional<std::shared_ptr<ClientBase>> MakeClient(
   }
 
   std::shared_ptr<ClientBase> client{nullptr};
-  switch (endpoint->type_) {
-    case EndpointKind::ollama:
-      client = std::make_shared<OllamaClient>(*endpoint);
-      break;
-    case EndpointKind::anthropic:
-      client = std::make_shared<ClaudeClient>(*endpoint);
-      break;
-    case EndpointKind::openai:
-      client = std::make_shared<OpenAIClient>(*endpoint);
-      break;
+  try {
+    switch (endpoint->type_) {
+      case EndpointKind::ollama:
+        client = std::make_shared<OllamaClient>(*endpoint);
+        break;
+      case EndpointKind::anthropic:
+        client = std::make_shared<ClaudeClient>(*endpoint);
+        break;
+      case EndpointKind::openai:
+        client = std::make_shared<OpenAIClient>(*endpoint);
+        break;
+    }
+  } catch (const std::exception& e) {
+    OLOG(LogLevel::kError) << "Could not create client. " << e.what();
+    return std::nullopt;
   }
+
   if (conf.has_value()) {
     client->ApplyConfig(&conf.value());
   }

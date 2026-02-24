@@ -479,6 +479,14 @@ class ClientBase {
     return m_caching_policy.get_value();
   }
 
+  inline void SetTransportType(TransportType type) {
+    m_transport_type.set_value(type);
+  }
+
+  inline TransportType GetTransportType() const {
+    return m_transport_type.get_value();
+  }
+
  protected:
   static bool OnResponse(const assistant::response& resp, void* user_data);
   static bool OnResponseRaw(const std::string& resp, void* user_data);
@@ -510,6 +518,7 @@ class ClientBase {
   Locker<Usage> m_aggregated_usage;
   std::atomic_bool m_multi_tool_reply_as_array{false};
   Locker<CachePolicy> m_caching_policy{CachePolicy::kNone};
+  Locker<TransportType> m_transport_type{TransportType::httplib};
   friend struct ChatRequest;
 };
 }  // namespace assistant

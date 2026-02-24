@@ -226,7 +226,11 @@ bool ClaudeClient::HandleResponse(const std::string& resp,
       }
       OLOG(LogLevel::kInfo) << "<== " << msg;
       AddMessage(std::move(msg));
-      return false;
+
+      if (!cb_result) {
+        return false;
+      }
+      return true;
     }
     return cb_result;
   } catch (const std::exception& e) {

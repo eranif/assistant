@@ -17,7 +17,20 @@ OllamaClient::OllamaClient(const Endpoint& ep) {
 }
 
 std::unique_ptr<ITransport> OllamaClient::CreateClient() {
-  std::unique_ptr<ITransport> client = std::make_unique<ClientImpl>();
+  std::unique_ptr<ITransport> client{nullptr};
+  switch (GetTransportType()) {
+    case assistant::TransportType::curl: {
+      auto curl = assistant::Which("curl");
+      if (!curl.has_value()) {
+        throw std::runtime_error(
+            "could not locate 'curl' executable in the PATH");
+      }
+      client = std::make_unique<Curl>(curl.value());
+    } break;
+    case assistant::TransportType::httplib:
+      client = std::make_unique<ClientImpl>();
+      break;
+  }
   auto server_timeout_settings = m_server_timeout.get_value();
   client->setConnectTimeout(server_timeout_settings.GetConnectTimeout().first,
                             server_timeout_settings.GetConnectTimeout().second);
@@ -62,8 +75,8 @@ void OllamaClient::ApplyConfig(const assistant::Config* conf) {
 }
 
 std::vector<std::string> OllamaClient::List() {
-  auto client = CreateClient();
   try {
+    auto client = CreateClient();
     return client->list_models();
   } catch (...) {
     return {};
@@ -131,8 +144,8 @@ std::optional<ModelCapabilities> OllamaClient::GetModelCapabilities(
 }
 
 bool OllamaClient::IsRunning() {
-  auto client = CreateClient();
   try {
+    auto client = CreateClient();
     return client->is_running();
   } catch ([[maybe_unused]] const std::exception& e) {
     return false;

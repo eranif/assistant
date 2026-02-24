@@ -122,6 +122,7 @@ void ClientBase::ApplyConfig(const assistant::Config* conf) {
     return;
   }
   SetEndpoint(*endpoint);
+  SetTransportType(endpoint->transport_);
   m_windows_size.store(conf->GetHistorySize());
   m_function_table.ReloadMCPServers(conf);
   m_server_timeout.set_value(conf->GetServerTimeoutSettings());

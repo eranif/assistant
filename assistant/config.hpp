@@ -77,6 +77,7 @@ struct Endpoint {
   std::optional<size_t> max_tokens_{kMaxTokensDefault};
   std::optional<size_t> context_size_{kDefaultContextSize};
   bool verify_server_ssl_{true};
+  TransportType transport_{TransportType::httplib};
 };
 
 struct AnthropicEndpoint : public Endpoint {
@@ -168,9 +169,6 @@ class Config {
    * @return std::optional<Config> A populated Config object on success, or
    * std::nullopt if the file cannot be opened or parsing fails.
    *
-   * @throws None — exceptions during parsing or file I/O are caught internally
-   *         and logged; the function always returns std::optional<Config>.
-   *
    * @see FromContent
    */
   static std::optional<Config> FromFile(const std::string& filepath);
@@ -181,7 +179,7 @@ class Config {
    * This function deserializes a JSON-formatted string containing MCP server
    * configurations, endpoint definitions, timeout settings, and global options
    * into a fully-initialized Config instance. It supports two types of MCP
-   * servers—stdio (local command execution, optionally over SSH) and SSE
+   * servers-stdio (local command execution, optionally over SSH) and SSE
    * (HTTP/REST-based via WebSocket-like streaming). Endpoints are validated
    * for required fields (e.g., 'model'), and exactly one endpoint is ensured
    * to be active after parsing. On any JSON parse error or configuration

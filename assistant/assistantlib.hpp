@@ -83,6 +83,11 @@ enum class EndpointKind {
   openai,
 };
 
+enum class TransportType {
+  httplib,
+  curl,
+};
+
 using json = nlohmann::ordered_json;
 using base64 = macaron::Base64;
 
@@ -119,7 +124,7 @@ class image {
     this->base64_sequence = base64_sequence;
     this->valid = valid;
   }
-  ~image() {};
+  ~image(){};
 
   static image from_file(const std::string& filepath) {
     bool valid = true;
@@ -171,7 +176,7 @@ class images : public std::vector<std::string> {
       this->push_back(value);
     }
   }
-  ~images() {};
+  ~images(){};
   std::vector<std::string> to_strings() {
     std::vector<std::string> strings;
     for (auto it = this->begin(); it != this->end(); ++it)
@@ -237,7 +242,7 @@ class messages : public std::vector<message> {
       this->push_back(value);
     }
   }
-  ~messages() {};
+  ~messages(){};
   const std::vector<std::string> to_strings() const {
     std::vector<std::string> strings;
     for (auto it = this->begin(); it != this->end(); ++it)
@@ -303,7 +308,7 @@ class request : public json {
   request(message_type type) : request() { this->type = type; }
 
   request() : json() {}
-  ~request() {};
+  ~request(){};
 
   static assistant::request from_embedding(
       const std::string& model, const std::string& input,
@@ -368,7 +373,7 @@ class response {
     json_string = "";
     valid = false;
   }
-  ~response() {};
+  ~response(){};
 
   bool is_valid() const { return valid; };
 

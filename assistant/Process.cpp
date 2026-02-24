@@ -585,7 +585,7 @@ int Process::RunProcessAndWait(const std::vector<std::string>& argv,
   bool stdout_open = true;
   bool stderr_open = true;
 
-  while (IsProcessAlive(pid) && (stdout_open || stderr_open)) {
+  while (stdout_open || stderr_open) {
     fd_set read_set;
     FD_ZERO(&read_set);
 
@@ -599,7 +599,9 @@ int Process::RunProcessAndWait(const std::vector<std::string>& argv,
       max_fd = std::max(max_fd, process_err_fd);
     }
 
-    if (max_fd == -1) break;
+    if (max_fd == -1) {
+      break;
+    }
 
     timeval tv;
     tv.tv_sec = 0;
@@ -638,19 +640,23 @@ int Process::RunProcessAndWait(const std::vector<std::string>& argv,
       if (output_cb && !output_cb("", "")) {
         break;
       }
-    } else {
-      // select error.
-      break;
-    }
+    } // Error will be handled by 
   }
 
-  if (IsProcessAlive(pid)) {
+  if (stderr_open || stdout_open) {
     // Terminate it
     ::kill(pid, SIGKILL);
   }
 
-  std::string out = ReadFromFdUntilEOF(process_out_fd);
-  std::string err = ReadFromFdUntilEOF(process_err_fd);
+  std::string out;
+  if (stdout_open) {
+    out = ReadFromFdUntilEOF(process_out_fd);
+  }
+
+  std::string err;
+  if (stderr_open) {
+    err = ReadFromFdUntilEOF(process_err_fd);
+  }
 
   // Close read ends
   ::close(process_out_fd);
@@ -664,13 +670,15 @@ int Process::RunProcessAndWait(const std::vector<std::string>& argv,
   int status = 0;
   ::waitpid(pid, &status, 0);
 
+  int exit_code{0};
   if (WIFEXITED(status)) {
-    return WEXITSTATUS(status);
+    exit_code = WEXITSTATUS(status);
   } else if (WIFSIGNALED(status)) {
-    return 128 + WTERMSIG(status);
+    exit_code = 128 + WTERMSIG(status);
   } else {
-    return -1;
+    exit_code = -1;
   }
+  return exit_code;
 }
 
 bool Process::RunProcessAsync(const std::vector<std::string>& argv,

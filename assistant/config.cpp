@@ -176,6 +176,17 @@ std::optional<Config> Config::FromContent(const std::string& content) {
           endpoint->type_ = type.value();
         }
 
+        if (endpoint_json.contains("transport") &&
+            endpoint_json["transport"].is_string()) {
+          auto transport = endpoint_json["transport"].get<std::string>();
+          auto type = magic_enum::enum_cast<TransportType>(transport);
+          if (!type.has_value()) {
+            OLOG(LogLevel::kError) << "Invalid transport: " << transport;
+            return std::nullopt;
+          }
+          endpoint->transport_ = type.value();
+        }
+
         if (endpoint_json.contains("active") &&
             endpoint_json["active"].is_boolean()) {
           endpoint->active_ = endpoint_json["active"].get<bool>();

@@ -348,4 +348,90 @@ inline std::ostream& operator<<(std::ostream& o,
   return o;
 }
 
+/**
+ * @brief Finds an executable in the system PATH (similar to Unix 'which'
+ * command).
+ *
+ * This function searches for an executable with the given name in all
+ * directories listed in the PATH environment variable. On Windows, it
+ * automatically appends '.exe' extension if not present.
+ *
+ * @param executable_name The name of the executable to find.
+ * @return std::optional<std::string> containing the full path to the
+ *         executable if found, or std::nullopt if not found.
+ *
+ * @note On Windows, if the executable_name doesn't end with '.exe',
+ *       the function will search for both the exact name and the name with
+ *       '.exe' appended.
+ * @note On Unix-like systems (Linux/Mac), the function checks if the file
+ *       has execute permissions.
+ */
+inline std::optional<std::string> Which(const std::string& executable_name) {
+  namespace fs = std::filesystem;
+
+  if (executable_name.empty()) {
+    return std::nullopt;
+  }
+
+  // Get the PATH environment variable
+  const char* path_env = std::getenv("PATH");
+  if (!path_env) {
+    return std::nullopt;
+  }
+
+  // Determine path separator based on platform
+#ifdef _WIN32
+  constexpr char path_separator = ';';
+  const bool is_windows = true;
+#else
+  constexpr char path_separator = ':';
+  const bool is_windows = false;
+#endif
+
+  // Parse PATH into individual directories
+  std::vector<std::string> paths;
+  std::string path_string(path_env);
+  size_t start = 0;
+  size_t end = path_string.find(path_separator);
+
+  while (end != std::string::npos) {
+    paths.push_back(path_string.substr(start, end - start));
+    start = end + 1;
+    end = path_string.find(path_separator, start);
+  }
+  paths.push_back(path_string.substr(start));
+
+  // Prepare list of filenames to search for
+  std::vector<std::string> names_to_try;
+  names_to_try.push_back(executable_name);
+
+  // On Windows, also try with .exe extension if not already present
+  if (is_windows) {
+    if (executable_name.length() < 4 ||
+        executable_name.substr(executable_name.length() - 4) != ".exe") {
+      names_to_try.push_back(executable_name + ".exe");
+    }
+  }
+
+  // Search each directory in PATH
+  for (const auto& dir : paths) {
+    if (dir.empty()) {
+      continue;
+    }
+
+    for (const auto& name : names_to_try) {
+      fs::path candidate = fs::path(dir) / name;
+      std::error_code ec;
+
+      if (fs::exists(candidate, ec) && fs::is_regular_file(candidate, ec)) {
+        // On Unix-like systems, check for execute permission
+        // On Windows, existence is sufficient
+        return candidate.string();
+      }
+    }
+  }
+
+  return std::nullopt;
+}
+
 }  // namespace assistant
