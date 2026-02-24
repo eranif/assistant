@@ -12,7 +12,8 @@ TEST(ResponseParserTest, ParseTextContent) {
 event: content_block_start
 data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
 event: content_block_delta
-data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello World"}})";
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello World"}}
+)";
 
   std::vector<ParseResult> tokens;
   parser.Parse(message, [&tokens](ParseResult result) {
@@ -175,22 +176,19 @@ data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text
 
 TEST(ResponseParserTest, ErrorMessage) {
   ResponseParser parser;
-  std::string message =
-      R"({"type":"error","error":{"type":"invalid_request_error","message":"messages.1.content: Input should be a valid list"},"request_id":"req_011CTtPr3mnnjHJoWCFAK77W"})";
+  std::string message = R"(
+event: error
+data: {"type":"error","error":{"type":"invalid_request_error","message":"messages.1.content: Input should be a valid list"},"request_id":"req_011CTtPr3mnnjHJoWCFAK77W"}
+)";
 
-  // First parse with partial data
   std::vector<ParseResult> tokens;
-  try {
-    parser.Parse(message, [&tokens](ParseResult result) {
-      tokens.push_back(std::move(result));
-    });
-    ASSERT_TRUE(false) << "Expected an exception";
-  } catch (const std::runtime_error& e) {
-    std::string errmsg{e.what()};
-    EXPECT_EQ(
-        errmsg,
-        "Internal error. messages.1.content: Input should be a valid list");
-    EXPECT_EQ(tokens.size(), 0);
-  }
+  parser.Parse(message, [&tokens](ParseResult result) {
+    tokens.push_back(std::move(result));
+  });
+  
+  EXPECT_EQ(tokens.size(), 1);
+  EXPECT_TRUE(tokens[0].is_done);
+  EXPECT_TRUE(tokens[0].stop_reason.has_value());
+  EXPECT_EQ(tokens[0].stop_reason.value(), StopReason::error);
 }
 }  // namespace assistant::claude

@@ -40,6 +40,14 @@ void ResponseParser::Parse(const std::string& text,
                             .usage = GetUsage(event_message)}));
             Reset();
             return;
+          case Event::error:
+            cb(std::move(ParseResult{
+                .is_done = true,
+                .content = GetErrorMessage(event_message.data).value_or(""),
+                .stop_reason = StopReason::error,
+            }));
+            Reset();
+            return;
           case Event::content_block_start: {
             auto content_block_type = GetContentBlock(event_message);
             switch (content_block_type) {

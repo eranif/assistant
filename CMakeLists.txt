@@ -31,14 +31,12 @@ option(
   "Build tests"
   OFF)
 
-if (ASSISTANTLIB_WITH_OPENSSL)
+if (ASSISTANTLIB_WITH_OPENSSL OR ENABLE_TLS)
   message(STATUS "TLS support is enabled")
-  if (ASSISTANTLIB_WITH_OPENSSL)
-    find_package(
-      OpenSSL
-      COMPONENTS SSL Crypto
-      REQUIRED)
-  endif ()
+  find_package(
+    OpenSSL
+    COMPONENTS SSL Crypto
+    REQUIRED)
 else ()
   message(STATUS "TLS support is disabled")
 endif ()
@@ -48,7 +46,7 @@ if (ASSISTANTLIB_BUILD_EXAMPLE)
   add_subdirectory(cli)
 endif ()
 
-if (ASSISTANTLIB_BUILD_TESTS)
+if (ASSISTANTLIB_BUILD_TESTS OR ENABLE_TESTS)
   add_subdirectory(submodules/googletest)
   add_subdirectory(tests)
 endif ()

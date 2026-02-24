@@ -261,6 +261,8 @@ bool Curl::is_running() {
   return Process::RunProcessAndWait(res.cmd).ok;
 }
 
+#if CPPHTTPLIB_OPENSSL_SUPPORT
 void Curl::verifySSLCertificate([[maybe_unused]] bool b) {}
+#endif
 
 }  // namespace assistant
