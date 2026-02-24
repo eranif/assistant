@@ -164,12 +164,12 @@ void ChatRequest::InvokeTools(ClientBase* client,
         ss << "\nPermission to run tool: " << func_call.name << " is declined";
         result.text = ss.str();
         ss = {};
-        ss << "\n\xE2\x9C\x96  Permission to run tool: " << func_call.name
+        ss << "\n\xE2\x9C\x96 Permission to run tool: " << func_call.name
            << " is declined.\n";
         callback_(ss.str(), Reason::kPartialResult, false);
       } else {
         ss = {};
-        ss << "\n\xE2\x9C\x85  Permission to run tool: " << func_call.name
+        ss << "\n\xE2\x9C\x85 Permission to run tool: " << func_call.name
            << " is granted.\n";
         callback_(ss.str(), Reason::kPartialResult, false);
         result = client->GetFunctionTable().Call(func_call);
