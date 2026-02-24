@@ -168,14 +168,14 @@ void ChatRequest::InvokeTools(ClientBase* client,
            << " is declined.\n";
         callback_(ss.str(), Reason::kPartialResult, false);
       } else {
-        result = client->GetFunctionTable().Call(func_call);
-        ss = {};
-        ss << "Tool output: " << result;
-        callback_(ss.str(), Reason::kLogNotice, false);
         ss = {};
         ss << "\n\xE2\x9C\x85  Permission to run tool: " << func_call.name
            << " is granted.\n";
         callback_(ss.str(), Reason::kPartialResult, false);
+        result = client->GetFunctionTable().Call(func_call);
+        ss = {};
+        ss << "Tool output: " << result;
+        callback_(ss.str(), Reason::kLogNotice, false);
       }
       tool_call_results.push_back({func_call, result});
     }
