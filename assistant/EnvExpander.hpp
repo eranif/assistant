@@ -42,6 +42,18 @@ class ExpandResult {
   void SetSuccess(bool success) { success_ = success; }
 
   /**
+   * @brief Get the error message.
+   * @return The error message indicating which variable(s) failed to expand.
+   */
+  const std::string& GetErrorMessage() const { return message_; }
+
+  /**
+   * @brief Set the error message.
+   */
+  void SetErrorMessage(const std::string& message) { message_ = message; }
+  void SetErrorMessage(std::string&& message) { message_ = std::move(message); }
+
+  /**
    * @brief Get the result value (for string expansion).
    */
   const std::string& GetString() const { return str_value_; }
@@ -56,6 +68,7 @@ class ExpandResult {
  private:
   std::string str_value_;
   json json_value_;
+  std::string message_;
   bool success_;
 };
 
@@ -148,11 +161,14 @@ class EnvExpander {
    * @param env_map The environment variable map to use for lookup.
    * @param expanded_str The output string to append expanded content to.
    * @param found Output parameter indicating if the variable was found.
+   * @param var_name Output parameter containing the name of the variable being
+   * expanded.
    * @return The position in the input string after the variable reference.
    */
   size_t ExpandVariableWithResult(const std::string& str, size_t pos,
                                   const EnvMap& env_map,
-                                  std::string& expanded_str, bool& found) const;
+                                  std::string& expanded_str, bool& found,
+                                  std::string& var_name) const;
 };
 
 }  // namespace assistant

@@ -589,6 +589,211 @@ TEST(EnvExpanderTest, BackwardCompatibility_OldJsonAPIWorks) {
   EXPECT_EQ(result["field2"].get<std::string>(), "${MISSING}");
 }
 
+// ============================================================================
+// Tests for error message functionality
+// ============================================================================
+
+// Test error message with single missing variable (braces format)
+TEST(EnvExpanderTest, ErrorMessage_SingleMissingBraces) {
+  EnvExpander expander;
+  EnvMap env_map = {{"HOME", "/home/user"}};
+
+  std::string input = "Path: ${MISSING_VAR}";
+  ExpandResult result = expander.ExpandWithResult(input, env_map);
+
+  EXPECT_FALSE(result.IsSuccess());
+  EXPECT_EQ(result.GetString(), "Path: ${MISSING_VAR}");
+  EXPECT_EQ(result.GetErrorMessage(), "Failed to expand variable: MISSING_VAR");
+}
+
+// Test error message with single missing variable (no braces format)
+TEST(EnvExpanderTest, ErrorMessage_SingleMissingNoBraces) {
+  EnvExpander expander;
+  EnvMap env_map = {{"HOME", "/home/user"}};
+
+  std::string input = "User: $MISSING_USER";
+  ExpandResult result = expander.ExpandWithResult(input, env_map);
+
+  EXPECT_FALSE(result.IsSuccess());
+  EXPECT_EQ(result.GetString(), "User: $MISSING_USER");
+  EXPECT_EQ(result.GetErrorMessage(),
+            "Failed to expand variable: MISSING_USER");
+}
+
+// Test error message with multiple missing variables
+TEST(EnvExpanderTest, ErrorMessage_MultipleMissing) {
+  EnvExpander expander;
+  EnvMap env_map = {{"EXISTING", "value"}};
+
+  std::string input = "${MISSING1} and $MISSING2 and ${EXISTING}";
+  ExpandResult result = expander.ExpandWithResult(input, env_map);
+
+  EXPECT_FALSE(result.IsSuccess());
+  EXPECT_EQ(result.GetString(), "${MISSING1} and $MISSING2 and value");
+  EXPECT_EQ(result.GetErrorMessage(),
+            "Failed to expand variable: MISSING1; Failed to expand variable: "
+            "MISSING2");
+}
+
+// Test error message with all variables missing
+TEST(EnvExpanderTest, ErrorMessage_AllMissing) {
+  EnvExpander expander;
+  EnvMap env_map = {};
+
+  std::string input = "$VAR1 $VAR2 ${VAR3}";
+  ExpandResult result = expander.ExpandWithResult(input, env_map);
+
+  EXPECT_FALSE(result.IsSuccess());
+  EXPECT_EQ(result.GetString(), "$VAR1 $VAR2 ${VAR3}");
+  EXPECT_EQ(result.GetErrorMessage(),
+            "Failed to expand variable: VAR1; Failed to expand variable: VAR2; "
+            "Failed to expand variable: VAR3");
+}
+
+// Test no error message when all variables exist
+TEST(EnvExpanderTest, ErrorMessage_AllExist) {
+  EnvExpander expander;
+  EnvMap env_map = {{"VAR1", "value1"}, {"VAR2", "value2"}};
+
+  std::string input = "${VAR1} and $VAR2";
+  ExpandResult result = expander.ExpandWithResult(input, env_map);
+
+  EXPECT_TRUE(result.IsSuccess());
+  EXPECT_EQ(result.GetString(), "value1 and value2");
+  EXPECT_TRUE(result.GetErrorMessage().empty());
+}
+
+// Test error message with JSON containing missing variable
+TEST(EnvExpanderTest, ErrorMessage_JsonSingleMissing) {
+  EnvExpander expander;
+  EnvMap env_map = {{"HOST", "localhost"}};
+
+  json input = {{"server", {{"host", "${HOST}"}, {"port", "${MISSING_PORT}"}}}};
+  ExpandResult result = expander.ExpandWithResult(input, env_map);
+
+  EXPECT_FALSE(result.IsSuccess());
+  EXPECT_EQ(result.GetJson()["server"]["host"].get<std::string>(), "localhost");
+  EXPECT_EQ(result.GetJson()["server"]["port"].get<std::string>(),
+            "${MISSING_PORT}");
+  EXPECT_EQ(result.GetErrorMessage(),
+            "Failed to expand variable: MISSING_PORT");
+}
+
+// Test error message with JSON containing multiple missing variables
+TEST(EnvExpanderTest, ErrorMessage_JsonMultipleMissing) {
+  EnvExpander expander;
+  EnvMap env_map = {};
+
+  json input = {{"config",
+                 {{"var1", "$MISSING1"},
+                  {"var2", "${MISSING2}"},
+                  {"var3", "$MISSING3"}}}};
+  ExpandResult result = expander.ExpandWithResult(input, env_map);
+
+  EXPECT_FALSE(result.IsSuccess());
+  EXPECT_EQ(result.GetErrorMessage(),
+            "Failed to expand variable: MISSING1; Failed to expand variable: "
+            "MISSING2; Failed to expand variable: MISSING3");
+}
+
+// Test error message with nested JSON structures
+TEST(EnvExpanderTest, ErrorMessage_JsonNested) {
+  EnvExpander expander;
+  EnvMap env_map = {{"EXISTING", "exists"}};
+
+  json input = {
+      {"level1",
+       {{"field1", "${MISSING_L1}"},
+        {"level2", {{"field2", "$EXISTING"}, {"field3", "${MISSING_L2}"}}}}}};
+  ExpandResult result = expander.ExpandWithResult(input, env_map);
+
+  EXPECT_FALSE(result.IsSuccess());
+  EXPECT_EQ(result.GetErrorMessage(),
+            "Failed to expand variable: MISSING_L1; Failed to expand variable: "
+            "MISSING_L2");
+}
+
+// Test error message with JSON array containing missing variables
+TEST(EnvExpanderTest, ErrorMessage_JsonArray) {
+  EnvExpander expander;
+  EnvMap env_map = {{"PATH1", "/path1"}};
+
+  json input = {{"paths", {"${PATH1}", "${MISSING_PATH}", "$ANOTHER_MISSING"}}};
+  ExpandResult result = expander.ExpandWithResult(input, env_map);
+
+  EXPECT_FALSE(result.IsSuccess());
+  EXPECT_EQ(result.GetErrorMessage(),
+            "Failed to expand variable: MISSING_PATH; Failed to expand "
+            "variable: ANOTHER_MISSING");
+}
+
+// Test error message for dollar signs followed by numbers (treated as
+// variables)
+TEST(EnvExpanderTest, ErrorMessage_LiteralDollar) {
+  EnvExpander expander;
+  EnvMap env_map = {};
+
+  std::string input = "Price: $10 and $20";
+  ExpandResult result = expander.ExpandWithResult(input, env_map);
+
+  // $10 and $20 are treated as variable names (alphanumeric extraction)
+  // Since variables "10" and "20" don't exist, they fail to expand
+  EXPECT_FALSE(result.IsSuccess());
+  EXPECT_EQ(result.GetErrorMessage(),
+            "Failed to expand variable: 10; Failed to expand variable: 20");
+}
+
+// Test error message is empty for malformed variables
+TEST(EnvExpanderTest, ErrorMessage_MalformedVariable) {
+  EnvExpander expander;
+  EnvMap env_map = {};
+
+  std::string input = "${UNCLOSED";
+  ExpandResult result = expander.ExpandWithResult(input, env_map);
+
+  // Malformed syntax (missing closing brace) is treated as literal text
+  // Empty variable names like ${} are also treated as literals
+  EXPECT_TRUE(result.IsSuccess());
+  EXPECT_TRUE(result.GetErrorMessage().empty());
+}
+
+// Test error message with variable names containing underscores and numbers
+TEST(EnvExpanderTest, ErrorMessage_ComplexVariableNames) {
+  EnvExpander expander;
+  EnvMap env_map = {};
+
+  std::string input = "${MY_VAR_123} and $TEST_VAR_456";
+  ExpandResult result = expander.ExpandWithResult(input, env_map);
+
+  EXPECT_FALSE(result.IsSuccess());
+  EXPECT_EQ(result.GetErrorMessage(),
+            "Failed to expand variable: MY_VAR_123; Failed to expand variable: "
+            "TEST_VAR_456");
+}
+
+// Test error message shows actual variable name, not the delimiters
+TEST(EnvExpanderTest, ErrorMessage_VariableNameOnly) {
+  EnvExpander expander;
+  EnvMap env_map = {};
+
+  // Test that error message contains "VAR" not "${VAR}" or "$VAR"
+  std::string input1 = "${MY_VARIABLE}";
+  ExpandResult result1 = expander.ExpandWithResult(input1, env_map);
+  EXPECT_FALSE(result1.IsSuccess());
+  EXPECT_EQ(result1.GetErrorMessage(),
+            "Failed to expand variable: MY_VARIABLE");
+  EXPECT_EQ(result1.GetErrorMessage().find("${"), std::string::npos);
+  EXPECT_EQ(result1.GetErrorMessage().find("}"), std::string::npos);
+
+  std::string input2 = "$ANOTHER_VAR";
+  ExpandResult result2 = expander.ExpandWithResult(input2, env_map);
+  EXPECT_FALSE(result2.IsSuccess());
+  EXPECT_EQ(result2.GetErrorMessage(),
+            "Failed to expand variable: ANOTHER_VAR");
+  // Should not contain the $ prefix in the error message variable name
+  EXPECT_NE(result2.GetErrorMessage().find("ANOTHER_VAR"), std::string::npos);
+}
+
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

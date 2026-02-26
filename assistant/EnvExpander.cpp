@@ -31,6 +31,9 @@ ExpandResult EnvExpander::ExpandWithResult(json input_json,
     ExpandResult str_result = ExpandWithResult(str, env_map);
     result.GetJson() = str_result.GetString();
     if (!str_result.IsSuccess()) {
+      if (!str_result.GetErrorMessage().empty()) {
+        result.SetErrorMessage(str_result.GetErrorMessage());
+      }
       result.SetSuccess(false);
     }
   } else if (input_json.is_object()) {
@@ -39,6 +42,12 @@ ExpandResult EnvExpander::ExpandWithResult(json input_json,
       ExpandResult sub_result = ExpandWithResult(value, env_map);
       value = sub_result.GetJson();
       if (!sub_result.IsSuccess()) {
+        if (!sub_result.GetErrorMessage().empty()) {
+          result.SetErrorMessage(result.GetErrorMessage().empty()
+                                     ? sub_result.GetErrorMessage()
+                                     : result.GetErrorMessage() + "; " +
+                                           sub_result.GetErrorMessage());
+        }
         result.SetSuccess(false);
       }
     }
@@ -49,6 +58,12 @@ ExpandResult EnvExpander::ExpandWithResult(json input_json,
       ExpandResult sub_result = ExpandWithResult(element, env_map);
       element = sub_result.GetJson();
       if (!sub_result.IsSuccess()) {
+        if (!sub_result.GetErrorMessage().empty()) {
+          result.SetErrorMessage(result.GetErrorMessage().empty()
+                                     ? sub_result.GetErrorMessage()
+                                     : result.GetErrorMessage() + "; " +
+                                           sub_result.GetErrorMessage());
+        }
         result.SetSuccess(false);
       }
     }
@@ -81,10 +96,16 @@ ExpandResult EnvExpander::ExpandWithResult(const std::string& str,
   while (pos < str.size()) {
     // Look for '$' character
     if (str[pos] == '$') {
+      std::string var_name;
       bool found = true;
       pos = ExpandVariableWithResult(str, pos, env_map, result.GetString(),
-                                     found);
+                                     found, var_name);
       if (!found) {
+        std::string error_msg = "Failed to expand variable: " + var_name;
+        result.SetErrorMessage(result.GetErrorMessage().empty()
+                                   ? error_msg
+                                   : result.GetErrorMessage() + "; " +
+                                         error_msg);
         result.SetSuccess(false);
       }
     } else {
@@ -138,13 +159,16 @@ size_t EnvExpander::ExpandVariable(const std::string& str, size_t pos,
                                    const EnvMap& env_map,
                                    std::string& expanded_str) const {
   bool found = true;
-  return ExpandVariableWithResult(str, pos, env_map, expanded_str, found);
+  std::string var_name;
+  return ExpandVariableWithResult(str, pos, env_map, expanded_str, found,
+                                  var_name);
 }
 
 size_t EnvExpander::ExpandVariableWithResult(const std::string& str, size_t pos,
                                              const EnvMap& env_map,
                                              std::string& expanded_str,
-                                             bool& found) const {
+                                             bool& found,
+                                             std::string& var_name) const {
   // pos points to '$'
   if (pos + 1 >= str.size()) {
     // '$' at end of string
@@ -154,7 +178,6 @@ size_t EnvExpander::ExpandVariableWithResult(const std::string& str, size_t pos,
   }
 
   size_t start_pos = pos + 1;
-  std::string var_name;
   bool has_braces = false;
 
   // Check for ${VAR_NAME} format
