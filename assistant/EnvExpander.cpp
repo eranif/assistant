@@ -11,45 +11,84 @@ extern char** environ;
 namespace assistant {
 
 json EnvExpander::Expand(json input_json, std::optional<EnvMap> map) const {
+  // Use the new method and return just the JSON value for backward
+  // compatibility
+  ExpandResult result = ExpandWithResult(input_json, map);
+  return result.GetJson();
+}
+
+ExpandResult EnvExpander::ExpandWithResult(json input_json,
+                                           std::optional<EnvMap> map) const {
   // Build environment map if not provided
   EnvMap env_map = map.has_value() ? map.value() : BuildEnvMap();
+
+  ExpandResult result(true);
 
   // Recursively traverse and expand the JSON
   if (input_json.is_string()) {
     // Expand string values
     std::string str = input_json.get<std::string>();
-    input_json = Expand(str, env_map);
+    ExpandResult str_result = ExpandWithResult(str, env_map);
+    result.GetJson() = str_result.GetString();
+    if (!str_result.IsSuccess()) {
+      result.SetSuccess(false);
+    }
   } else if (input_json.is_object()) {
     // Recursively expand object members
     for (auto& [key, value] : input_json.items()) {
-      value = Expand(value, env_map);
+      ExpandResult sub_result = ExpandWithResult(value, env_map);
+      value = sub_result.GetJson();
+      if (!sub_result.IsSuccess()) {
+        result.SetSuccess(false);
+      }
     }
+    result.GetJson() = input_json;
   } else if (input_json.is_array()) {
     // Recursively expand array elements
     for (auto& element : input_json) {
-      element = Expand(element, env_map);
+      ExpandResult sub_result = ExpandWithResult(element, env_map);
+      element = sub_result.GetJson();
+      if (!sub_result.IsSuccess()) {
+        result.SetSuccess(false);
+      }
     }
+    result.GetJson() = input_json;
+  } else {
+    // For other types (numbers, booleans, null), return as-is
+    result.GetJson() = input_json;
   }
-  // For other types (numbers, booleans, null), return as-is
 
-  return input_json;
+  return result;
 }
 
 std::string EnvExpander::Expand(const std::string& str,
                                 std::optional<EnvMap> map) const {
+  // Use the new method and return just the string value for backward
+  // compatibility
+  ExpandResult result = ExpandWithResult(str, map);
+  return result.GetString();
+}
+
+ExpandResult EnvExpander::ExpandWithResult(const std::string& str,
+                                           std::optional<EnvMap> map) const {
   // Build environment map if not provided
   EnvMap env_map = map.has_value() ? map.value() : BuildEnvMap();
 
-  std::string result;
-  result.reserve(str.size());
+  ExpandResult result(true);
+  result.GetString().reserve(str.size());
 
   size_t pos = 0;
   while (pos < str.size()) {
     // Look for '$' character
     if (str[pos] == '$') {
-      pos = ExpandVariable(str, pos, env_map, result);
+      bool found = true;
+      pos = ExpandVariableWithResult(str, pos, env_map, result.GetString(),
+                                     found);
+      if (!found) {
+        result.SetSuccess(false);
+      }
     } else {
-      result += str[pos];
+      result.GetString() += str[pos];
       ++pos;
     }
   }
@@ -98,10 +137,19 @@ EnvMap EnvExpander::BuildEnvMap() const {
 size_t EnvExpander::ExpandVariable(const std::string& str, size_t pos,
                                    const EnvMap& env_map,
                                    std::string& expanded_str) const {
+  bool found = true;
+  return ExpandVariableWithResult(str, pos, env_map, expanded_str, found);
+}
+
+size_t EnvExpander::ExpandVariableWithResult(const std::string& str, size_t pos,
+                                             const EnvMap& env_map,
+                                             std::string& expanded_str,
+                                             bool& found) const {
   // pos points to '$'
   if (pos + 1 >= str.size()) {
     // '$' at end of string
     expanded_str += '$';
+    found = true;  // Not a variable reference, just a literal '$'
     return pos + 1;
   }
 
@@ -117,6 +165,7 @@ size_t EnvExpander::ExpandVariable(const std::string& str, size_t pos,
     if (end_pos == std::string::npos) {
       // No closing brace found, treat as literal
       expanded_str += str.substr(pos, 2);  // Add "${"
+      found = true;                        // Not a valid variable reference
       return start_pos;
     }
     var_name = str.substr(start_pos, end_pos - start_pos);
@@ -133,6 +182,7 @@ size_t EnvExpander::ExpandVariable(const std::string& str, size_t pos,
     if (end_pos == start_pos) {
       // No valid variable name after '$'
       expanded_str += '$';
+      found = true;  // Not a variable reference, just a literal '$'
       return start_pos;
     }
 
@@ -140,10 +190,23 @@ size_t EnvExpander::ExpandVariable(const std::string& str, size_t pos,
     pos = end_pos;
   }
 
+  // Check if var_name is empty
+  if (var_name.empty()) {
+    // Empty variable name: ${} or similar
+    if (has_braces) {
+      expanded_str += "${}";
+    } else {
+      expanded_str += '$';
+    }
+    found = true;  // Not a valid variable reference
+    return pos;
+  }
+
   // Look up the variable in the map
   auto it = env_map.find(var_name);
   if (it != env_map.end()) {
     expanded_str += it->second;
+    found = true;
   } else {
     // Variable not found, keep the original text
     if (has_braces) {
@@ -151,6 +214,7 @@ size_t EnvExpander::ExpandVariable(const std::string& str, size_t pos,
     } else {
       expanded_str += "$" + var_name;
     }
+    found = false;  // Variable was not found
   }
 
   return pos;

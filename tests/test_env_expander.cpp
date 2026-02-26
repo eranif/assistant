@@ -178,8 +178,8 @@ TEST(EnvExpanderTest, ExpandJson_NestedObjects) {
   EnvExpander expander;
   EnvMap env_map = {{"HOME", "/home/user"}, {"PORT", "8080"}};
 
-  json input = {{"config",
-                 {{"home_dir", "${HOME}"}, {"server", {{"port", "$PORT"}}}}}};
+  json input = {
+      {"config", {{"home_dir", "${HOME}"}, {"server", {{"port", "$PORT"}}}}}};
 
   json result = expander.Expand(input, env_map);
 
@@ -327,8 +327,9 @@ TEST(EnvExpanderTest, Expand_VariableWithSpecialChars) {
   std::string input = "Path is ${PATH} and ${SPECIAL}";
   std::string result = expander.Expand(input, env_map);
 
-  EXPECT_EQ(result, "Path is /usr/bin:/usr/local/bin and value with $pecial "
-                    "ch@rs!");
+  EXPECT_EQ(result,
+            "Path is /usr/bin:/usr/local/bin and value with $pecial "
+            "ch@rs!");
 }
 
 // Test variable value that itself looks like a variable (no recursive
@@ -400,6 +401,192 @@ TEST(EnvExpanderTest, Expand_MultipleDollars) {
   // First $ is treated as variable with empty name (kept as $), then $VAR is
   // expanded This will result in "$value"
   EXPECT_EQ(result, "$value");
+}
+
+// ============================================================================
+// Tests for new ExpandWithResult API
+// ============================================================================
+
+// Test ExpandWithResult with successful expansion
+TEST(EnvExpanderTest, ExpandWithResult_Success) {
+  EnvExpander expander;
+  EnvMap env_map = {{"HOME", "/home/user"}, {"USER", "testuser"}};
+
+  std::string input = "$USER lives in ${HOME}";
+  ExpandResult result = expander.ExpandWithResult(input, env_map);
+
+  EXPECT_TRUE(result.IsSuccess());
+  EXPECT_EQ(result.GetString(), "testuser lives in /home/user");
+}
+
+// Test ExpandWithResult with failed expansion (non-existent variable)
+TEST(EnvExpanderTest, ExpandWithResult_Failure) {
+  EnvExpander expander;
+  EnvMap env_map = {{"HOME", "/home/user"}};
+
+  std::string input = "${NONEXISTENT} variable";
+  ExpandResult result = expander.ExpandWithResult(input, env_map);
+
+  EXPECT_FALSE(result.IsSuccess());
+  EXPECT_EQ(result.GetString(), "${NONEXISTENT} variable");
+}
+
+// Test ExpandWithResult with mixed success/failure
+TEST(EnvExpanderTest, ExpandWithResult_MixedVariables) {
+  EnvExpander expander;
+  EnvMap env_map = {{"HOME", "/home/user"}};
+
+  std::string input = "${HOME} and ${MISSING}";
+  ExpandResult result = expander.ExpandWithResult(input, env_map);
+
+  EXPECT_FALSE(result.IsSuccess());
+  EXPECT_EQ(result.GetString(), "/home/user and ${MISSING}");
+}
+
+// Test ExpandWithResult with no variables
+TEST(EnvExpanderTest, ExpandWithResult_NoVariables) {
+  EnvExpander expander;
+  EnvMap env_map = {{"HOME", "/home/user"}};
+
+  std::string input = "Just plain text";
+  ExpandResult result = expander.ExpandWithResult(input, env_map);
+
+  EXPECT_TRUE(result.IsSuccess());
+  EXPECT_EQ(result.GetString(), "Just plain text");
+}
+
+// Test ExpandWithResult with multiple missing variables
+TEST(EnvExpanderTest, ExpandWithResult_MultipleMissing) {
+  EnvExpander expander;
+  EnvMap env_map = {};
+
+  std::string input = "$VAR1 and $VAR2 and $VAR3";
+  ExpandResult result = expander.ExpandWithResult(input, env_map);
+
+  EXPECT_FALSE(result.IsSuccess());
+  EXPECT_EQ(result.GetString(), "$VAR1 and $VAR2 and $VAR3");
+}
+
+// Test ExpandWithResult with literal dollar signs
+TEST(EnvExpanderTest, ExpandWithResult_LiteralDollar) {
+  EnvExpander expander;
+  EnvMap env_map = {{"HOME", "/home/user"}};
+
+  std::string input = "Price is 10$";
+  ExpandResult result = expander.ExpandWithResult(input, env_map);
+
+  EXPECT_TRUE(result.IsSuccess());
+  EXPECT_EQ(result.GetString(), "Price is 10$");
+}
+
+// Test ExpandWithResult JSON with successful expansion
+TEST(EnvExpanderTest, ExpandJsonWithResult_Success) {
+  EnvExpander expander;
+  EnvMap env_map = {{"HOST", "localhost"}, {"PORT", "8080"}};
+
+  json input = {{"server", {{"host", "${HOST}"}, {"port", "$PORT"}}}};
+  ExpandResult result = expander.ExpandWithResult(input, env_map);
+
+  EXPECT_TRUE(result.IsSuccess());
+  EXPECT_EQ(result.GetJson()["server"]["host"].get<std::string>(), "localhost");
+  EXPECT_EQ(result.GetJson()["server"]["port"].get<std::string>(), "8080");
+}
+
+// Test ExpandWithResult JSON with failed expansion
+TEST(EnvExpanderTest, ExpandJsonWithResult_Failure) {
+  EnvExpander expander;
+  EnvMap env_map = {{"HOST", "localhost"}};
+
+  json input = {{"server", {{"host", "${HOST}"}, {"port", "$MISSING_PORT"}}}};
+  ExpandResult result = expander.ExpandWithResult(input, env_map);
+
+  EXPECT_FALSE(result.IsSuccess());
+  EXPECT_EQ(result.GetJson()["server"]["host"].get<std::string>(), "localhost");
+  EXPECT_EQ(result.GetJson()["server"]["port"].get<std::string>(),
+            "$MISSING_PORT");
+}
+
+// Test ExpandWithResult JSON with nested structures and failures
+TEST(EnvExpanderTest, ExpandJsonWithResult_NestedFailure) {
+  EnvExpander expander;
+  EnvMap env_map = {{"VAR1", "value1"}};
+
+  json input = {{"level1",
+                 {{"field1", "${VAR1}"},
+                  {"level2", {{"field2", "${VAR2}"}, {"field3", "static"}}}}}};
+
+  ExpandResult result = expander.ExpandWithResult(input, env_map);
+
+  EXPECT_FALSE(result.IsSuccess());
+  EXPECT_EQ(result.GetJson()["level1"]["field1"].get<std::string>(), "value1");
+  EXPECT_EQ(result.GetJson()["level1"]["level2"]["field2"].get<std::string>(),
+            "${VAR2}");
+  EXPECT_EQ(result.GetJson()["level1"]["level2"]["field3"].get<std::string>(),
+            "static");
+}
+
+// Test ExpandWithResult JSON with arrays containing missing variables
+TEST(EnvExpanderTest, ExpandJsonWithResult_ArrayWithFailure) {
+  EnvExpander expander;
+  EnvMap env_map = {{"PATH1", "/path/one"}};
+
+  json input = {{"paths", {"${PATH1}", "${PATH2}", "/static/path"}}};
+  ExpandResult result = expander.ExpandWithResult(input, env_map);
+
+  EXPECT_FALSE(result.IsSuccess());
+  EXPECT_EQ(result.GetJson()["paths"][0].get<std::string>(), "/path/one");
+  EXPECT_EQ(result.GetJson()["paths"][1].get<std::string>(), "${PATH2}");
+  EXPECT_EQ(result.GetJson()["paths"][2].get<std::string>(), "/static/path");
+}
+
+// Test ExpandWithResult with empty variable names
+TEST(EnvExpanderTest, ExpandWithResult_EmptyVariable) {
+  EnvExpander expander;
+  EnvMap env_map = {{"HOME", "/home/user"}};
+
+  std::string input = "${} and $";
+  ExpandResult result = expander.ExpandWithResult(input, env_map);
+
+  // Empty variable names are treated as literals, not as failed expansions
+  EXPECT_TRUE(result.IsSuccess());
+  EXPECT_EQ(result.GetString(), "${} and $");
+}
+
+// Test ExpandWithResult with malformed variable syntax
+TEST(EnvExpanderTest, ExpandWithResult_MalformedSyntax) {
+  EnvExpander expander;
+  EnvMap env_map = {{"HOME", "/home/user"}};
+
+  std::string input = "${HOME is not closed";
+  ExpandResult result = expander.ExpandWithResult(input, env_map);
+
+  // Malformed syntax is treated as literal, not as failed expansion
+  EXPECT_TRUE(result.IsSuccess());
+  EXPECT_EQ(result.GetString(), "${HOME is not closed");
+}
+
+// Test backward compatibility: old API still works
+TEST(EnvExpanderTest, BackwardCompatibility_OldAPIWorks) {
+  EnvExpander expander;
+  EnvMap env_map = {{"HOME", "/home/user"}};
+
+  // Old API should still work and return expanded string even with missing vars
+  std::string input = "${HOME} and ${MISSING}";
+  std::string result = expander.Expand(input, env_map);
+
+  EXPECT_EQ(result, "/home/user and ${MISSING}");
+}
+
+// Test backward compatibility: old JSON API still works
+TEST(EnvExpanderTest, BackwardCompatibility_OldJsonAPIWorks) {
+  EnvExpander expander;
+  EnvMap env_map = {{"VAR1", "value1"}};
+
+  json input = {{"field1", "${VAR1}"}, {"field2", "${MISSING}"}};
+  json result = expander.Expand(input, env_map);
+
+  EXPECT_EQ(result["field1"].get<std::string>(), "value1");
+  EXPECT_EQ(result["field2"].get<std::string>(), "${MISSING}");
 }
 
 int main(int argc, char** argv) {
