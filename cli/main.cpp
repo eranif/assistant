@@ -252,11 +252,13 @@ int main(int argc, char** argv) {
   assistant::SetLogLevel(assistant::LogLevel::kError);
   std::optional<assistant::Config> conf;
   if (!args.config_file.empty()) {
-    conf = assistant::Config::FromFile(args.config_file);
-    if (!conf) {
-      std::cerr << "Failed to parse configuration file." << std::endl;
+    auto result = assistant::ConfigBuilder::FromFile(args.config_file);
+    if (!result.ok()) {
+      std::cerr << "Failed to parse configuration file. " << result.errmsg_
+                << std::endl;
       return 1;
     }
+    conf = result.config_.value();
   }
 
   if (args.log_level.has_value()) {

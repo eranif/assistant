@@ -53,12 +53,13 @@ std::optional<T> GetValueFromJsonOneOf(const json& j, const std::string& name,
 }
 }  // namespace
 
-std::optional<Config> Config::FromFile(const std::string& filepath) {
+ParseResult ConfigBuilder::FromFile(const std::string& filepath) {
   try {
     std::ifstream input_file(filepath);
     if (!input_file.is_open()) {
-      OLOG(OLogLevel::kError) << "Failed to open file: " << filepath;
-      return std::nullopt;
+      std::ostringstream errmsg;
+      errmsg << "Failed to open file: " << filepath;
+      return ParseResult{.errmsg_ = errmsg.str()};
     }
 
     std::ostringstream buffer;
@@ -68,14 +69,14 @@ std::optional<Config> Config::FromFile(const std::string& filepath) {
     input_file.close();
     return FromContent(file_content);
   } catch (std::exception& e) {
-    OLOG(OLogLevel::kError)
-        << "Failed to parse configuration file: " << filepath << ". "
-        << e.what();
-    return std::nullopt;
+    std::ostringstream errmsg;
+    errmsg << "Failed to parse configuration file: " << filepath << ". "
+           << e.what();
+    return ParseResult{.errmsg_ = errmsg.str()};
   }
 }
 
-std::optional<Config> Config::FromContent(const std::string& content) {
+ParseResult ConfigBuilder::FromContent(const std::string& content) {
   try {
     Config config;
 
@@ -83,10 +84,10 @@ std::optional<Config> Config::FromContent(const std::string& content) {
     json parsed_data = json::parse(content);
     auto result = expander.ExpandWithResult(parsed_data);
     if (!result.IsSuccess()) {
-      OLOG(LogLevel::kError)
-          << "Failed to resolve environment variables from input json. "
-          << result.GetErrorMessage();
-      return std::nullopt;
+      std::ostringstream errmsg;
+      errmsg << "Failed to resolve environment variables from input json. "
+             << result.GetErrorMessage();
+      return ParseResult{.errmsg_ = errmsg.str()};
     }
     parsed_data = result.GetJson();
     if (parsed_data.contains("mcp_servers")) {
@@ -180,9 +181,9 @@ std::optional<Config> Config::FromContent(const std::string& content) {
           auto endpoint_type = endpoint_json["type"].get<std::string>();
           auto type = magic_enum::enum_cast<EndpointKind>(endpoint_type);
           if (!type.has_value()) {
-            OLOG(LogLevel::kError)
-                << "Invalid endpoint type: " << endpoint_type;
-            return std::nullopt;
+            std::ostringstream ss;
+            ss << "Invalid endpoint type: " << endpoint_type;
+            return ParseResult{.errmsg_ = ss.str()};
           }
           endpoint->type_ = type.value();
         }
@@ -192,8 +193,9 @@ std::optional<Config> Config::FromContent(const std::string& content) {
           auto transport = endpoint_json["transport"].get<std::string>();
           auto type = magic_enum::enum_cast<TransportType>(transport);
           if (!type.has_value()) {
-            OLOG(LogLevel::kError) << "Invalid transport: " << transport;
-            return std::nullopt;
+            std::ostringstream ss;
+            ss << "Invalid transport: " << transport;
+            return ParseResult{.errmsg_ = ss.str()};
           }
           endpoint->transport_ = type.value();
         }
@@ -216,9 +218,10 @@ std::optional<Config> Config::FromContent(const std::string& content) {
 
         if (!endpoint_json.contains("model") ||
             !endpoint_json["model"].is_string()) {
-          OLOG(LogLevel::kError) << "Endpoint '" << endpoint_url
-                                 << "' is missing the 'model' property.";
-          return std::nullopt;
+          std::stringstream ss;
+          ss << "Endpoint '" << endpoint_url
+             << "' is missing the 'model' property.";
+          return ParseResult{.errmsg_ = ss.str()};
         }
         endpoint->model_ = endpoint_json["model"].get<std::string>();
       }
@@ -289,11 +292,11 @@ std::optional<Config> Config::FromContent(const std::string& content) {
     for (const auto& mcp_server : config.m_servers) {
       OLOG(OLogLevel::kInfo) << "Loaded MCP server: " << mcp_server;
     }
-    return config;
+    return ParseResult{.config_ = config};
   } catch (std::exception& e) {
-    OLOG(OLogLevel::kError) << "Failed to parse configuration JSON: " << content
-                            << ". " << e.what();
-    return std::nullopt;
+    std::stringstream ss;
+    ss << "Failed to parse configuration JSON: " << content << ". " << e.what();
+    return ParseResult{.errmsg_ = ss.str()};
   }
 }
 

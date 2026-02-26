@@ -47,15 +47,20 @@ inline std::optional<std::shared_ptr<ClientBase>> MakeClient(
 
 inline std::optional<std::shared_ptr<ClientBase>> MakeClient(
     const std::string& config_content) {
-  ASSIGN_OPT_OR_RETURN_NULLOPT(Config conf,
-                               Config::FromContent(config_content));
-  return MakeClient(conf);
+  auto result = ConfigBuilder::FromContent(config_content);
+  if (!result.ok()) {
+    return std::nullopt;
+  }
+  return MakeClient(result.config_.value());
 }
 
 inline std::optional<std::shared_ptr<ClientBase>> MakeClient(
     const std::filesystem::path& path) {
-  ASSIGN_OPT_OR_RETURN_NULLOPT(Config conf, Config::FromFile(path.string()));
-  return MakeClient(conf);
+  auto result = ConfigBuilder::FromFile(path.string());
+  if (!result.ok()) {
+    return std::nullopt;
+  }
+  return MakeClient(result.config_.value());
 }
 
 }  // namespace assistant
