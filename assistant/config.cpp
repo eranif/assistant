@@ -2,6 +2,7 @@
 
 #include <fstream>
 
+#include "assistant/EnvExpander.hpp"
 #include "assistant/logger.hpp"
 
 namespace assistant {
@@ -77,7 +78,17 @@ std::optional<Config> Config::FromFile(const std::string& filepath) {
 std::optional<Config> Config::FromContent(const std::string& content) {
   try {
     Config config;
+
+    EnvExpander expander;
     json parsed_data = json::parse(content);
+    auto result = expander.ExpandWithResult(parsed_data);
+    if (!result.IsSuccess()) {
+      OLOG(LogLevel::kError)
+          << "Failed to resolve environment variables from input json. "
+          << result.GetErrorMessage();
+      return std::nullopt;
+    }
+    parsed_data = result.GetJson();
     if (parsed_data.contains("mcp_servers")) {
       // MCP servers
       auto mcp_servers = parsed_data["mcp_servers"];

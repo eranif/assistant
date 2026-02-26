@@ -69,7 +69,7 @@ class ExpandResult {
   std::string str_value_;
   json json_value_;
   std::string message_;
-  bool success_;
+  bool success_{true};
 };
 
 class EnvExpander {
