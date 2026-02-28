@@ -258,7 +258,7 @@ class messages : public std::vector<message> {
     return output;
   }
 
-  operator std::vector<json>() const { return std::vector<json>(); }
+  operator std::vector<json>() const { return this->to_json(); }
   operator std::vector<std::string>() const { return this->to_strings(); }
 };
 
