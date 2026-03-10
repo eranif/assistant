@@ -4,6 +4,7 @@
 #include <string>
 #include <unordered_map>
 
+#include "assistant/EnvExpander.hpp"
 #include "assistant/helpers.hpp"
 #include "assistant/mcp.hpp"
 #include "common/magic_enum.hpp"
@@ -74,6 +75,7 @@ struct Endpoint {
   std::unordered_map<std::string, std::string> headers_;
   bool active_{false};
   std::string model_;
+  std::vector<std::string> models_;
   std::optional<size_t> max_tokens_{kMaxTokensDefault};
   std::optional<size_t> context_size_{kDefaultContextSize};
   bool verify_server_ssl_{true};
@@ -216,44 +218,53 @@ class ConfigBuilder {
   ConfigBuilder() = default;
 
   /**
-   * @brief Constructs a Config object by reading and parsing a configuration
-   * file.
+   * @brief Parses a configuration file and returns the result.
    *
-   * Attempts to open the specified file, reads its entire contents, and
-   * delegates parsing to FromContent. If file access fails or parsing throws an
-   * exception, an error is logged and std::nullopt is returned.
+   * Reads the entire contents of the file at the specified path and parses it
+   * as configuration data. If the file cannot be opened or parsing fails, an
+   * error message is returned in the ParseResult.
    *
-   * @param filepath Path to the configuration file to load.
-   * @return std::optional<Config> A populated Config object on success, or
-   * std::nullopt if the file cannot be opened or parsing fails.
+   * @param filepath The path to the configuration file to be parsed.
+   * @param map Optional environment variable map.
    *
-   * @see FromContent
+   * @return ParseResult A result object containing either the parsed
+   *         configuration data or an error message if the operation failed.
+   *
+   * @throws None - all exceptions are caught internally and converted to
+   *         ParseResult error messages.
+   *
+   * @see ConfigBuilder::FromContent
    */
-  static ParseResult FromFile(const std::string& filepath);
+  static ParseResult FromFile(const std::string& filepath,
+                              std::optional<EnvMap> map = std::nullopt);
 
   /**
-   * Parses a JSON configuration string and constructs a Config object.
+   * @brief Parses a JSON configuration string and builds a Config object with
+   * optional environment variable expansion.
    *
-   * This function deserializes a JSON-formatted string containing MCP server
-   * configurations, endpoint definitions, timeout settings, and global options
-   * into a fully-initialized Config instance. It supports two types of MCP
-   * servers-stdio (local command execution, optionally over SSH) and SSE
-   * (HTTP/REST-based via WebSocket-like streaming). Endpoints are validated
-   * for required fields (e.g., 'model'), and exactly one endpoint is ensured
-   * to be active after parsing. On any JSON parse error or configuration
-   * validation failure, the function logs the issue and returns std::nullopt.
+   * This method parses JSON content to construct a Config object containing MCP
+   * server configurations, API endpoints, timeout settings, and other global
+   * parameters. Environment variables in the JSON are expanded using the
+   * provided environment map. The method validates the configuration structure,
+   * ensures exactly one active endpoint, and applies sensible defaults where
+   * values are missing.
    *
-   * @param content A JSON string containing the full configuration, including
-   *        optional top-level keys: "mcp_servers", "endpoints",
-   * "server_timeout", "history_size", "log_level", "keep_alive", and "stream".
-   * @return An optional Config object populated from the input; std::nullopt if
-   *         parsing fails, required fields are missing (e.g., endpoint
-   * 'model'), or an invalid endpoint type is specified.
-   * @throws No C++ exceptions propagate to the caller; all exceptions thrown
-   *         during parsing or validation are caught internally and converted to
-   *         a std::nullopt return with an error log.
-   * @see Config, Endpoint, MCPServerConfig, StdioParams, SseParams
+   * @param content A JSON string containing the configuration data to be
+   * parsed.
+   * @param map An optional environment variable map used for expanding
+   * environment variable references in the JSON content. If not provided,
+   * environment expansion uses system defaults.
+   *
+   * @return ParseResult A result object containing either a successfully parsed
+   * Config object (accessible via .config_) or an error message (accessible via
+   * .errmsg_) if parsing failed. Check the result to determine success or
+   * failure.
+   *
+   * @throws std::exception Catches and converts any standard exceptions during
+   * JSON parsing or configuration construction into a ParseResult with an error
+   * message. No exceptions propagate to the caller.
    */
-  static ParseResult FromContent(const std::string& json_content);
+  static ParseResult FromContent(const std::string& json_content,
+                                 std::optional<EnvMap> map = std::nullopt);
 };
 }  // namespace assistant

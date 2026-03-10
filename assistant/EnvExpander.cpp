@@ -37,10 +37,24 @@ ExpandResult EnvExpander::ExpandWithResult(json input_json,
       result.SetSuccess(false);
     }
   } else if (input_json.is_object()) {
-    // Recursively expand object members
+    // Recursively expand object members (both keys and values)
+    json expanded_obj = json::object();
     for (auto& [key, value] : input_json.items()) {
+      // Expand the key
+      ExpandResult key_result = ExpandWithResult(key, env_map);
+      std::string expanded_key = key_result.GetString();
+      if (!key_result.IsSuccess()) {
+        if (!key_result.GetErrorMessage().empty()) {
+          result.SetErrorMessage(result.GetErrorMessage().empty()
+                                     ? key_result.GetErrorMessage()
+                                     : result.GetErrorMessage() + "; " +
+                                           key_result.GetErrorMessage());
+        }
+        result.SetSuccess(false);
+      }
+
+      // Expand the value
       ExpandResult sub_result = ExpandWithResult(value, env_map);
-      value = sub_result.GetJson();
       if (!sub_result.IsSuccess()) {
         if (!sub_result.GetErrorMessage().empty()) {
           result.SetErrorMessage(result.GetErrorMessage().empty()
@@ -50,8 +64,10 @@ ExpandResult EnvExpander::ExpandWithResult(json input_json,
         }
         result.SetSuccess(false);
       }
+
+      expanded_obj[expanded_key] = sub_result.GetJson();
     }
-    result.GetJson() = input_json;
+    result.GetJson() = expanded_obj;
   } else if (input_json.is_array()) {
     // Recursively expand array elements
     for (auto& element : input_json) {

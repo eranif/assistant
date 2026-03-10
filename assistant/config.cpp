@@ -53,7 +53,8 @@ std::optional<T> GetValueFromJsonOneOf(const json& j, const std::string& name,
 }
 }  // namespace
 
-ParseResult ConfigBuilder::FromFile(const std::string& filepath) {
+ParseResult ConfigBuilder::FromFile(const std::string& filepath,
+                                    std::optional<EnvMap> map) {
   try {
     std::ifstream input_file(filepath);
     if (!input_file.is_open()) {
@@ -67,7 +68,7 @@ ParseResult ConfigBuilder::FromFile(const std::string& filepath) {
                                    // string stream
     std::string file_content = buffer.str();  // Extract the
     input_file.close();
-    return FromContent(file_content);
+    return FromContent(file_content, map);
   } catch (std::exception& e) {
     std::ostringstream errmsg;
     errmsg << "Failed to parse configuration file: " << filepath << ". "
@@ -76,13 +77,14 @@ ParseResult ConfigBuilder::FromFile(const std::string& filepath) {
   }
 }
 
-ParseResult ConfigBuilder::FromContent(const std::string& content) {
+ParseResult ConfigBuilder::FromContent(const std::string& content,
+                                       std::optional<EnvMap> map) {
   try {
     Config config;
 
     EnvExpander expander;
     json parsed_data = json::parse(content);
-    auto result = expander.ExpandWithResult(parsed_data);
+    auto result = expander.ExpandWithResult(parsed_data, map);
     if (!result.IsSuccess()) {
       std::ostringstream errmsg;
       errmsg << "Failed to resolve environment variables from input json. "
@@ -224,6 +226,12 @@ ParseResult ConfigBuilder::FromContent(const std::string& content) {
           return ParseResult{.errmsg_ = ss.str()};
         }
         endpoint->model_ = endpoint_json["model"].get<std::string>();
+
+        if (endpoint_json.contains("models") &&
+            endpoint_json["models"].is_array()) {
+          endpoint->models_ =
+              endpoint_json["models"].get<std::vector<std::string>>();
+        }
       }
     }
 
