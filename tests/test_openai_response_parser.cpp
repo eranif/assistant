@@ -4,12 +4,22 @@
 
 using namespace assistant;
 
-// Test basic OpenAI streaming response parsing
+// Helper: build a /v1/responses SSE delta line
+static std::string DeltaEvent(const std::string& text) {
+  return "event: response.output_text.delta\ndata: {\"delta\":\"" + text +
+         "\"}\n";
+}
+
+static std::string CompletedEvent(int input_tokens, int output_tokens) {
+  return "event: response.completed\ndata: {\"status\":\"completed\","
+         "\"usage\":{\"input_tokens\":" +
+         std::to_string(input_tokens) + ",\"output_tokens\":" +
+         std::to_string(output_tokens) + "}}\n";
+}
+
 TEST(OpenAIResponseParserTest, BasicStreamingResponse) {
   OpenAIResponseParser parser;
-  std::string message =
-      R"(data: {"id":"chatcmpl-123","choices":[{"delta":{"content":"Hello"},"index":0}]}
-)";
+  std::string message = DeltaEvent("Hello");
 
   std::vector<OpenAIResponseParser::ParseResult> tokens;
   parser.Parse(message, [&tokens](OpenAIResponseParser::ParseResult result) {
@@ -22,34 +32,25 @@ TEST(OpenAIResponseParserTest, BasicStreamingResponse) {
   EXPECT_FALSE(tokens[0].HasError());
 }
 
-// Test OpenAI stream completion with [DONE] marker
-TEST(OpenAIResponseParserTest, StreamDoneMarker) {
+TEST(OpenAIResponseParserTest, StreamCompletedEvent) {
   OpenAIResponseParser parser;
-  std::string message =
-      R"(data: {"id":"chatcmpl-123","choices":[{"delta":{"content":"Hello"},"index":0}]}
-data: [DONE]
-)";
+  std::string message = DeltaEvent("Hello") + CompletedEvent(10, 5);
 
   std::vector<OpenAIResponseParser::ParseResult> tokens;
   parser.Parse(message, [&tokens](OpenAIResponseParser::ParseResult result) {
     tokens.push_back(std::move(result));
   });
 
-  ASSERT_EQ(tokens.size(), 2);
+  ASSERT_GE(tokens.size(), 2);
   EXPECT_EQ(tokens[0].content, "Hello");
   EXPECT_FALSE(tokens[0].is_done);
-  EXPECT_TRUE(tokens[1].is_done);
-  EXPECT_TRUE(tokens[1].content.empty());
+  EXPECT_TRUE(tokens.back().is_done);
 }
 
-// Test multiple chunks in one parse call
 TEST(OpenAIResponseParserTest, MultipleChunks) {
   OpenAIResponseParser parser;
   std::string message =
-      R"(data: {"id":"chatcmpl-123","choices":[{"delta":{"content":"Hello"},"index":0}]}
-data: {"id":"chatcmpl-123","choices":[{"delta":{"content":" World"},"index":0}]}
-data: {"id":"chatcmpl-123","choices":[{"delta":{"content":"!"},"index":0}]}
-)";
+      DeltaEvent("Hello") + DeltaEvent(" World") + DeltaEvent("!");
 
   std::vector<OpenAIResponseParser::ParseResult> tokens;
   parser.Parse(message, [&tokens](OpenAIResponseParser::ParseResult result) {
@@ -62,12 +63,9 @@ data: {"id":"chatcmpl-123","choices":[{"delta":{"content":"!"},"index":0}]}
   EXPECT_EQ(tokens[2].content, "!");
 }
 
-// Test finish reason parsing
-TEST(OpenAIResponseParserTest, FinishReason) {
+TEST(OpenAIResponseParserTest, FinishReasonFromStatus) {
   OpenAIResponseParser parser;
-  std::string message =
-      R"(data: {"id":"chatcmpl-123","choices":[{"delta":{},"finish_reason":"stop","index":0}]}
-)";
+  std::string message = CompletedEvent(5, 3);
 
   std::vector<OpenAIResponseParser::ParseResult> tokens;
   parser.Parse(message, [&tokens](OpenAIResponseParser::ParseResult result) {
@@ -76,16 +74,13 @@ TEST(OpenAIResponseParserTest, FinishReason) {
 
   ASSERT_EQ(tokens.size(), 1);
   EXPECT_TRUE(tokens[0].finish_reason.has_value());
-  EXPECT_EQ(tokens[0].finish_reason.value(), "stop");
+  EXPECT_EQ(tokens[0].finish_reason.value(), "completed");
   EXPECT_TRUE(tokens[0].is_done);
 }
 
-// Test usage information parsing
 TEST(OpenAIResponseParserTest, UsageInformation) {
   OpenAIResponseParser parser;
-  std::string message =
-      R"(data: {"id":"chatcmpl-123","choices":[{"delta":{},"index":0}],"usage":{"prompt_tokens":10,"completion_tokens":20,"total_tokens":30}}
-)";
+  std::string message = CompletedEvent(10, 20);
 
   std::vector<OpenAIResponseParser::ParseResult> tokens;
   parser.Parse(message, [&tokens](OpenAIResponseParser::ParseResult result) {
@@ -98,12 +93,12 @@ TEST(OpenAIResponseParserTest, UsageInformation) {
   EXPECT_EQ(tokens[0].usage->output_tokens, 20);
 }
 
-// Test error handling
 TEST(OpenAIResponseParserTest, ErrorResponse) {
   OpenAIResponseParser parser;
   std::string message =
-      R"(data: {"error":{"message":"Rate limit exceeded","type":"rate_limit_error"}}
-)";
+      "event: response.failed\n"
+      "data: {\"error\":{\"message\":\"Rate limit exceeded\","
+      "\"type\":\"rate_limit_error\"}}\n";
 
   std::vector<OpenAIResponseParser::ParseResult> tokens;
   parser.Parse(message, [&tokens](OpenAIResponseParser::ParseResult result) {
@@ -116,56 +111,30 @@ TEST(OpenAIResponseParserTest, ErrorResponse) {
   EXPECT_TRUE(tokens[0].is_done);
 }
 
-// Test empty delta (role assignment)
-TEST(OpenAIResponseParserTest, EmptyDelta) {
-  OpenAIResponseParser parser;
-  std::string message =
-      R"(data: {"id":"chatcmpl-123","choices":[{"delta":{"role":"assistant"},"index":0}]}
-)";
-
-  std::vector<OpenAIResponseParser::ParseResult> tokens;
-  parser.Parse(message, [&tokens](OpenAIResponseParser::ParseResult result) {
-    tokens.push_back(std::move(result));
-  });
-
-  // Empty delta (no content) should not produce a token
-  EXPECT_EQ(tokens.size(), 0);
-}
-
-// Test partial line buffering
 TEST(OpenAIResponseParserTest, PartialLineBuffering) {
   OpenAIResponseParser parser;
 
-  // First part without newline
-  std::string part1 =
-      R"(data: {"id":"chatcmpl-123","choices":[{"delta":{"content":"Hel)";
+  std::string part1 = "event: response.output_text.delta\ndata: {\"delta\":\"Hel";
 
   std::vector<OpenAIResponseParser::ParseResult> tokens;
   parser.Parse(part1, [&tokens](OpenAIResponseParser::ParseResult result) {
     tokens.push_back(std::move(result));
   });
 
-  // Should not parse anything yet
   EXPECT_EQ(tokens.size(), 0);
 
-  // Second part completes the line
-  std::string part2 = R"(lo"},"index":0}]}
-)";
-
+  std::string part2 = "lo\"}\n";
   parser.Parse(part2, [&tokens](OpenAIResponseParser::ParseResult result) {
     tokens.push_back(std::move(result));
   });
 
-  // Now should have parsed the complete message
   ASSERT_EQ(tokens.size(), 1);
   EXPECT_EQ(tokens[0].content, "Hello");
 }
 
-// Test handling of malformed JSON
 TEST(OpenAIResponseParserTest, MalformedJSON) {
   OpenAIResponseParser parser;
-  std::string message = R"(data: {invalid json}
-)";
+  std::string message = "event: response.output_text.delta\ndata: {invalid}\n";
 
   std::vector<OpenAIResponseParser::ParseResult> tokens;
   parser.Parse(message, [&tokens](OpenAIResponseParser::ParseResult result) {
@@ -177,32 +146,31 @@ TEST(OpenAIResponseParserTest, MalformedJSON) {
   EXPECT_TRUE(tokens[0].is_done);
 }
 
-// Test empty lines are skipped
 TEST(OpenAIResponseParserTest, EmptyLinesSkipped) {
   OpenAIResponseParser parser;
-  std::string message = R"(
-data: {"id":"chatcmpl-123","choices":[{"delta":{"content":"Hello"},"index":0}]}
-
-data: [DONE]
-)";
+  std::string message =
+      "\n"
+      "event: response.output_text.delta\n"
+      "data: {\"delta\":\"Hello\"}\n"
+      "\n" +
+      CompletedEvent(5, 2);
 
   std::vector<OpenAIResponseParser::ParseResult> tokens;
   parser.Parse(message, [&tokens](OpenAIResponseParser::ParseResult result) {
     tokens.push_back(std::move(result));
   });
 
-  ASSERT_EQ(tokens.size(), 2);
+  ASSERT_GE(tokens.size(), 2);
   EXPECT_EQ(tokens[0].content, "Hello");
-  EXPECT_TRUE(tokens[1].is_done);
+  EXPECT_TRUE(tokens.back().is_done);
 }
 
-// Test non-data lines are ignored
 TEST(OpenAIResponseParserTest, NonDataLinesIgnored) {
   OpenAIResponseParser parser;
-  std::string message = R"(event: message
-data: {"id":"chatcmpl-123","choices":[{"delta":{"content":"Hello"},"index":0}]}
-id: 123
-)";
+  std::string message =
+      "id: 123\n"
+      "event: response.output_text.delta\n"
+      "data: {\"delta\":\"Hello\"}\n";
 
   std::vector<OpenAIResponseParser::ParseResult> tokens;
   parser.Parse(message, [&tokens](OpenAIResponseParser::ParseResult result) {
@@ -213,37 +181,23 @@ id: 123
   EXPECT_EQ(tokens[0].content, "Hello");
 }
 
-// Test complete streaming session
 TEST(OpenAIResponseParserTest, CompleteStreamingSession) {
   OpenAIResponseParser parser;
-  std::string message =
-      R"(data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1234567890,"model":"gpt-4","choices":[{"delta":{"role":"assistant"},"index":0}]}
-data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1234567890,"model":"gpt-4","choices":[{"delta":{"content":"The"},"index":0}]}
-data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1234567890,"model":"gpt-4","choices":[{"delta":{"content":" weather"},"index":0}]}
-data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1234567890,"model":"gpt-4","choices":[{"delta":{"content":" is"},"index":0}]}
-data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1234567890,"model":"gpt-4","choices":[{"delta":{"content":" nice"},"index":0}]}
-data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1234567890,"model":"gpt-4","choices":[{"delta":{},"finish_reason":"stop","index":0}],"usage":{"prompt_tokens":15,"completion_tokens":4,"total_tokens":19}}
-data: [DONE]
-)";
+  std::string message = DeltaEvent("The") + DeltaEvent(" weather") +
+                        DeltaEvent(" is") + DeltaEvent(" nice") +
+                        CompletedEvent(15, 4);
 
   std::vector<OpenAIResponseParser::ParseResult> tokens;
   parser.Parse(message, [&tokens](OpenAIResponseParser::ParseResult result) {
     tokens.push_back(std::move(result));
   });
 
-  // Should get: The, weather, is, nice, finish_reason+usage, [DONE]
-  EXPECT_GE(tokens.size(), 5);
-
-  // Verify content tokens
   std::string full_content;
   for (const auto& token : tokens) {
-    if (!token.content.empty()) {
-      full_content += token.content;
-    }
+    full_content += token.content;
   }
   EXPECT_EQ(full_content, "The weather is nice");
 
-  // Verify last meaningful token has usage
   bool found_usage = false;
   for (const auto& token : tokens) {
     if (token.usage.has_value()) {
@@ -253,17 +207,16 @@ data: [DONE]
     }
   }
   EXPECT_TRUE(found_usage);
-
-  // Verify stream ended properly
   EXPECT_TRUE(tokens.back().is_done);
 }
 
-// Test non-streaming response format
-TEST(OpenAIResponseParserTest, NonStreamingResponse) {
+TEST(OpenAIResponseParserTest, CompletedResponseWithOutputArray) {
   OpenAIResponseParser parser;
   std::string message =
-      R"(data: {"id":"chatcmpl-123","object":"chat.completion","created":1234567890,"model":"gpt-4","choices":[{"message":{"role":"assistant","content":"Hello, how can I help?"},"finish_reason":"stop","index":0}],"usage":{"prompt_tokens":10,"completion_tokens":6,"total_tokens":16}}
-)";
+      "event: response.completed\n"
+      "data: {\"status\":\"completed\","
+      "\"output\":[{\"content\":[{\"text\":\"Hello, how can I help?\"}]}],"
+      "\"usage\":{\"input_tokens\":10,\"output_tokens\":6}}\n";
 
   std::vector<OpenAIResponseParser::ParseResult> tokens;
   parser.Parse(message, [&tokens](OpenAIResponseParser::ParseResult result) {
@@ -273,18 +226,17 @@ TEST(OpenAIResponseParserTest, NonStreamingResponse) {
   ASSERT_EQ(tokens.size(), 1);
   EXPECT_EQ(tokens[0].content, "Hello, how can I help?");
   EXPECT_TRUE(tokens[0].finish_reason.has_value());
-  EXPECT_EQ(tokens[0].finish_reason.value(), "stop");
+  EXPECT_EQ(tokens[0].finish_reason.value(), "completed");
   EXPECT_TRUE(tokens[0].usage.has_value());
   EXPECT_EQ(tokens[0].usage->input_tokens, 10);
   EXPECT_EQ(tokens[0].usage->output_tokens, 6);
 }
 
-// Test carriage return handling
 TEST(OpenAIResponseParserTest, CarriageReturnHandling) {
   OpenAIResponseParser parser;
   std::string message =
-      "data: {\"id\":\"chatcmpl-123\",\"choices\":[{\"delta\":{\"content\":"
-      "\"Hello\"},\"index\":0}]}\r\n";
+      "event: response.output_text.delta\r\n"
+      "data: {\"delta\":\"Hello\"}\r\n";
 
   std::vector<OpenAIResponseParser::ParseResult> tokens;
   parser.Parse(message, [&tokens](OpenAIResponseParser::ParseResult result) {

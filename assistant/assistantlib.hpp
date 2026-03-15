@@ -532,7 +532,7 @@ class ITransport {
       case assistant::EndpointKind::anthropic:
         return "/v1/messages";
       case assistant::EndpointKind::openai:
-        return "/v1/chat/completions";
+        return "/v1/responses";
       default:
       case assistant::EndpointKind::ollama:
         return "/api/chat";

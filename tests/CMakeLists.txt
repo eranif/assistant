@@ -25,62 +25,53 @@ add_executable(test_openai_response_format test_openai_response_format.cpp)
 target_link_libraries(
   test_claude_response_parser
   PUBLIC assistantlib
-         gtest
          gtest_main
          Threads::Threads)
 
 target_link_libraries(
   test_openai_client
   PUBLIC assistantlib
-         gtest
          gtest_main
          Threads::Threads)
 
 target_link_libraries(
   test_openai_response_parser
   PUBLIC assistantlib
-         gtest
          gtest_main
          Threads::Threads)
 
 target_link_libraries(
   test_openai_response_format
   PUBLIC assistantlib
-         gtest
          gtest_main
          Threads::Threads)
 
 target_link_libraries(
   test_config_file
   PUBLIC assistantlib
-         gtest
          gtest_main
          Threads::Threads)
 
 target_link_libraries(
   test_config
   PUBLIC assistantlib
-         gtest
          gtest_main
          Threads::Threads)
 
 target_link_libraries(
   test_env_expander
   PUBLIC assistantlib
-         gtest
          gtest_main
          Threads::Threads)
 
 target_link_libraries(
   test_process
   PUBLIC assistantlib
-         gtest
          gtest_main
          Threads::Threads)
 
 target_link_libraries(
   test_history
   PUBLIC assistantlib
-         gtest
          gtest_main
          Threads::Threads)

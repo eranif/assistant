@@ -41,9 +41,14 @@ void OpenAIResponseParser::Parse(const std::string& data, OnParseCallback cb) {
 
 void OpenAIResponseParser::ParseLine(const std::string& line,
                                      OnParseCallback cb) {
-  // OpenAI SSE format: "data: {json}" or "data: [DONE]"
+  // OpenAI Responses API SSE format uses "event:" and "data:" lines
+  OLOG(LogLevel::kDebug) << line;
+  if (line.find("event: ") == 0) {
+    m_current_event = line.substr(7);
+    return;
+  }
+
   if (line.find("data: ") != 0) {
-    // Not a data line, skip
     return;
   }
 
@@ -57,38 +62,43 @@ void OpenAIResponseParser::ParseLine(const std::string& line,
 
   try {
     auto json_obj = json::parse(data_content);
+    auto event_type = json_obj["type"].get<std::string>();
 
-    // Check for errors
-    auto error = ExtractError(json_obj);
-    if (error.has_value()) {
-      cb(ParseResult{.is_done = true, .error_message = error.value()});
+    if (event_type == "response.failed") {
+      auto reason = ExtractError(json_obj);
+      cb(ParseResult{.is_done = true,
+                     .is_error = true,
+                     .error_message = reason.value_or("")});
       return;
     }
 
-    // Extract content from delta
-    auto content = ExtractContent(json_obj);
-    auto usage = ExtractUsage(json_obj);
-    auto finish_reason = ExtractFinishReason(json_obj);
-
-    // Build result
-    ParseResult result;
-    if (content.has_value()) {
-      result.content = content.value();
-    }
-    result.usage = usage;
-    result.finish_reason = finish_reason;
-
-    // Check if this is the final message
-    if (finish_reason.has_value()) {
-      result.is_done = true;
+    if (event_type == "response.completed") {
+      cb(ParseResult{.is_done = true});
+      return;
     }
 
-    // Only invoke callback if we have something to report
-    if (result.HasValue() || result.usage.has_value() ||
-        result.finish_reason.has_value()) {
-      cb(result);
+    if (event_type == "response.incomplete") {
+      cb(ParseResult{.is_done = true, .is_error = true});
+      return;
     }
 
+    if (event_type == "response.output_text.delta") {
+      auto text = json_obj["delta"].get<std::string>();
+      cb(ParseResult{.content = text});
+      return;
+    }
+
+    if (event_type == "response.output_item.done" &&
+        json_obj["item"]["type"].get<std::string>() == "function_call") {
+      ParseResult tool_call;
+      tool_call.is_tool_call = true;
+      tool_call.tool_call_id = json_obj["item"]["call_id"].get<std::string>();
+      tool_call.tool_name = json_obj["item"]["name"].get<std::string>();
+      tool_call.tool_args =
+          json::parse(json_obj["item"]["arguments"].get<std::string>());
+      cb(tool_call);
+      return;
+    }
   } catch (const json::parse_error& e) {
     OLOG(LogLevel::kError) << "OpenAI response parser: JSON parse error: "
                            << e.what();
@@ -107,37 +117,21 @@ void OpenAIResponseParser::ParseLine(const std::string& line,
 std::optional<std::string> OpenAIResponseParser::ExtractContent(
     const json& json_obj) {
   try {
-    // OpenAI streaming format:
-    // {"choices":[{"delta":{"content":"text"},"index":0}]}
-    // or for non-streaming:
-    // {"choices":[{"message":{"content":"text"},"index":0}]}
-
-    if (!json_obj.contains("choices") || !json_obj["choices"].is_array() ||
-        json_obj["choices"].empty()) {
-      return std::nullopt;
+    // /v1/responses streaming: response.output_text.delta event
+    // {"delta": "text", ...}
+    if (json_obj.contains("delta") && json_obj["delta"].is_string()) {
+      return json_obj["delta"].get<std::string>();
     }
 
-    const auto& choice = json_obj["choices"][0];
-
-    // Try delta.content first (streaming)
-    if (choice.contains("delta") && choice["delta"].is_object()) {
-      const auto& delta = choice["delta"];
-      if (delta.contains("content") && delta["content"].is_string()) {
-        return delta["content"].get<std::string>();
-      }
-
-      // Check for tool calls in delta
-      if (delta.contains("tool_calls") && delta["tool_calls"].is_array()) {
-        // Tool calls handling can be added here if needed
-        OLOG(LogLevel::kDebug) << "OpenAI response contains tool_calls";
-      }
-    }
-
-    // Try message.content (non-streaming)
-    if (choice.contains("message") && choice["message"].is_object()) {
-      const auto& message = choice["message"];
-      if (message.contains("content") && message["content"].is_string()) {
-        return message["content"].get<std::string>();
+    // /v1/responses completed: output[].content[].text
+    if (json_obj.contains("output") && json_obj["output"].is_array()) {
+      for (const auto& item : json_obj["output"]) {
+        if (!item.contains("content") || !item["content"].is_array()) continue;
+        for (const auto& part : item["content"]) {
+          if (part.contains("text") && part["text"].is_string()) {
+            return part["text"].get<std::string>();
+          }
+        }
       }
     }
 
@@ -149,8 +143,6 @@ std::optional<std::string> OpenAIResponseParser::ExtractContent(
 
 std::optional<Usage> OpenAIResponseParser::ExtractUsage(const json& json_obj) {
   try {
-    // OpenAI format:
-    // {"usage":{"prompt_tokens":10,"completion_tokens":20,"total_tokens":30}}
     if (!json_obj.contains("usage") || !json_obj["usage"].is_object()) {
       return std::nullopt;
     }
@@ -158,23 +150,12 @@ std::optional<Usage> OpenAIResponseParser::ExtractUsage(const json& json_obj) {
     const auto& usage_obj = json_obj["usage"];
     Usage usage;
 
-    if (usage_obj.contains("prompt_tokens")) {
-      usage.input_tokens = usage_obj["prompt_tokens"].get<size_t>();
+    // /v1/responses format: input_tokens / output_tokens
+    if (usage_obj.contains("input_tokens")) {
+      usage.input_tokens = usage_obj["input_tokens"].get<size_t>();
     }
-
-    if (usage_obj.contains("completion_tokens")) {
-      usage.output_tokens = usage_obj["completion_tokens"].get<size_t>();
-    }
-
-    if (usage_obj.contains("total_tokens")) {
-      // OpenAI provides total_tokens directly
-      // Verify it matches our calculation
-      size_t total = usage_obj["total_tokens"].get<size_t>();
-      if (total != usage.input_tokens + usage.output_tokens) {
-        OLOG(LogLevel::kWarning)
-            << "OpenAI total_tokens mismatch: " << total << " vs "
-            << (usage.input_tokens + usage.output_tokens);
-      }
+    if (usage_obj.contains("output_tokens")) {
+      usage.output_tokens = usage_obj["output_tokens"].get<size_t>();
     }
 
     return usage;
@@ -186,18 +167,24 @@ std::optional<Usage> OpenAIResponseParser::ExtractUsage(const json& json_obj) {
 std::optional<std::string> OpenAIResponseParser::ExtractFinishReason(
     const json& json_obj) {
   try {
-    // OpenAI format: {"choices":[{"finish_reason":"stop"}]}
-    if (!json_obj.contains("choices") || !json_obj["choices"].is_array() ||
-        json_obj["choices"].empty()) {
-      return std::nullopt;
+    // /v1/responses format: top-level "status" field
+    if (json_obj.contains("status") && json_obj["status"].is_string()) {
+      return json_obj["status"].get<std::string>();
     }
+    return std::nullopt;
+  } catch (...) {
+    return std::nullopt;
+  }
+}
 
-    const auto& choice = json_obj["choices"][0];
-    if (choice.contains("finish_reason") &&
-        !choice["finish_reason"].is_null()) {
-      return choice["finish_reason"].get<std::string>();
+std::optional<std::vector<json>> OpenAIResponseParser::ExtractOutput(
+    const json& json_obj) {
+  try {
+    // /v1/responses format: top-level "output" field
+    if (json_obj.contains("output") && json_obj["output"].is_array()) {
+      std::vector<json> objs = json_obj["output"].get<std::vector<json>>();
+      return objs;
     }
-
     return std::nullopt;
   } catch (...) {
     return std::nullopt;

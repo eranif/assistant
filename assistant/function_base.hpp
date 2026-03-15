@@ -115,9 +115,24 @@ class FunctionBase {
   }
 
   json ToOpenAIJson() const {
-    auto j = ToOllamaJson();
-    j["function"]["strict"] = true;
-    j["function"]["parameters"]["additionalProperties"] = false;
+    // /v1/responses tools format: flat object with type/name/description/parameters
+    json j;
+    j["type"] = "function";
+    j["name"] = m_name;
+    j["description"] = m_desc;
+    j["parameters"]["type"] = "object";
+    j["parameters"]["additionalProperties"] = false;
+    j["strict"] = true;
+
+    std::vector<std::string> required;
+    j["parameters"]["properties"] = json({});
+    for (const auto& param : m_params) {
+      j["parameters"]["properties"][param.GetName()] = param.ToJSON();
+      if (param.IsRequired()) {
+        required.push_back(param.GetName());
+      }
+    }
+    j["parameters"]["required"] = required;
     return j;
   }
 
