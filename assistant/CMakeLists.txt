@@ -26,6 +26,8 @@ add_library(
   ${CMAKE_CURRENT_LIST_DIR}/EnvExpander.hpp
   ${CMAKE_CURRENT_LIST_DIR}/claude_response_parser.cpp
   ${CMAKE_CURRENT_LIST_DIR}/claude_response_parser.hpp
+  ${CMAKE_CURRENT_LIST_DIR}/openai_response_parser.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/openai_response_parser.hpp
   ${CMAKE_CURRENT_LIST_DIR}/Process.cpp
   ${CMAKE_CURRENT_LIST_DIR}/Process.hpp)
 
