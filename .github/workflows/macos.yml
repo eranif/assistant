@@ -28,6 +28,8 @@ jobs:
 
     - name: Checkout assistant
       uses: actions/checkout@v6
+      with:
+        submodules: 'true'
 
     - name: cmake --version
       run: cmake --version
