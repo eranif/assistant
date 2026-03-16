@@ -32,10 +32,11 @@ class InProcessFunction : public FunctionBase {
    *   args - JSON object containing the arguments to be passed to the action.
    *
    * Returns:
-   *   std::optional<bool> - true if the action is approved to run, false if it
-   * is denied, or std::nullopt if no human-in-the-loop callback is registered.
+   *   CanInvokeToolResult or std::nullopt if no human-in-the-loop callback is
+   * registered.
    */
-  inline std::optional<bool> CanRun(const json& args) const override {
+  inline std::optional<CanInvokeToolResult> CanRun(
+      const json& args) const override {
     if (m_humanInTheLoopCB) {
       return m_humanInTheLoopCB(GetName(), args);
     }

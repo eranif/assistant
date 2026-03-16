@@ -79,6 +79,10 @@ enum class Reason {
   kCancelled,
   /// Cost
   kRequestCost,
+  /// The model was denied from running a tool
+  kToolDenied,
+  /// The model was allowed to run a tool
+  kToolAllowed,
 };
 
 enum class ModelCapabilities {
@@ -113,8 +117,15 @@ using OnResponseCallback = std::function<bool(
     const std::string& text, Reason call_reason, bool thinking)>;
 
 /// Called when a tool is about to be invoked.
+struct CanInvokeToolResult {
+  bool can_invoke{true};
+  std::string reason;
+
+  inline bool IsAllowed() const { return can_invoke; }
+};
+
 using OnToolInvokeCallback =
-    std::function<bool(const std::string& tool_name, json args)>;
+    std::function<CanInvokeToolResult(const std::string& tool_name, json args)>;
 
 /// Tokens pricing
 struct Pricing {

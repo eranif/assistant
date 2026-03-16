@@ -18,10 +18,24 @@ using ResponseParser = assistant::ResponseParser;
 
 namespace {
 
-const std::string_view kCyan = "\033[36m";
-const std::string_view kReset = "\033[0m";
+const std::string_view kRed = "\033[31m";
+const std::string_view kGreen = "\033[32m";
 const std::string_view kYellow = "\033[33m";
+const std::string_view kCyan = "\033[36m";
 const std::string_view kGray = "\033[37m";
+const std::string_view kReset = "\033[0m";
+
+std::string Green(std::string_view word) {
+  std::stringstream ss;
+  ss << kGreen << word << kReset;
+  return ss.str();
+}
+
+std::string Red(std::string_view word) {
+  std::stringstream ss;
+  ss << kRed << word << kReset;
+  return ss.str();
+}
 
 std::string Cyan(std::string_view word) {
   std::stringstream ss;
@@ -189,7 +203,8 @@ assistant::FunctionResult NewFile(const assistant::json& args) {
   return assistant::FunctionResult{.isError = false};
 }
 
-bool CanRunTool(const std::string& tool_name, assistant::json args) {
+assistant::CanInvokeToolResult CanRunTool(const std::string& tool_name,
+                                          assistant::json args) {
   std::stringstream prompt;
   prompt << "\n>>\xE2\x9D\x93 The model wants to run tool: \"" << tool_name
          << "\", with the following args:\n"
@@ -249,6 +264,12 @@ void HandlePrompt(std::shared_ptr<assistant::ClientBase> cli,
             break;
           case assistant::Reason::kRequestCost:
             std::cout << "\n\n" << Gray(output) << std::endl;
+            break;
+          case assistant::Reason::kToolDenied:
+            std::cout << "\n" << Red(output) << std::endl;
+            break;
+          case assistant::Reason::kToolAllowed:
+            std::cout << "\n" << Green(output) << std::endl;
             break;
           case assistant::Reason::kFatalError:
             OLOG_ERROR() << output;
@@ -340,11 +361,12 @@ int main(int argc, char** argv) {
             // this will override the "CanRunTool" method set on the client
             // level.
             .SetHumanInTheLoopCallabck(
-                [](const std::string& tool_name, assistant::json args) -> bool {
+                [](const std::string& tool_name,
+                   assistant::json args) -> assistant::CanInvokeToolResult {
                   std::cout
                       << "\n\xE2\x9C\x85 Permission to run tool: " << tool_name
                       << " is ALWAYS granted." << std::endl;
-                  return true;
+                  return assistant::CanInvokeToolResult{.can_invoke = true};
                 })
             .Build());
     cli->GetFunctionTable().Add(

@@ -158,7 +158,7 @@ void ChatRequest::InvokeTools(ClientBase* client,
 
       FunctionResult result;
 
-      bool can_run_tool{true};
+      CanInvokeToolResult can_run_tool{.can_invoke = true};
       auto res =
           client->GetFunctionTable().CanRunTool(func_call.name, func_call.args);
       if (res.has_value()) {
@@ -170,21 +170,22 @@ void ChatRequest::InvokeTools(ClientBase* client,
             client->m_on_invoke_tool_cb(func_call.name, func_call.args);
       }
 
-      if (!can_run_tool) {
-        result.isError = true;
-        std::stringstream ss;
-        ss << "\nPermission to run tool: " << func_call.name << " is declined";
-        result.text = ss.str();
+      if (!can_run_tool.IsAllowed()) {
         ss = {};
-        ss << "\n\xE2\x9C\x96 Permission to run tool: " << func_call.name
-           << " is declined.\n";
-        callback_(ss.str(), Reason::kPartialResult, false);
+        ss << "Permission to run tool: '" << func_call.name << "' is denied. "
+           << can_run_tool.reason;
+
+        result.isError = true;
+        result.text = ss.str();
+        callback_("\xE2\x9C\x96 " + ss.str(), Reason::kToolDenied, false);
+
       } else {
         ss = {};
-        ss << "\n\xE2\x9C\x85 Permission to run tool: " << func_call.name
-           << " is granted.\n";
-        callback_(ss.str(), Reason::kPartialResult, false);
+        ss << "\xE2\x9C\x85 Permission to run tool: " << func_call.name
+           << " is granted.";
+        callback_(ss.str(), Reason::kToolAllowed, false);
         result = client->GetFunctionTable().Call(func_call);
+
         ss = {};
         ss << "Tool output: " << result;
         callback_(ss.str(), Reason::kLogNotice, false);

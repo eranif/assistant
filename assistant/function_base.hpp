@@ -105,7 +105,7 @@ class FunctionBase {
   inline const std::string& GetDesc() const { return m_desc; }
   inline bool IsEnabled() const { return m_enabled; }
   inline void SetEnabled(bool b) { m_enabled = b; }
-  virtual inline std::optional<bool> CanRun(
+  virtual inline std::optional<CanInvokeToolResult> CanRun(
       [[maybe_unused]] const json& args) const {
     // return nullopt that no callback was registered
     return std::nullopt;
@@ -282,7 +282,8 @@ class FunctionTable {
    * given arguments, false if the tool exists but cannot run, or std::nullopt
    * if the tool is not registered.
    */
-  std::optional<bool> CanRunTool(const std::string& tool_name, json args) const
+  std::optional<CanInvokeToolResult> CanRunTool(const std::string& tool_name,
+                                                json args) const
       FUNCTION_LOCKS(m_mutex) {
     std::scoped_lock lk{m_mutex};
     auto iter = m_functions.find(tool_name);

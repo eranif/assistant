@@ -7,6 +7,8 @@
 #include <sstream>
 #include <string>
 
+#include "assistant/common.hpp"
+
 template <typename Error>
 class Err {
  public:
@@ -59,7 +61,9 @@ inline size_t GetChoiceFromUser(const std::vector<std::string>& choices) {
   }
 }
 
-inline bool ReadYesOrNoFromUser(const std::string& prompt) {
+inline assistant::CanInvokeToolResult ReadYesOrNoFromUser(
+    const std::string& prompt) {
+  assistant::CanInvokeToolResult result;
   while (true) {
     std::cout << prompt;
 
@@ -78,9 +82,13 @@ inline bool ReadYesOrNoFromUser(const std::string& prompt) {
     if (input.length() == 1) {
       char c = std::tolower(input[0]);
       if (c == 'y') {
-        return true;
+        result.can_invoke = true;
+        return result;
+
       } else if (c == 'n') {
-        return false;
+        result.can_invoke = false;
+        result.reason = "Permission denied";
+        return result;
       }
     }
 
