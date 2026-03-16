@@ -43,9 +43,11 @@ jobs:
         submodules: 'true'
 
     - name: cmake --version
+      shell: msys2 {0}
       run: cmake --version
 
     - name: Build
+      shell: msys2 {0}
       run: |
         mkdir build-release
         cd build-release
@@ -53,6 +55,7 @@ jobs:
         cmake --build . --config Release --parallel $(nproc)
 
     - name: Run Tests
+      shell: msys2 {0}
       run: |
         cd build-release
         ctest --output-on-failure
