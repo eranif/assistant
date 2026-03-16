@@ -140,3 +140,34 @@ inline Result<bool, std::string> CreateDirectoryForFile(
     return Err(ss.str());
   }
 }
+
+/// Create a new file at the specified path with optional content.
+/// If the parent directories don't exist, they will be created.
+/// If the file already exists, it will be overwritten.
+/// Returns true on success, or an error message on failure.
+inline Result<bool, std::string> CreateNewFile(
+    const std::string& file_path,
+    std::optional<std::string> content = std::nullopt) {
+  // Create parent directories if they don't exist
+  auto dir_result = CreateDirectoryForFile(file_path);
+  if (!dir_result.IsOk()) {
+    return dir_result;
+  }
+
+  try {
+    std::ofstream file(file_path);
+    if (!file) {
+      std::stringstream ss;
+      ss << "Error: could not create file '" << file_path << "'";
+      return Err(ss.str());
+    }
+    if (content.has_value()) {
+      file << content.value();
+    }
+    return true;
+  } catch (const std::exception& e) {
+    std::stringstream ss;
+    ss << "Error creating file: " << e.what();
+    return Err(ss.str());
+  }
+}

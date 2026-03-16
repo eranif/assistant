@@ -132,11 +132,12 @@ assistant::FunctionResult WriteFileContent(const assistant::json& args) {
 
 assistant::FunctionResult ToolReadFileContent(const assistant::json& args) {
   std::stringstream ss;
-  if (args.size() != 1) {
+  if (args.size() != 3) {
     return assistant::FunctionResult{.isError = true,
                                      .text = "Invalid number of arguments"};
   }
 
+  std::cout << "ToolReadFileContent() args:\n" << args.dump(2) << std::endl;
   ASSIGN_FUNC_ARG_OR_RETURN(
       std::string filepath,
       ::assistant::GetFunctionArg<std::string>(args, "filepath"));
@@ -151,7 +152,6 @@ assistant::FunctionResult ToolReadFileContent(const assistant::json& args) {
 }
 
 assistant::FunctionResult OpenFileInEditor(const assistant::json& args) {
-  std::stringstream ss;
   if (args.size() != 1) {
     return assistant::FunctionResult{.isError = true,
                                      .text = "Invalid number of arguments"};
@@ -160,8 +160,35 @@ assistant::FunctionResult OpenFileInEditor(const assistant::json& args) {
   ASSIGN_FUNC_ARG_OR_RETURN(
       std::string file_name,
       ::assistant::GetFunctionArg<std::string>(args, "filepath"));
+  std::stringstream ss;
   ss << "file '" << file_name << "' successfully opened file in the editor.";
   return assistant::FunctionResult{.text = ss.str()};
+}
+
+assistant::FunctionResult NewFile(const assistant::json& args) {
+  std::stringstream ss;
+  if (args.size() < 1) {
+    return assistant::FunctionResult{.isError = true,
+                                     .text = "Invalid number of arguments"};
+  }
+
+  std::cout << "NewFile() args:\n" << args.dump(2) << std::endl;
+  ASSIGN_FUNC_ARG_OR_RETURN(
+      std::string file_name,
+      ::assistant::GetFunctionArg<std::string>(args, "filepath"));
+
+  auto file_content =
+      ::assistant::GetFunctionArg<std::string>(args, "file_content");
+
+  assistant::FunctionResult result;
+  auto create_result = CreateNewFile(file_name, file_content);
+  if (!create_result.IsOk()) {
+    return assistant::FunctionResult{.isError = true,
+                                     .text = "Failed to create new file"};
+  }
+
+  std::cout << "Successfully created file: " << file_name << std::endl;
+  return assistant::FunctionResult{.isError = false};
 }
 
 bool CanRunTool(const std::string& tool_name) {
@@ -307,7 +334,17 @@ int main(int argc, char** argv) {
             .SetDescription("Read file content from the disk at a given path.")
             .AddRequiredParam("filepath", "the path of the file on the disk.",
                               "string")
+            .AddOptionalParam("start_line", "starting line", "number")
+            .AddOptionalParam("count", "number of lines to read", "number")
             .SetCallback(ToolReadFileContent)
+            .Build());
+    cli->GetFunctionTable().Add(
+        FunctionBuilder("Create_new_file")
+            .SetDescription("Create a new file with optional content")
+            .AddRequiredParam("filepath", "the path of the file on the disk.",
+                              "string")
+            .AddOptionalParam("file_content", "File's content", "string")
+            .SetCallback(NewFile)
             .Build());
   }
 

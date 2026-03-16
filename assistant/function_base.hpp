@@ -19,6 +19,9 @@ std::optional<ArgType> GetFunctionArg(const assistant::json& args,
     if (!args.contains(name)) {
       return std::nullopt;
     }
+    if (args[name].is_null()) {
+      return std::nullopt;
+    }
     ArgType arg = args[name];
     return arg;
   } catch (...) {
@@ -39,10 +42,21 @@ class Param {
         const std::string& type, bool required)
       : m_name(name), m_desc(desc), m_type(type), m_required(required) {}
 
-  json ToJSON() const {
+  json ToJSON(EndpointKind kind) const {
     json j;
-    j["type"] = m_type;
     j["description"] = m_desc;
+    switch (kind) {
+      case assistant::EndpointKind::openai:
+        if (!IsRequired()) {
+          j["type"] = std::vector<std::string>{m_type, "null"};
+        } else {
+          j["type"] = m_type;
+        }
+        break;
+      default:
+        j["type"] = m_type;
+        break;
+    }
     return j;
   }
   inline const std::string& GetName() const { return m_name; }
@@ -105,7 +119,7 @@ class FunctionBase {
         json({});  // Must always include the "properties" field, even if empty.
     for (const auto& param : m_params) {
       j["function"]["parameters"]["properties"][param.GetName()] =
-          param.ToJSON();
+          param.ToJSON(EndpointKind::ollama);
       if (param.IsRequired()) {
         required.push_back(param.GetName());
       }
@@ -115,7 +129,8 @@ class FunctionBase {
   }
 
   json ToOpenAIJson() const {
-    // /v1/responses tools format: flat object with type/name/description/parameters
+    // /v1/responses tools format: flat object with
+    // type/name/description/parameters
     json j;
     j["type"] = "function";
     j["name"] = m_name;
@@ -127,10 +142,11 @@ class FunctionBase {
     std::vector<std::string> required;
     j["parameters"]["properties"] = json({});
     for (const auto& param : m_params) {
-      j["parameters"]["properties"][param.GetName()] = param.ToJSON();
-      if (param.IsRequired()) {
-        required.push_back(param.GetName());
-      }
+      j["parameters"]["properties"][param.GetName()] =
+          param.ToJSON(EndpointKind::openai);
+      // OpenAI strict mode requires that all params (even if are optional, are
+      // included)
+      required.push_back(param.GetName());
     }
     j["parameters"]["required"] = required;
     return j;
@@ -144,7 +160,8 @@ class FunctionBase {
 
     std::vector<std::string> required;
     for (const auto& param : m_params) {
-      j["input_schema"]["properties"][param.GetName()] = param.ToJSON();
+      j["input_schema"]["properties"][param.GetName()] =
+          param.ToJSON(EndpointKind::anthropic);
       if (param.IsRequired()) {
         required.push_back(param.GetName());
       }
