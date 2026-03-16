@@ -342,7 +342,7 @@ class ClientBase {
   /// Client API - END
   ///===---------------------------
 
-  void SetTookInvokeCallback(OnToolInvokeCallback cb) {
+  void SetToolInvokeCallback(OnToolInvokeCallback cb) {
     m_on_invoke_tool_cb = std::move(cb);
   }
 

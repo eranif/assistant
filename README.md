@@ -542,7 +542,7 @@ const FunctionTable& GetFunctionTable() const;
 void ClearFunctionTable();
 
 // Tool invocation callback
-void SetTookInvokeCallback(OnToolInvokeCallback cb);
+void SetToolInvokeCallback(OnToolInvokeCallback cb);
 ```
 
 #### Configuration & Settings
@@ -668,7 +668,7 @@ cli->GetFunctionTable().Add(
 
 ```cpp
 // Set approval callback
-client->SetTookInvokeCallback([](const std::string& tool_name) -> bool {
+client->SetToolInvokeCallback([](const std::string& tool_name) -> bool {
     std::cout << "Allow tool execution: " << tool_name << "? [y/n] ";
     std::string answer;
     std::getline(std::cin, answer);
@@ -968,7 +968,7 @@ client->GetFunctionTable().Add(
 );
 
 // 5. Set approval callback
-client->SetTookInvokeCallback(CanRunTool);
+client->SetToolInvokeCallback(CanRunTool);
 
 // 6. Wait for server
 while (!client->IsRunning()) {

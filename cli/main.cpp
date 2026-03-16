@@ -349,7 +349,7 @@ int main(int argc, char** argv) {
   }
 
   // Set a Human-In-Loop callback.
-  cli->SetTookInvokeCallback(CanRunTool);
+  cli->SetToolInvokeCallback(CanRunTool);
   cli->AddSystemMessage("You are an expert C++ & Rust coder");
   cli->AddSystemMessage("Always answer briefly.");
   cli->AddSystemMessage("If you use markdown, prefer bullets over tables.");
