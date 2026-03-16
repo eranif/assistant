@@ -241,8 +241,7 @@ inline std::optional<Pricing> FindPricing(const std::string& model_name) {
 
 inline void AddPricing(const std::string& model_name, const Pricing& pricing) {
   std::lock_guard lock{PRICING_TABLE_mutex};
-  PRICING_TABLE.erase(model_name);
-  PRICING_TABLE.insert({model_name, pricing});
+  PRICING_TABLE.insert_or_assign(model_name, pricing);
 }
 
 }  // namespace assistant
