@@ -46,9 +46,9 @@ class OpenAIResponseParser {
     inline json GetToolJson() const { return tool_args; }
     inline std::optional<Usage> GetUsage() const { return usage; }
     inline Reason GetReason() const {
+      if (is_done) return Reason::kDone;
       if (error_message.has_value()) return Reason::kFatalError;
       if (!content.empty()) return Reason::kPartialResult;
-      if (is_done) return Reason::kDone;
       return Reason::kPartialResult;
     }
   };

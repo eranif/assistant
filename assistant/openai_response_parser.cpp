@@ -79,7 +79,13 @@ void OpenAIResponseParser::ParseLine(const std::string& line,
       ParseResult result{.is_done = true};
       if (json_obj.contains("response") && json_obj["response"].is_object()) {
         result.usage = ExtractUsage(json_obj["response"]);
+        result.content = ExtractContent(json_obj["response"]).value_or("");
+        // Extract content from top-level output if not in response
+        if (result.content.empty()) {
+          result.content = ExtractContent(json_obj).value_or("");
+        }
       }
+      result.finish_reason = ExtractFinishReason(json_obj);
       cb(result);
       return;
     }

@@ -6,15 +6,17 @@ using namespace assistant;
 
 // Helper: build a /v1/responses SSE delta line
 static std::string DeltaEvent(const std::string& text) {
-  return "event: response.output_text.delta\ndata: {\"delta\":\"" + text +
-         "\"}\n";
+  return "event: response.output_text.delta\ndata: "
+         "{\"type\":\"response.output_text.delta\",\"delta\":\"" +
+         text + "\"}\n";
 }
 
 static std::string CompletedEvent(int input_tokens, int output_tokens) {
-  return "event: response.completed\ndata: {\"status\":\"completed\","
-         "\"usage\":{\"input_tokens\":" +
-         std::to_string(input_tokens) + ",\"output_tokens\":" +
-         std::to_string(output_tokens) + "}}\n";
+  return "event: response.completed\ndata: {\"type\":\"response.completed\","
+         "\"status\":\"completed\","
+         "\"response\":{\"usage\":{\"input_tokens\":" +
+         std::to_string(input_tokens) +
+         ",\"output_tokens\":" + std::to_string(output_tokens) + "}}}\n";
 }
 
 TEST(OpenAIResponseParserTest, BasicStreamingResponse) {
@@ -97,7 +99,8 @@ TEST(OpenAIResponseParserTest, ErrorResponse) {
   OpenAIResponseParser parser;
   std::string message =
       "event: response.failed\n"
-      "data: {\"error\":{\"message\":\"Rate limit exceeded\","
+      "data: {\"type\":\"response.failed\",\"error\":{\"message\":\"Rate limit "
+      "exceeded\","
       "\"type\":\"rate_limit_error\"}}\n";
 
   std::vector<OpenAIResponseParser::ParseResult> tokens;
@@ -114,7 +117,9 @@ TEST(OpenAIResponseParserTest, ErrorResponse) {
 TEST(OpenAIResponseParserTest, PartialLineBuffering) {
   OpenAIResponseParser parser;
 
-  std::string part1 = "event: response.output_text.delta\ndata: {\"delta\":\"Hel";
+  std::string part1 =
+      "event: response.output_text.delta\ndata: "
+      "{\"type\":\"response.output_text.delta\",\"delta\":\"Hel";
 
   std::vector<OpenAIResponseParser::ParseResult> tokens;
   parser.Parse(part1, [&tokens](OpenAIResponseParser::ParseResult result) {
@@ -134,7 +139,9 @@ TEST(OpenAIResponseParserTest, PartialLineBuffering) {
 
 TEST(OpenAIResponseParserTest, MalformedJSON) {
   OpenAIResponseParser parser;
-  std::string message = "event: response.output_text.delta\ndata: {invalid}\n";
+  std::string message =
+      "event: response.output_text.delta\ndata: "
+      "{\"type\":\"response.output_text.delta\",invalid}\n";
 
   std::vector<OpenAIResponseParser::ParseResult> tokens;
   parser.Parse(message, [&tokens](OpenAIResponseParser::ParseResult result) {
@@ -151,7 +158,7 @@ TEST(OpenAIResponseParserTest, EmptyLinesSkipped) {
   std::string message =
       "\n"
       "event: response.output_text.delta\n"
-      "data: {\"delta\":\"Hello\"}\n"
+      "data: {\"type\":\"response.output_text.delta\",\"delta\":\"Hello\"}\n"
       "\n" +
       CompletedEvent(5, 2);
 
@@ -170,7 +177,7 @@ TEST(OpenAIResponseParserTest, NonDataLinesIgnored) {
   std::string message =
       "id: 123\n"
       "event: response.output_text.delta\n"
-      "data: {\"delta\":\"Hello\"}\n";
+      "data: {\"type\":\"response.output_text.delta\",\"delta\":\"Hello\"}\n";
 
   std::vector<OpenAIResponseParser::ParseResult> tokens;
   parser.Parse(message, [&tokens](OpenAIResponseParser::ParseResult result) {
@@ -214,9 +221,10 @@ TEST(OpenAIResponseParserTest, CompletedResponseWithOutputArray) {
   OpenAIResponseParser parser;
   std::string message =
       "event: response.completed\n"
-      "data: {\"status\":\"completed\","
+      "data: {\"type\":\"response.completed\","
+      "\"status\":\"completed\","
       "\"output\":[{\"content\":[{\"text\":\"Hello, how can I help?\"}]}],"
-      "\"usage\":{\"input_tokens\":10,\"output_tokens\":6}}\n";
+      "\"response\":{\"usage\":{\"input_tokens\":10,\"output_tokens\":6}}}\n";
 
   std::vector<OpenAIResponseParser::ParseResult> tokens;
   parser.Parse(message, [&tokens](OpenAIResponseParser::ParseResult result) {
@@ -224,6 +232,8 @@ TEST(OpenAIResponseParserTest, CompletedResponseWithOutputArray) {
   });
 
   ASSERT_EQ(tokens.size(), 1);
+  // Note: content extraction from output field requires ExtractContent to be
+  // called
   EXPECT_EQ(tokens[0].content, "Hello, how can I help?");
   EXPECT_TRUE(tokens[0].finish_reason.has_value());
   EXPECT_EQ(tokens[0].finish_reason.value(), "completed");
@@ -236,7 +246,7 @@ TEST(OpenAIResponseParserTest, CarriageReturnHandling) {
   OpenAIResponseParser parser;
   std::string message =
       "event: response.output_text.delta\r\n"
-      "data: {\"delta\":\"Hello\"}\r\n";
+      "data: {\"type\":\"response.output_text.delta\",\"delta\":\"Hello\"}\r\n";
 
   std::vector<OpenAIResponseParser::ParseResult> tokens;
   parser.Parse(message, [&tokens](OpenAIResponseParser::ParseResult result) {
