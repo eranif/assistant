@@ -197,6 +197,7 @@ struct Usage {
 // input_tokens, cache_creation_input_tokens, cache_read_input_tokens,
 // output_tokens
 inline static std::unordered_map<std::string, Pricing> PRICING_TABLE = {
+    // Anthropic models
     {"claude-sonnet-4-6", {0.000003, 0.00000375, 0.0000003, 0.000015}},
     {"claude-opus-4-20250514", {0.000015, 0.00001875, 0.0000015, 0.000075}},
     {"claude-opus-4", {0.000015, 0.00001875, 0.0000015, 0.000075}},
@@ -207,11 +208,30 @@ inline static std::unordered_map<std::string, Pricing> PRICING_TABLE = {
     {"claude-sonnet-4-5", {0.000003, 0.00000375, 0.0000003, 0.000015}},
     {"claude-haiku-4-5-20251001", {0.000001, 0.00000125, 0.0000001, 0.000005}},
     {"claude-haiku-4-5", {0.000001, 0.00000125, 0.0000001, 0.000005}},
-    {"claude-opus-4-6", {0.000005, 0.00000625, 0.0000005, 0.000025}}};
-inline static std::mutex CLAUDE_PRICING_mutex;
+    {"claude-opus-4-6", {0.000005, 0.00000625, 0.0000005, 0.000025}},
+    // OpenAI models
+    {"gpt-5.2", {0.00000175, 0.0, 0.000000175, 0.0000140}},
+    {"gpt-5.1", {0.00000125, 0.0, 0.000000125, 0.0000100}},
+    {"gpt-5", {0.00000125, 0.0, 0.000000125, 0.0000100}},
+    {"gpt-5-mini", {0.00000025, 0.0, 0.000000025, 0.0000020}},
+    {"gpt-5-nano", {0.00000005, 0.0, 0.000000005, 0.0000004}},
+    {"gpt-5.3-chat-latest", {0.00000175, 0.0, 0.000000175, 0.0000140}},
+    {"gpt-5.2-chat-latest", {0.00000175, 0.0, 0.000000175, 0.0000140}},
+    {"gpt-5.1-chat-latest", {0.00000125, 0.0, 0.000000125, 0.0000100}},
+    {"gpt-5-chat-latest", {0.00000125, 0.0, 0.000000125, 0.0000100}},
+    {"gpt-5.3-codex", {0.00000175, 0.0, 0.000000175, 0.0000140}},
+    {"gpt-5.2-codex", {0.00000175, 0.0, 0.000000175, 0.0000140}},
+    {"gpt-5.1-codex-max", {0.00000125, 0.0, 0.000000125, 0.0000100}},
+    {"gpt-5.1-codex", {0.00000125, 0.0, 0.000000125, 0.0000100}},
+    {"gpt-5.1-codex-mini", {0.00000025, 0.0, 0.000000025, 0.000002}},
+    {"gpt-5-codex", {0.00000125, 0.0, 0.000000125, 0.0000100}},
+    {"gpt-5.2-pro", {0.0000210, 0.0, 0.0, 0.000168}},
+    {"gpt-5-pro", {0.0000150, 0.0, 0.0, 0.000120}},
+};
+inline static std::mutex PRICING_TABLE_mutex;
 
 inline std::optional<Pricing> FindPricing(const std::string& model_name) {
-  std::lock_guard lock{CLAUDE_PRICING_mutex};
+  std::lock_guard lock{PRICING_TABLE_mutex};
   auto iter = PRICING_TABLE.find(model_name);
   if (iter == PRICING_TABLE.end()) {
     return std::nullopt;
@@ -220,9 +240,8 @@ inline std::optional<Pricing> FindPricing(const std::string& model_name) {
 }
 
 inline void AddPricing(const std::string& model_name, const Pricing& pricing) {
-  std::lock_guard lock{CLAUDE_PRICING_mutex};
-  PRICING_TABLE.find(model_name);
-  PRICING_TABLE.insert({model_name, pricing});
+  std::lock_guard lock{PRICING_TABLE_mutex};
+  PRICING_TABLE.insert_or_assign(model_name, pricing);
 }
 
 }  // namespace assistant

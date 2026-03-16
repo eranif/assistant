@@ -493,7 +493,7 @@ class ClientBase {
   void ProcessChatRequestQueue();
   bool HandleResponse(const assistant::response& resp,
                       ChatContext& chat_user_data);
-  void AddMessage(std::optional<assistant::message> msg);
+  virtual void AddMessage(std::optional<assistant::message> msg);
   virtual assistant::messages GetMessages() const;
   bool ModelHasCapability(const std::string& model_name, ModelCapabilities c);
 

@@ -275,7 +275,7 @@ int main(int argc, char** argv) {
   std::shared_ptr<assistant::ClientBase> cli = cli_opt.value();
 
   // Simulate cost based on claude-sonnet-4.5
-  auto pricing = assistant::FindPricing("claude-sonnet-4-5");
+  auto pricing = assistant::FindPricing(conf.value().GetEndpoint()->model_);
   if (pricing.has_value()) {
     cli->SetPricing(pricing.value());
   }

@@ -335,7 +335,7 @@ class response {
  public:
   response(const std::string& json_string,
            message_type type = message_type::generation)
-      : type(type) {
+      : type(type), valid(true) {
     this->json_string = json_string;
     try {
       json_data = json::parse(json_string);
@@ -345,8 +345,24 @@ class response {
       else if (type == message_type::embedding &&
                json_data.contains("embeddings"))
         simple_string = json_data["embeddings"].get<std::string>();
-      else if (type == message_type::chat && json_data.contains("message"))
+      else if (type == message_type::chat && json_data.contains("message")) {
+        // Ollama format: {"message":{"content":"text"}}
         simple_string = json_data["message"]["content"].get<std::string>();
+      } else if (type == message_type::chat && json_data.contains("choices") &&
+                 json_data["choices"].is_array() &&
+                 !json_data["choices"].empty()) {
+        // OpenAI format (streaming): {"choices":[{"delta":{"content":"text"}}]}
+        // OpenAI format (non-streaming): {"choices":[{"message":{"content":"text"}}]}
+        const auto& choice = json_data["choices"][0];
+        if (choice.contains("delta") && choice["delta"].is_object() &&
+            choice["delta"].contains("content")) {
+          simple_string = choice["delta"]["content"].get<std::string>();
+        } else if (choice.contains("message") &&
+                   choice["message"].is_object() &&
+                   choice["message"].contains("content")) {
+          simple_string = choice["message"]["content"].get<std::string>();
+        }
+      }
 
       if (json_data.contains("error") && json_data["error"].is_string()) {
         // Ollama error message
@@ -516,7 +532,7 @@ class ITransport {
       case assistant::EndpointKind::anthropic:
         return "/v1/messages";
       case assistant::EndpointKind::openai:
-        return "/v1/chat/completions";
+        return "/v1/responses";
       default:
       case assistant::EndpointKind::ollama:
         return "/api/chat";
