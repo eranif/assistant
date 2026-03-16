@@ -40,4 +40,8 @@ jobs:
         cd build-release
         cmake .. -DCMAKE_BUILD_TYPE=Release -DASSISTANTLIB_BUILD_TESTS=ON ${{ matrix.options }}
         cmake --build . --config Release --parallel $(nproc)
-        tests/test_claude_response_parser
+
+    - name: Run Tests
+      run: |
+        cd build-release
+        ctest --output-on-failure

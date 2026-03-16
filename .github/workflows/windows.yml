@@ -38,3 +38,8 @@ jobs:
         cd build-release
         cmake .. -DCMAKE_BUILD_TYPE=Release ${{ matrix.options }}
         cmake --build . --config Release --parallel $(nproc)
+
+    - name: Run Tests
+      run: |
+        cd build-release
+        ctest --output-on-failure
