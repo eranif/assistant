@@ -38,7 +38,7 @@ jobs:
       run: |
         mkdir build-release
         cd build-release
-        cmake .. -DCMAKE_BUILD_TYPE=Release -DASSISTANTLIB_BUILD_TESTS=ON ${{ matrix.options }}
+        cmake .. -DCMAKE_BUILD_TYPE=Release -DENABLE_TESTS=ON ${{ matrix.options }}
         cmake --build . --config Release --parallel $(nproc)
 
     - name: Run Tests
