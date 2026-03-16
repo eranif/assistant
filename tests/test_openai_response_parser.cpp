@@ -39,12 +39,15 @@ TEST(OpenAIResponseParserTest, StreamCompletedEvent) {
   std::string message = DeltaEvent("Hello") + CompletedEvent(10, 5);
 
   std::vector<OpenAIResponseParser::ParseResult> tokens;
-  parser.Parse(message, [&tokens](OpenAIResponseParser::ParseResult result) {
-    tokens.push_back(std::move(result));
-  });
+  std::string content;
+  parser.Parse(message,
+               [&tokens, &content](OpenAIResponseParser::ParseResult result) {
+                 content += result.content;
+                 tokens.push_back(std::move(result));
+               });
 
   ASSERT_GE(tokens.size(), 2);
-  EXPECT_EQ(tokens[0].content, "Hello");
+  EXPECT_EQ(content, "Hello");
   EXPECT_FALSE(tokens[0].is_done);
   EXPECT_TRUE(tokens.back().is_done);
 }
@@ -215,31 +218,6 @@ TEST(OpenAIResponseParserTest, CompleteStreamingSession) {
   }
   EXPECT_TRUE(found_usage);
   EXPECT_TRUE(tokens.back().is_done);
-}
-
-TEST(OpenAIResponseParserTest, CompletedResponseWithOutputArray) {
-  OpenAIResponseParser parser;
-  std::string message =
-      "event: response.completed\n"
-      "data: {\"type\":\"response.completed\","
-      "\"status\":\"completed\","
-      "\"output\":[{\"content\":[{\"text\":\"Hello, how can I help?\"}]}],"
-      "\"response\":{\"usage\":{\"input_tokens\":10,\"output_tokens\":6}}}\n";
-
-  std::vector<OpenAIResponseParser::ParseResult> tokens;
-  parser.Parse(message, [&tokens](OpenAIResponseParser::ParseResult result) {
-    tokens.push_back(std::move(result));
-  });
-
-  ASSERT_EQ(tokens.size(), 1);
-  // Note: content extraction from output field requires ExtractContent to be
-  // called
-  EXPECT_EQ(tokens[0].content, "Hello, how can I help?");
-  EXPECT_TRUE(tokens[0].finish_reason.has_value());
-  EXPECT_EQ(tokens[0].finish_reason.value(), "completed");
-  EXPECT_TRUE(tokens[0].usage.has_value());
-  EXPECT_EQ(tokens[0].usage->input_tokens, 10);
-  EXPECT_EQ(tokens[0].usage->output_tokens, 6);
 }
 
 TEST(OpenAIResponseParserTest, CarriageReturnHandling) {

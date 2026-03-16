@@ -336,6 +336,16 @@ int main(int argc, char** argv) {
             .AddOptionalParam("start_line", "starting line", "number")
             .AddOptionalParam("count", "number of lines to read", "number")
             .SetCallback(ToolReadFileContent)
+            // Register a specific callback for this method to always allow
+            // this will override the "CanRunTool" method set on the client
+            // level.
+            .SetHumanInTheLoopCallabck(
+                [](const std::string& tool_name, assistant::json args) -> bool {
+                  std::cout
+                      << "\n\xE2\x9C\x85 Permission to run tool: " << tool_name
+                      << " is ALWAYS granted." << std::endl;
+                  return true;
+                })
             .Build());
     cli->GetFunctionTable().Add(
         FunctionBuilder("Create_new_file")
@@ -347,8 +357,9 @@ int main(int argc, char** argv) {
             .Build());
   }
 
-  // Set a Human-In-Loop callback.
+  // Set a Human-In-Loop callback (global method)
   cli->SetToolInvokeCallback(CanRunTool);
+
   cli->AddSystemMessage("You are an expert C++ & Rust coder");
   cli->AddSystemMessage("Always answer briefly.");
   cli->AddSystemMessage("If you use markdown, prefer bullets over tables.");

@@ -487,6 +487,8 @@ class ClientBase {
     return m_transport_type.get_value();
   }
 
+  virtual inline bool IsStreaming() const { return m_stream.load(); }
+
  protected:
   static bool OnResponse(const assistant::response& resp, void* user_data);
   static bool OnResponseRaw(const std::string& resp, void* user_data);

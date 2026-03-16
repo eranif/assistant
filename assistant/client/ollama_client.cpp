@@ -239,7 +239,7 @@ void OllamaClient::CreateAndPushChatRequest(
   }
   req["messages"] = history.to_json();
   req["model"] = model;
-  req["stream"] = m_stream.load();
+  req["stream"] = IsStreaming();
   auto keep_alive_duration = m_keep_alive.get_value();
   if (!keep_alive_duration.empty()) {
     req["keep_alive"] = keep_alive_duration;

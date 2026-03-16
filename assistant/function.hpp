@@ -2,9 +2,9 @@
 
 #include <vector>
 
+#include "assistant/assistantlib.hpp"
 #include "assistant/cpp-mcp/mcp_tool.h"
 #include "assistant/function_base.hpp"
-#include "assistant/assistantlib.hpp"
 
 namespace assistant {
 class MCPClient;
@@ -19,8 +19,32 @@ class InProcessFunction : public FunctionBase {
     return m_callback(args);
   }
 
+  /**
+   * Determines whether this action can be executed based on human-in-the-loop
+   * callback.
+   *
+   * Queries the registered human-in-the-loop callback to determine if the
+   * action identified by GetName() is permitted to run with the given
+   * arguments. If no callback is registered, returns std::nullopt to indicate
+   * an indeterminate state.
+   *
+   * Parameters:
+   *   args - JSON object containing the arguments to be passed to the action.
+   *
+   * Returns:
+   *   std::optional<bool> - true if the action is approved to run, false if it
+   * is denied, or std::nullopt if no human-in-the-loop callback is registered.
+   */
+  inline std::optional<bool> CanRun(const json& args) const override {
+    if (m_humanInTheLoopCB) {
+      return m_humanInTheLoopCB(GetName(), args);
+    }
+    return std::nullopt;
+  }
+
  protected:
   FunctionSignature m_callback;
+  OnToolInvokeCallback m_humanInTheLoopCB{nullptr};
   friend class FunctionBuilder;
 };
 
@@ -66,17 +90,24 @@ class FunctionBuilder {
     return *this;
   }
 
+  FunctionBuilder& SetHumanInTheLoopCallabck(OnToolInvokeCallback func) {
+    m_humanInTheLoopCB = std::move(func);
+    return *this;
+  }
+
   std::shared_ptr<FunctionBase> Build() {
     auto f = std::make_shared<InProcessFunction>(m_name, m_desc);
     f->m_params = std::move(m_params);
     f->m_callback = std::move(m_func);
+    f->m_humanInTheLoopCB = std::move(m_humanInTheLoopCB);
     return f;
   }
 
  private:
   std::string m_name;
   std::string m_desc;
-  FunctionSignature m_func;
+  FunctionSignature m_func{nullptr};
+  OnToolInvokeCallback m_humanInTheLoopCB{nullptr};
   std::vector<Param> m_params;
 };
 

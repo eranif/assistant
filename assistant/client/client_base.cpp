@@ -157,8 +157,20 @@ void ChatRequest::InvokeTools(ClientBase* client,
       callback_(ss.str(), Reason::kLogNotice, false);
 
       FunctionResult result;
-      if (client->m_on_invoke_tool_cb != nullptr &&
-          !client->m_on_invoke_tool_cb(func_call.name, func_call.args)) {
+
+      bool can_run_tool{true};
+      auto res =
+          client->GetFunctionTable().CanRunTool(func_call.name, func_call.args);
+      if (res.has_value()) {
+        can_run_tool = res.value();
+      } else if (client->m_on_invoke_tool_cb) {
+        // No function level human-in-the-loop method was registered,
+        // try the global method (client level)
+        can_run_tool =
+            client->m_on_invoke_tool_cb(func_call.name, func_call.args);
+      }
+
+      if (!can_run_tool) {
         result.isError = true;
         std::stringstream ss;
         ss << "\nPermission to run tool: " << func_call.name << " is declined";

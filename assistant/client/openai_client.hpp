@@ -15,6 +15,9 @@ class OpenAIClient : public OllamaClient {
   void AddToolsResult(
       std::vector<std::pair<FunctionCall, FunctionResult>> result) override;
 
+  /// Only streaming is supported with OpenAI
+  inline bool IsStreaming() const override { return true; }
+
  protected:
   static bool OnRawResponse(const std::string& resp, void* user_data);
   void ProcessChatRquest(std::shared_ptr<ChatRequest> chat_request) override;

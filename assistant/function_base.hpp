@@ -105,6 +105,11 @@ class FunctionBase {
   inline const std::string& GetDesc() const { return m_desc; }
   inline bool IsEnabled() const { return m_enabled; }
   inline void SetEnabled(bool b) { m_enabled = b; }
+  virtual inline std::optional<bool> CanRun(
+      [[maybe_unused]] const json& args) const {
+    // return nullopt that no callback was registered
+    return std::nullopt;
+  }
 
  private:
   json ToOllamaJson() const {
@@ -260,6 +265,33 @@ class FunctionTable {
       FunctionResult result{.isError = true, .text = e.what()};
       return result;
     }
+  }
+
+  /**
+   * Checks whether a registered tool can be executed with the given arguments.
+   *
+   * This method performs a thread-safe lookup of the tool by name and queries
+   * whether it can be run with the provided arguments. The mutex is held during
+   * the entire operation to ensure consistency.
+   *
+   * @param tool_name The name of the tool to check.
+   * @param args      A JSON object containing the arguments to be passed to the
+   * tool.
+   *
+   * @return An optional<bool> containing true if the tool can run with the
+   * given arguments, false if the tool exists but cannot run, or std::nullopt
+   * if the tool is not registered.
+   */
+  std::optional<bool> CanRunTool(const std::string& tool_name, json args) const
+      FUNCTION_LOCKS(m_mutex) {
+    std::scoped_lock lk{m_mutex};
+    auto iter = m_functions.find(tool_name);
+    if (iter == m_functions.end()) {
+      return std::nullopt;
+    }
+
+    auto funcptr = iter->second;
+    return funcptr->CanRun(args);
   }
 
   void Clear() FUNCTION_LOCKS(m_mutex) {
