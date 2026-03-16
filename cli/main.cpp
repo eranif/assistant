@@ -137,7 +137,6 @@ assistant::FunctionResult ToolReadFileContent(const assistant::json& args) {
                                      .text = "Invalid number of arguments"};
   }
 
-  std::cout << "ToolReadFileContent() args:\n" << args.dump(2) << std::endl;
   ASSIGN_FUNC_ARG_OR_RETURN(
       std::string filepath,
       ::assistant::GetFunctionArg<std::string>(args, "filepath"));
@@ -172,7 +171,6 @@ assistant::FunctionResult NewFile(const assistant::json& args) {
                                      .text = "Invalid number of arguments"};
   }
 
-  std::cout << "NewFile() args:\n" << args.dump(2) << std::endl;
   ASSIGN_FUNC_ARG_OR_RETURN(
       std::string file_name,
       ::assistant::GetFunctionArg<std::string>(args, "filepath"));
@@ -191,10 +189,11 @@ assistant::FunctionResult NewFile(const assistant::json& args) {
   return assistant::FunctionResult{.isError = false};
 }
 
-bool CanRunTool(const std::string& tool_name) {
+bool CanRunTool(const std::string& tool_name, assistant::json args) {
   std::stringstream prompt;
-  prompt << "\n\xE2\x9D\x93 The model wants to run tool: \"" << tool_name
-         << "\", allow it [y/n]?";
+  prompt << "\n>>\xE2\x9D\x93 The model wants to run tool: \"" << tool_name
+         << "\", with the following args:\n"
+         << args.dump(1) << "\n>>Allow it [y/n]?";
   return ReadYesOrNoFromUser(prompt.str());
 }
 

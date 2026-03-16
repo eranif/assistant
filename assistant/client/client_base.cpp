@@ -158,7 +158,7 @@ void ChatRequest::InvokeTools(ClientBase* client,
 
       FunctionResult result;
       if (client->m_on_invoke_tool_cb != nullptr &&
-          !client->m_on_invoke_tool_cb(func_call.name)) {
+          !client->m_on_invoke_tool_cb(func_call.name, func_call.args)) {
         result.isError = true;
         std::stringstream ss;
         ss << "\nPermission to run tool: " << func_call.name << " is declined";

@@ -113,7 +113,8 @@ using OnResponseCallback = std::function<bool(
     const std::string& text, Reason call_reason, bool thinking)>;
 
 /// Called when a tool is about to be invoked.
-using OnToolInvokeCallback = std::function<bool(const std::string& tool_name)>;
+using OnToolInvokeCallback =
+    std::function<bool(const std::string& tool_name, json args)>;
 
 /// Tokens pricing
 struct Pricing {
