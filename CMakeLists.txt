@@ -47,6 +47,7 @@ if (ASSISTANTLIB_BUILD_EXAMPLE)
 endif ()
 
 if (ASSISTANTLIB_BUILD_TESTS OR ENABLE_TESTS)
+  enable_testing()
   add_subdirectory(submodules/googletest)
   add_subdirectory(tests)
 endif ()
