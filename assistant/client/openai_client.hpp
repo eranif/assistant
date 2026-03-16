@@ -12,9 +12,11 @@ class OpenAIClient : public OllamaClient {
 
   std::optional<ModelCapabilities> GetModelCapabilities(
       [[maybe_unused]] const std::string& model) override;
-  static bool OnRawResponse(const std::string& resp, void* user_data);
+  void AddToolsResult(
+      std::vector<std::pair<FunctionCall, FunctionResult>> result) override;
 
  protected:
+  static bool OnRawResponse(const std::string& resp, void* user_data);
   void ProcessChatRquest(std::shared_ptr<ChatRequest> chat_request) override;
   bool HandleResponse(const std::string& resp, ChatContext* chat_context);
 

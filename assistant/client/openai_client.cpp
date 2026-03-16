@@ -93,15 +93,11 @@ bool OpenAIClient::HandleResponse(const std::string& resp,
                            .invocation_id = token.GeToolCallId()};
 
         // Build the AI request message
-        assistant::message tool_invoke_msg("assistant", "");
-        json content_arr = json::array();
-        json tool_use = json::object();
-        tool_use["type"] = "tool_use";
-        tool_use["id"] = token.GeToolCallId();
-        tool_use["name"] = token.GetToolName();
-        tool_use["input"] = fcall.args;
-        content_arr.push_back(tool_use);
-        tool_invoke_msg["content"] = content_arr;
+        assistant::message tool_invoke_msg;
+        tool_invoke_msg["type"] = "function_call";
+        tool_invoke_msg["call_id"] = token.GeToolCallId();
+        tool_invoke_msg["name"] = token.GetToolName();
+        tool_invoke_msg["arguments"] = fcall.args.dump();
 
         OLOG(LogLevel::kDebug)
             << "Got tool request: " << std::setw(2) << tool_invoke_msg;
@@ -151,6 +147,22 @@ bool OpenAIClient::HandleResponse(const std::string& resp,
     req->callback_(e.what(), Reason::kFatalError, false);
     m_responseParser = std::make_unique<OpenAIResponseParser>();
     return false;  // close the current session.
+  }
+}
+
+void OpenAIClient::AddToolsResult(
+    std::vector<std::pair<FunctionCall, FunctionResult>> result) {
+  if (result.empty()) {
+    return;
+  }
+  OLOG(LogLevel::kDebug) << "Processing " << result.size()
+                         << " tool calls responses";
+  for (const auto& [fcall, reply] : result) {
+    assistant::message tool_response;
+    tool_response["type"] = "function_call_output";
+    tool_response["call_id"] = fcall.invocation_id.value_or("");
+    tool_response["output"] = reply.text;
+    AddMessage(std::move(tool_response));
   }
 }
 
