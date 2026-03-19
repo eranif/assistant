@@ -150,6 +150,12 @@ int Process::RunProcessAndWait(const std::vector<std::string>& argv,
   si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
   si.dwFlags |= STARTF_USESTDHANDLES;
 
+  if (!use_shell) {
+    // Hide terminal if not needed.
+    si.dwFlags |= STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+  }
+
   PROCESS_INFORMATION pi;
   ZeroMemory(&pi, sizeof(pi));
 
@@ -640,7 +646,7 @@ int Process::RunProcessAndWait(const std::vector<std::string>& argv,
       if (output_cb && !output_cb("", "")) {
         break;
       }
-    } // Error will be handled by 
+    }  // Error will be handled by
   }
 
   if (stderr_open || stdout_open) {
