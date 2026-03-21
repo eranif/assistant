@@ -196,22 +196,22 @@ int Process::RunProcessAndWait(const std::vector<std::string>& argv,
 
   // Poll for output while process is running
   while (true) {
-    DWORD wait_result = WaitForSingleObject(pi.hProcess, 100);
-
     // Read available output
     std::string new_out = ReadAvailableFromPipe(hStdoutRead);
     std::string new_err = ReadAvailableFromPipe(hStderrRead);
 
     if (!new_out.empty() || !new_err.empty()) {
-      if (output_cb) {
-        should_continue = output_cb(new_out, new_err);
-        if (!should_continue) {
-          TerminateProcess(process_id);
-          break;
-        }
+      if (output_cb && !output_cb(new_out, new_err)) {
+        TerminateProcess(process_id);
+        break;
       }
     }
 
+    if (!new_out.empty() || !new_err.empty()) {
+      continue;
+    }
+
+    DWORD wait_result = WaitForSingleObject(pi.hProcess, 5);
     if (wait_result == WAIT_OBJECT_0) {
       // Process has exited, read any remaining output
       std::string final_out = ReadAllFromPipe(hStdoutRead);
@@ -223,6 +223,12 @@ int Process::RunProcessAndWait(const std::vector<std::string>& argv,
         }
       }
       break;
+    } else {
+      // Let the user a chance to terminate the process
+      if (output_cb && !output_cb("", "")) {
+        TerminateProcess(process_id);
+        break;
+      }
     }
   }
 
@@ -246,13 +252,8 @@ bool Process::RunProcessAsync(const std::vector<std::string>& argv,
   if (use_shell) {
     std::vector<std::string> shell_argv = {"cmd.exe", "/c"};
 
-    // Join all arguments into a single command string
-    std::string command;
-    for (size_t i = 0; i < argv.size(); ++i) {
-      if (i > 0) command += " ";
-      command += argv[i];
-    }
-    shell_argv.push_back(command);
+    // Reuse the existing synchronous implementation from a worker thread.
+    shell_argv.push_back(BuildCommandLine(argv));
 
     return RunProcessAsync(shell_argv, output_cb, completion_cb, false);
   }
@@ -261,109 +262,9 @@ bool Process::RunProcessAsync(const std::vector<std::string>& argv,
     return false;
   }
 
-  // Create pipes for stdout and stderr
-  HANDLE hStdoutRead = nullptr, hStdoutWrite = nullptr;
-  HANDLE hStderrRead = nullptr, hStderrWrite = nullptr;
-
-  SECURITY_ATTRIBUTES sa;
-  sa.nLength = sizeof(SECURITY_ATTRIBUTES);
-  sa.bInheritHandle = TRUE;
-  sa.lpSecurityDescriptor = nullptr;
-
-  if (!CreatePipe(&hStdoutRead, &hStdoutWrite, &sa, 0) ||
-      !SetHandleInformation(hStdoutRead, HANDLE_FLAG_INHERIT, 0)) {
-    return false;
-  }
-
-  if (!CreatePipe(&hStderrRead, &hStderrWrite, &sa, 0) ||
-      !SetHandleInformation(hStderrRead, HANDLE_FLAG_INHERIT, 0)) {
-    CloseHandle(hStdoutRead);
-    CloseHandle(hStdoutWrite);
-    return false;
-  }
-
-  STARTUPINFOA si;
-  ZeroMemory(&si, sizeof(si));
-  si.cb = sizeof(si);
-  si.hStdError = hStderrWrite;
-  si.hStdOutput = hStdoutWrite;
-  si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
-  si.dwFlags |= STARTF_USESTDHANDLES;
-
-  PROCESS_INFORMATION pi;
-  ZeroMemory(&pi, sizeof(pi));
-
-  std::string cmdline = BuildCommandLine(argv);
-  std::vector<char> cmdlineBuf(cmdline.begin(), cmdline.end());
-  cmdlineBuf.push_back('\0');
-
-  BOOL success = CreateProcessA(nullptr, cmdlineBuf.data(), nullptr, nullptr,
-                                TRUE, 0, nullptr, nullptr, &si, &pi);
-
-  CloseHandle(hStdoutWrite);
-  CloseHandle(hStderrWrite);
-
-  if (!success) {
-    CloseHandle(hStdoutRead);
-    CloseHandle(hStderrRead);
-    return false;
-  }
-
-  int pid = static_cast<int>(pi.dwProcessId);
-
-  // Launch a thread to monitor the process
-  std::thread([pi, hStdoutRead, hStderrRead, output_cb, completion_cb, pid]() {
-    std::string accumulated_out;
-    std::string accumulated_err;
-    bool should_continue = true;
-
-    // Poll for output while process is running
-    while (true) {
-      DWORD wait_result = WaitForSingleObject(pi.hProcess, 100);
-
-      // Read available output
-      std::string new_out = ReadAvailableFromPipe(hStdoutRead);
-      std::string new_err = ReadAvailableFromPipe(hStderrRead);
-
-      if (!new_out.empty() || !new_err.empty()) {
-        accumulated_out += new_out;
-        accumulated_err += new_err;
-
-        if (output_cb) {
-          should_continue = output_cb(accumulated_out, accumulated_err);
-          if (!should_continue) {
-            TerminateProcess(pid);
-            break;
-          }
-        }
-      }
-
-      if (wait_result == WAIT_OBJECT_0) {
-        // Process has exited, read any remaining output
-        std::string final_out = ReadAllFromPipe(hStdoutRead);
-        std::string final_err = ReadAllFromPipe(hStderrRead);
-
-        if (!final_out.empty() || !final_err.empty()) {
-          accumulated_out += final_out;
-          accumulated_err += final_err;
-
-          if (output_cb) {
-            output_cb(accumulated_out, accumulated_err);
-          }
-        }
-        break;
-      }
-    }
-
-    DWORD exitCode = 0;
-    GetExitCodeProcess(pi.hProcess, &exitCode);
-
-    CloseHandle(hStdoutRead);
-    CloseHandle(hStderrRead);
-    CloseHandle(pi.hProcess);
-    CloseHandle(pi.hThread);
-
-    completion_cb(static_cast<int>(exitCode));
+  std::thread([argv, output_cb, completion_cb]() {
+    int exit_code = RunProcessAndWait(argv, output_cb, false);
+    completion_cb(exit_code);
   }).detach();
 
   return true;
@@ -463,6 +364,17 @@ std::string ReadFromFdUntilEOF(int fd) {
   return result;
 }
 
+std::string JoinArguments(const std::vector<std::string>& argv) {
+  std::string command;
+  for (size_t i = 0; i < argv.size(); ++i) {
+    if (i > 0) {
+      command += ' ';
+    }
+    command += argv[i];
+  }
+  return command;
+}
+
 class Argv {
   struct Deleter {
     size_t size;
@@ -512,15 +424,7 @@ int Process::RunProcessAndWait(const std::vector<std::string>& argv,
   if (use_shell) {
     std::vector<std::string> shell_argv = {"/bin/bash", "-c"};
 
-    // Join all arguments into a single command string
-    std::string command;
-    for (size_t i = 0; i < argv.size(); ++i) {
-      if (i > 0) {
-        command += " ";
-      }
-      command += argv[i];
-    }
-    shell_argv.push_back(command);
+    shell_argv.push_back(JoinArguments(argv));
 
     return RunProcessAndWait(shell_argv, output_cb, false);
   }
@@ -695,13 +599,7 @@ bool Process::RunProcessAsync(const std::vector<std::string>& argv,
   if (use_shell) {
     std::vector<std::string> shell_argv = {"/bin/bash", "-c"};
 
-    // Join all arguments into a single command string
-    std::string command;
-    for (size_t i = 0; i < argv.size(); ++i) {
-      if (i > 0) command += " ";
-      command += argv[i];
-    }
-    shell_argv.push_back(command);
+    shell_argv.push_back(JoinArguments(argv));
 
     return RunProcessAsync(shell_argv, output_cb, completion_cb, false);
   }
@@ -709,141 +607,8 @@ bool Process::RunProcessAsync(const std::vector<std::string>& argv,
   if (argv.empty() || !completion_cb) {
     return false;
   }
-
-  // Create pipes for stdout and stderr
-  int stdout_pipe[2];
-  int stderr_pipe[2];
-
-  if (pipe(stdout_pipe) != 0) {
-    return false;
-  }
-
-  if (pipe(stderr_pipe) != 0) {
-    close(stdout_pipe[0]);
-    close(stdout_pipe[1]);
-    return false;
-  }
-
-  pid_t pid = fork();
-
-  if (pid < 0) {
-    // Fork failed
-    close(stdout_pipe[0]);
-    close(stdout_pipe[1]);
-    close(stderr_pipe[0]);
-    close(stderr_pipe[1]);
-    return false;
-  }
-
-  if (pid == 0) {
-    // Child process
-    close(stdout_pipe[0]);
-    close(stderr_pipe[0]);
-
-    dup2(stdout_pipe[1], STDOUT_FILENO);
-    dup2(stderr_pipe[1], STDERR_FILENO);
-
-    close(stdout_pipe[1]);
-    close(stderr_pipe[1]);
-
-    std::vector<char*> exec_argv;
-    for (const auto& arg : argv) {
-      exec_argv.push_back(const_cast<char*>(arg.c_str()));
-    }
-    exec_argv.push_back(nullptr);
-
-    execvp(exec_argv[0], exec_argv.data());
-    _exit(127);
-  }
-
-  // Parent process
-  int process_id = static_cast<int>(pid);
-
-  // Close write ends
-  close(stdout_pipe[1]);
-  close(stderr_pipe[1]);
-
-  // Launch a thread to monitor the process
-  std::thread([pid, stdout_pipe, stderr_pipe, output_cb, completion_cb,
-               process_id]() {
-    // Set pipes to non-blocking mode
-    SetNonBlocking(stdout_pipe[0]);
-    SetNonBlocking(stderr_pipe[0]);
-
-    std::string accumulated_out;
-    std::string accumulated_err;
-    bool should_continue = true;
-
-    // Poll for output while process is running
-    while (true) {
-      // Check if process has exited
-      int status = 0;
-      pid_t wait_result = waitpid(pid, &status, WNOHANG);
-
-      // Read available output
-      std::string new_out = ReadAvailableFromFd(stdout_pipe[0]);
-      std::string new_err = ReadAvailableFromFd(stderr_pipe[0]);
-
-      if (!new_out.empty() || !new_err.empty()) {
-        accumulated_out += new_out;
-        accumulated_err += new_err;
-
-        if (output_cb) {
-          should_continue = output_cb(accumulated_out, accumulated_err);
-          if (!should_continue) {
-            kill(pid, SIGKILL);
-            break;
-          }
-        }
-      }
-
-      if (wait_result == pid) {
-        // Process has exited, read any remaining output
-        std::string final_out = ReadFromFdUntilEOF(stdout_pipe[0]);
-        std::string final_err = ReadFromFdUntilEOF(stderr_pipe[0]);
-
-        if (!final_out.empty() || !final_err.empty()) {
-          accumulated_out += final_out;
-          accumulated_err += final_err;
-
-          if (output_cb) {
-            output_cb(accumulated_out, accumulated_err);
-          }
-        }
-
-        close(stdout_pipe[0]);
-        close(stderr_pipe[0]);
-
-        int exit_code = -1;
-        if (WIFEXITED(status)) {
-          exit_code = WEXITSTATUS(status);
-        } else if (WIFSIGNALED(status)) {
-          exit_code = 128 + WTERMSIG(status);
-        }
-
-        completion_cb(exit_code);
-        return;
-      }
-
-      // Sleep briefly before next poll
-      usleep(10000);  // 10ms
-    }
-
-    // If we get here, process was terminated by callback
-    close(stdout_pipe[0]);
-    close(stderr_pipe[0]);
-
-    // Wait for process to actually terminate
-    int status = 0;
-    waitpid(pid, &status, 0);
-
-    int exit_code = -1;
-    if (WIFEXITED(status)) {
-      exit_code = WEXITSTATUS(status);
-    } else if (WIFSIGNALED(status)) {
-      exit_code = 128 + WTERMSIG(status);
-    }
-
+  std::thread([argv, output_cb, completion_cb]() {
+    int exit_code = RunProcessAndWait(argv, output_cb, false);
     completion_cb(exit_code);
   }).detach();
 
