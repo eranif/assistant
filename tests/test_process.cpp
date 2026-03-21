@@ -95,14 +95,14 @@ TEST(ProcessTest, RunProcessAndWait_EmptyCommand) {
 TEST(ProcessTest, RunProcessAsync_SimpleCommand) {
   bool callback_invoked = false;
   int exit_code = -1;
-  std::string out, err;
+  std::stringstream out, err;
 
 #ifdef _WIN32
   bool success = Process::RunProcessAsync(
       {"cmd", "/c", "echo", "Async Hello"},
       [&out, &err](const std::string& o, const std::string& e) {
-        out = o;
-        err = e;
+        out << o;
+        err << e;
         return true;
       },
       [&callback_invoked, &exit_code](int ec) {
@@ -113,8 +113,8 @@ TEST(ProcessTest, RunProcessAsync_SimpleCommand) {
   bool success = Process::RunProcessAsync(
       {"echo", "Async Hello"},
       [&out, &err](const std::string& o, const std::string& e) {
-        out = o;
-        err = e;
+        out << o;
+        err << e;
         return true;
       },
       [&callback_invoked, &exit_code](int ec) {
@@ -130,10 +130,14 @@ TEST(ProcessTest, RunProcessAsync_SimpleCommand) {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
 
+  std::string out_str, err_str;
+  out_str = out.str();
+  err_str = err.str();
+
   EXPECT_TRUE(callback_invoked);
   EXPECT_EQ(exit_code, 0);
-  EXPECT_FALSE(out.empty());
-  EXPECT_TRUE(out.find("Async Hello") != std::string::npos);
+  EXPECT_FALSE(out_str.empty());
+  EXPECT_TRUE(out_str.find("Async Hello") != std::string::npos);
 }
 
 // Test async process with non-zero exit code
@@ -390,14 +394,14 @@ TEST(ProcessTest, RunProcessAndWait_ShellWithRedirection) {
 TEST(ProcessTest, RunProcessAsync_ShellWithPipe) {
   bool callback_invoked = false;
   int exit_code = -1;
-  std::string out, err;
+  std::stringstream out, err;
 
 #ifdef _WIN32
   bool success = Process::RunProcessAsync(
       {"echo", "async_test", "|", "findstr", "async"},
       [&out, &err](const std::string& o, const std::string& e) {
-        out = o;
-        err = e;
+        out << o;
+        err << e;
         return true;
       },
       [&callback_invoked, &exit_code](int ec) {
@@ -409,8 +413,8 @@ TEST(ProcessTest, RunProcessAsync_ShellWithPipe) {
   bool success = Process::RunProcessAsync(
       {"echo", "async_test", "|", "grep", "async"},
       [&out, &err](const std::string& o, const std::string& e) {
-        out = o;
-        err = e;
+        out << o;
+        err << e;
         return true;
       },
       [&callback_invoked, &exit_code](int ec) {
@@ -427,10 +431,13 @@ TEST(ProcessTest, RunProcessAsync_ShellWithPipe) {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
 
+  std::string out_str, err_str;
+  out_str = out.str();
+  err_str = err.str();
   EXPECT_TRUE(callback_invoked);
   EXPECT_EQ(exit_code, 0);
-  EXPECT_FALSE(out.empty());
-  EXPECT_TRUE(out.find("async") != std::string::npos);
+  EXPECT_FALSE(out_str.empty());
+  EXPECT_TRUE(out_str.find("async") != std::string::npos);
 }
 
 int main(int argc, char** argv) {
