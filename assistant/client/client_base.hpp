@@ -367,7 +367,7 @@ class ClientBase {
   void ClearHistoryMessages() { m_history.Clear(); }
 
   /// Return the history messages.
-  inline std::vector<assistant::message> GetHistory() const {
+  inline assistant::messages GetHistory() const {
     return m_history.GetMessages();
   }
 
