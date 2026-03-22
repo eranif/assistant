@@ -94,26 +94,6 @@ struct ChatRequestQueue {
   std::vector<std::shared_ptr<ChatRequest>> m_vec GUARDED_BY(m_mutex);
 };
 
-struct Message {
-  std::string role;
-  std::string text;
-
-  assistant::message as_message() const {
-    return assistant::message{role, text};
-  }
-
-  static std::optional<Message> from_message(const assistant::message& j) {
-    try {
-      Message m;
-      m.text = j["content"].get<std::string>();
-      m.role = j["role"].get<std::string>();
-      return m;
-    } catch (...) {
-      return std::nullopt;
-    }
-  }
-};
-
 struct History {
   /**
    * @brief Constructs a History object with the active history pointing to the
@@ -387,27 +367,13 @@ class ClientBase {
   void ClearHistoryMessages() { m_history.Clear(); }
 
   /// Return the history messages.
-  std::vector<Message> GetHistory() const {
-    std::vector<Message> history;
-    auto msgs = m_history.GetMessages();
-    for (const auto& msg : msgs) {
-      auto message = Message::from_message(msg);
-      if (message.has_value()) {
-        history.push_back(message.value());
-      }
-    }
-    return history;
+  inline std::vector<assistant::message> GetHistory() const {
+    return m_history.GetMessages();
   }
 
   /// Replace the history.
-  void SetHistory(const std::vector<Message>& history) {
-    assistant::messages m;
-    m.reserve(history.size());
-
-    for (const auto& msg : history) {
-      m.push_back(msg.as_message());
-    }
-    m_history.SetMessages(m);
+  inline void SetHistory(const assistant::messages& msgs) {
+    m_history.SetMessages(msgs);
   }
 
   inline std::string GetUrl() const { return m_endpoint.get_value().url_; }

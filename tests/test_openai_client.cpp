@@ -129,18 +129,18 @@ TEST(OpenAIClientTest, SystemMessages) {
 TEST(OpenAIClientTest, HistoryManagement) {
   OpenAIClient client;
 
-  std::vector<Message> history;
-  history.push_back(Message{"user", "Hello"});
-  history.push_back(Message{"assistant", "Hi there!"});
+  assistant::messages history;
+  history.push_back(assistant::message{"user", "Hello"});
+  history.push_back(assistant::message{"assistant", "Hi there!"});
 
   client.SetHistory(history);
   auto retrieved = client.GetHistory();
 
   ASSERT_EQ(retrieved.size(), 2);
-  EXPECT_EQ(retrieved[0].role, "user");
-  EXPECT_EQ(retrieved[0].text, "Hello");
-  EXPECT_EQ(retrieved[1].role, "assistant");
-  EXPECT_EQ(retrieved[1].text, "Hi there!");
+  EXPECT_EQ(retrieved[0]["role"].get<std::string>(), "user");
+  EXPECT_EQ(retrieved[0]["content"].get<std::string>(), "Hello");
+  EXPECT_EQ(retrieved[1]["role"].get<std::string>(), "assistant");
+  EXPECT_EQ(retrieved[1]["content"].get<std::string>(), "Hi there!");
 
   client.ClearHistoryMessages();
   retrieved = client.GetHistory();
