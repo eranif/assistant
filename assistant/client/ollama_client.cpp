@@ -269,8 +269,13 @@ void OllamaClient::AddToolsResult(
     // Add the tool response
     std::stringstream ss;
     if (reply.isError) {
-      ss << "An error occurred while executing tool: '" << fcall.name
-         << "'. Reason: " << reply.text;
+      if (!reply.text.empty()) {
+        // If user provided a reason, send it as it.
+        ss << reply.text;
+      } else {
+        // Construct our own message.
+        ss << "An error occurred while executing tool: '" << fcall.name << "'.";
+      }
       OLOG(LogLevel::kWarning) << ss.str();
     } else {
       // In case of a success, do not manipulate the response.
@@ -279,6 +284,7 @@ void OllamaClient::AddToolsResult(
     }
 
     assistant::message msg{"tool", ss.str()};
+    msg["tool_name"] = fcall.name;
     AddMessage(std::move(msg));
   }
 }

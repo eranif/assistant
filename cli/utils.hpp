@@ -65,7 +65,7 @@ inline assistant::CanInvokeToolResult ReadYesOrNoFromUser(
     const std::string& prompt) {
   assistant::CanInvokeToolResult result;
   while (true) {
-    std::cout << prompt;
+    std::cout << " " << prompt;
 
     std::string input;
     std::getline(std::cin, input);
@@ -79,20 +79,24 @@ inline assistant::CanInvokeToolResult ReadYesOrNoFromUser(
     }
 
     // Check for single character 'y' or 'n' (case-insensitive)
-    if (input.length() == 1) {
-      char c = std::tolower(input[0]);
-      if (c == 'y') {
-        result.can_invoke = true;
-        return result;
+    char c = std::tolower(input[0]);
+    if (input.length() == 1 && c == 'y') {
+      result.can_invoke = true;
+      return result;
 
-      } else if (c == 'n') {
-        result.can_invoke = false;
-        result.reason = "Permission denied";
-        return result;
-      }
+    } else if (input.length() == 1 && c == 'n') {
+      result.can_invoke = false;
+      result.reason = "Permission denied";
+      return result;
+    } else if (!input.empty()) {
+      result.can_invoke = false;
+      result.reason = input;
+      return result;
+    } else {
+      std::cout << "Invalid input. Please enter 'y' or 'n' or another reason."
+                << std::endl;
+      ;
     }
-
-    std::cout << "Invalid input. Please enter 'y' or 'n'." << std::endl;
   }
 }
 

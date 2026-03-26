@@ -206,9 +206,9 @@ assistant::FunctionResult NewFile(const assistant::json& args) {
 assistant::CanInvokeToolResult CanRunTool(const std::string& tool_name,
                                           assistant::json args) {
   std::stringstream prompt;
-  prompt << "\n>>\xE2\x9D\x93 The model wants to run tool: \"" << tool_name
+  prompt << "\n>>\xE2\x9D\x93 The model wants to run the tool: \"" << tool_name
          << "\", with the following args:\n"
-         << args.dump(1) << "\n>>Allow it [y/n]?";
+         << args.dump() << "\n>> Allow it [y/n]? ";
   return ReadYesOrNoFromUser(prompt.str());
 }
 

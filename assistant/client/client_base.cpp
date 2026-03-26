@@ -171,12 +171,8 @@ void ChatRequest::InvokeTools(ClientBase* client,
       }
 
       if (!can_run_tool.IsAllowed()) {
-        ss = {};
-        ss << "Permission to run tool: '" << func_call.name << "' is denied. "
-           << can_run_tool.reason;
-
         result.isError = true;
-        result.text = ss.str();
+        result.text = can_run_tool.reason;
         callback_("\xE2\x9C\x96 " + ss.str(), Reason::kToolDenied, false);
 
       } else {
