@@ -116,7 +116,8 @@ int Process::RunProcessAndWait(const std::vector<std::string>& argv,
     return -1;
   }
 
-  // Create pipes for stdout and stderr
+  // Create pipes for stdin, stdout and stderr
+  HANDLE hStdinRead = nullptr, hStdinWrite = nullptr;
   HANDLE hStdoutRead = nullptr, hStdoutWrite = nullptr;
   HANDLE hStderrRead = nullptr, hStderrWrite = nullptr;
 
@@ -125,12 +126,20 @@ int Process::RunProcessAndWait(const std::vector<std::string>& argv,
   sa.bInheritHandle = TRUE;
   sa.lpSecurityDescriptor = nullptr;
 
+  if (!CreatePipe(&hStdinRead, &hStdinWrite, &sa, 0) ||
+      !SetHandleInformation(hStdinWrite, HANDLE_FLAG_INHERIT, 0)) {
+    return -1;
+  }
   if (!CreatePipe(&hStdoutRead, &hStdoutWrite, &sa, 0) ||
       !SetHandleInformation(hStdoutRead, HANDLE_FLAG_INHERIT, 0)) {
+    CloseHandle(hStdinRead);
+    CloseHandle(hStdinWrite);
     return -1;
   }
   if (!CreatePipe(&hStderrRead, &hStderrWrite, &sa, 0) ||
       !SetHandleInformation(hStderrRead, HANDLE_FLAG_INHERIT, 0)) {
+    CloseHandle(hStdinRead);
+    CloseHandle(hStdinWrite);
     CloseHandle(hStdoutRead);
     CloseHandle(hStdoutWrite);
     return -1;
@@ -147,7 +156,7 @@ int Process::RunProcessAndWait(const std::vector<std::string>& argv,
   si.cb = sizeof(si);
   si.hStdError = hStderrWrite;
   si.hStdOutput = hStdoutWrite;
-  si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+  si.hStdInput = hStdinRead;
   si.dwFlags |= STARTF_USESTDHANDLES;
 
   if (!use_shell) {
@@ -181,11 +190,14 @@ int Process::RunProcessAndWait(const std::vector<std::string>& argv,
                                 &pi       // Process information
   );
 
-  // Close write ends of pipes in parent process
+  // Close the pipe ends that belong to the child process
+  CloseHandle(hStdinRead);
   CloseHandle(hStdoutWrite);
   CloseHandle(hStderrWrite);
 
   if (!success) {
+    // Clean up remaining handles on failure
+    CloseHandle(hStdinWrite);
     CloseHandle(hStdoutRead);
     CloseHandle(hStderrRead);
     return -1;
@@ -193,6 +205,10 @@ int Process::RunProcessAndWait(const std::vector<std::string>& argv,
 
   int process_id = static_cast<int>(pi.dwProcessId);
   bool should_continue = true;
+
+  // Close stdin write end immediately - child will get EOF if it tries to read
+  // This prevents the child from blocking on stdin
+  CloseHandle(hStdinWrite);
 
   // Poll for output while process is running
   while (true) {
