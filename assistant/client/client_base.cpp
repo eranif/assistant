@@ -173,12 +173,11 @@ void ChatRequest::InvokeTools(ClientBase* client,
       if (!can_run_tool.IsAllowed()) {
         result.isError = true;
         result.text = can_run_tool.reason;
-        callback_("\xE2\x9C\x96 " + ss.str(), Reason::kToolDenied, false);
+        callback_(ss.str(), Reason::kToolDenied, false);
 
       } else {
         ss = {};
-        ss << "\xE2\x9C\x85 Permission to run tool: " << func_call.name
-           << " is granted.";
+        ss << "Permission to run tool: " << func_call.name << " is granted.";
         callback_(ss.str(), Reason::kToolAllowed, false);
         result = client->GetFunctionTable().Call(func_call);
 

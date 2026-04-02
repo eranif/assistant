@@ -206,7 +206,7 @@ assistant::FunctionResult NewFile(const assistant::json& args) {
 assistant::CanInvokeToolResult CanRunTool(const std::string& tool_name,
                                           assistant::json args) {
   std::stringstream prompt;
-  prompt << "\n>>\xE2\x9D\x93 The model wants to run the tool: \"" << tool_name
+  prompt << "\n>>The model wants to run the tool: \"" << tool_name
          << "\", with the following args:\n"
          << args.dump() << "\n>> Allow it [y/n]? ";
   return ReadYesOrNoFromUser(prompt.str());
@@ -363,9 +363,8 @@ int main(int argc, char** argv) {
             .SetHumanInTheLoopCallabck(
                 [](const std::string& tool_name,
                    assistant::json args) -> assistant::CanInvokeToolResult {
-                  std::cout
-                      << "\n\xE2\x9C\x85 Permission to run tool: " << tool_name
-                      << " is ALWAYS granted." << std::endl;
+                  std::cout << "\n✔ Permission to run tool: " << tool_name
+                            << " is ALWAYS granted." << std::endl;
                   return assistant::CanInvokeToolResult{.can_invoke = true};
                 })
             .Build());
