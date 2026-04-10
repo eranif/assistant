@@ -146,7 +146,7 @@ assistant::FunctionResult WriteFileContent(const assistant::json& args) {
 
 assistant::FunctionResult ToolReadFileContent(const assistant::json& args) {
   std::stringstream ss;
-  if (args.size() != 3) {
+  if (args.size() != 1) {
     return assistant::FunctionResult{.isError = true,
                                      .text = "Invalid number of arguments"};
   }
@@ -162,20 +162,6 @@ assistant::FunctionResult ToolReadFileContent(const assistant::json& args) {
     return assistant::FunctionResult{.isError = true, .text = ss.str()};
   }
   return assistant::FunctionResult{.isError = false, .text = res.GetValue()};
-}
-
-assistant::FunctionResult OpenFileInEditor(const assistant::json& args) {
-  if (args.size() != 1) {
-    return assistant::FunctionResult{.isError = true,
-                                     .text = "Invalid number of arguments"};
-  }
-
-  ASSIGN_FUNC_ARG_OR_RETURN(
-      std::string file_name,
-      ::assistant::GetFunctionArg<std::string>(args, "filepath"));
-  std::stringstream ss;
-  ss << "file '" << file_name << "' successfully opened file in the editor.";
-  return assistant::FunctionResult{.text = ss.str()};
 }
 
 assistant::FunctionResult NewFile(const assistant::json& args) {
@@ -227,63 +213,81 @@ void HandlePrompt(std::shared_ptr<assistant::ClientBase> cli,
                   assistant::ChatOptions options) {
   std::atomic_bool done{false};
   std::atomic_bool saved_thinking_state{false};
-  cli->Chat(
-      prompt,
-      [&done, &saved_thinking_state](
-          std::string output, assistant::Reason reason, bool thinking) -> bool {
-        if (saved_thinking_state != thinking) {
-          // we switched state
-          if (thinking) {
-            // the new state is "thinking"
-            std::cout << Cyan("Thinking... ") << std::endl;
-          } else {
-            std::cout << Cyan("... done thinking") << std::endl;
-          }
-        }
 
-        saved_thinking_state = thinking;
-        switch (reason) {
-          case assistant::Reason::kDone:
-            std::cout << std::endl;
-            OLOG_INFO() << "Completed!";
-            done = true;
-            break;
-          case assistant::Reason::kLogNotice:
-            OLOG_INFO() << output;
-            break;
-          case assistant::Reason::kLogDebug:
-            OLOG_DEBUG() << output;
-            break;
-          case assistant::Reason::kPartialResult:
+  std::string current_prompt = prompt;
+  while (true) {
+    std::atomic_bool max_tokens_reached{false};
+    cli->Chat(
+        current_prompt,
+        [&done, &saved_thinking_state, &max_tokens_reached](
+            std::string output, assistant::Reason reason,
+            bool thinking) -> bool {
+          if (saved_thinking_state != thinking) {
+            // we switched state
             if (thinking) {
-              std::cout << Gray(output);
+              // the new state is "thinking"
+              std::cout << Cyan("Thinking... ") << std::endl;
             } else {
-              std::cout << output;
+              std::cout << Cyan("... done thinking") << std::endl;
             }
-            std::cout.flush();
-            break;
-          case assistant::Reason::kRequestCost:
-            std::cout << "\n\n" << Gray(output) << std::endl;
-            break;
-          case assistant::Reason::kToolDenied:
-            std::cout << "\n" << Red(output) << std::endl;
-            break;
-          case assistant::Reason::kToolAllowed:
-            std::cout << "\n" << Green(output) << std::endl;
-            break;
-          case assistant::Reason::kFatalError:
-            OLOG_ERROR() << output;
-            done = true;
-            break;
-          case assistant::Reason::kCancelled:
-            OLOG_WARN() << output;
-            done = true;
-            break;
-        }
-        // continue
-        return true;
-      },
-      options);
+          }
+
+          saved_thinking_state = thinking;
+          switch (reason) {
+            case assistant::Reason::kDone:
+              std::cout << std::endl;
+              OLOG_INFO() << "Completed!";
+              done = true;
+              break;
+            case assistant::Reason::kMaxTokensReached:
+              std::cout << std::endl;
+              OLOG_INFO() << "Maximum Tokens Generation Reached.";
+              max_tokens_reached = true;
+              done = true;
+              break;
+            case assistant::Reason::kLogNotice:
+              OLOG_INFO() << output;
+              break;
+            case assistant::Reason::kLogDebug:
+              OLOG_DEBUG() << output;
+              break;
+            case assistant::Reason::kPartialResult:
+              if (thinking) {
+                std::cout << Gray(output);
+              } else {
+                std::cout << output;
+              }
+              std::cout.flush();
+              break;
+            case assistant::Reason::kRequestCost:
+              std::cout << "\n\n" << Gray(output) << std::endl;
+              break;
+            case assistant::Reason::kToolDenied:
+              std::cout << "\n" << Red(output) << std::endl;
+              break;
+            case assistant::Reason::kToolAllowed:
+              std::cout << "\n" << Green(output) << std::endl;
+              break;
+            case assistant::Reason::kFatalError:
+              OLOG_ERROR() << output;
+              done = true;
+              break;
+            case assistant::Reason::kCancelled:
+              OLOG_WARN() << output;
+              done = true;
+              break;
+          }
+          // continue
+          return true;
+        },
+        options);
+
+    if (max_tokens_reached) {
+      current_prompt = "Please continue from exactly where you left off.";
+      continue;
+    }
+    break;
+  }
   PrintPrompt();
 }
 
@@ -328,15 +332,6 @@ int main(int argc, char** argv) {
   }
 
   if (args.enable_builtin_mcps) {
-    cli->GetFunctionTable().Add(
-        FunctionBuilder("Open_file_in_editor")
-            .SetDescription(
-                "Given a file path, open it inside the editor for editing.")
-            .AddRequiredParam("filepath", "the path of the file on the disk.",
-                              "string")
-            .SetCallback(OpenFileInEditor)
-            .Build());
-
     cli->GetFunctionTable().Add(
         FunctionBuilder("Write_file_content_to_disk_at_a_given_path")
             .SetDescription(
@@ -392,7 +387,7 @@ int main(int argc, char** argv) {
 
   assistant::Process::EnableExecLog(false);
 
-  while (true) {
+  while (false) {
     if (cli->IsRunning()) {
       if (args.print_to_stdout) {
         std::cout << "Server: " << cli->GetUrl() << " is running!" << std::endl;

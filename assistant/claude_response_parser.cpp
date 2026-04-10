@@ -29,10 +29,19 @@ void ResponseParser::Parse(const std::string& text,
           case Event::message_start:
           case Event::ping:
             break;
-          case Event::message_delta:
-            cb(std::move(ParseResult{.is_done = false,
-                                     .usage = GetUsage(event_message)}));
-            break;
+          case Event::message_delta: {
+            auto stop_reason = GetStopReason(event_message);
+            bool is_done{false};
+            if (stop_reason.has_value() &&
+                stop_reason.value() == StopReason::max_tokens) {
+              is_done = true;
+            }
+            cb(std::move(ParseResult{
+                .is_done = is_done,
+                .stop_reason = GetStopReason(event_message),
+                .usage = GetUsage(event_message),
+            }));
+          } break;
           case Event::message_stop:
             cb(std::move(
                 ParseResult{.is_done = true,

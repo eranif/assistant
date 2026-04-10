@@ -15,7 +15,7 @@ std::optional<ModelCapabilities> OpenAIClient::GetModelCapabilities(
   return flags;
 }
 
-void OpenAIClient::ProcessChatRquest(
+void OpenAIClient::ProcessChatRequest(
     std::shared_ptr<ChatRequest> chat_request) {
   // /v1/responses uses "input" instead of "messages"
   if (chat_request->request_.contains("messages")) {
@@ -32,7 +32,6 @@ void OpenAIClient::ProcessChatRquest(
   chat_request->request_.erase("keep_alive");
   chat_request->request_.erase("options");
   try {
-    OLOG(LogLevel::kDebug) << "==> " << std::setw(2) << chat_request->request_;
     m_responseParser = std::make_unique<OpenAIResponseParser>();
     std::string model_name = chat_request->request_["model"].get<std::string>();
 

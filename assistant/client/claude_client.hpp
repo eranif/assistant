@@ -30,7 +30,7 @@ class ClaudeClient : public OllamaClient {
       std::vector<std::pair<FunctionCall, FunctionResult>> result) override;
 
  protected:
-  void ProcessChatRquest(std::shared_ptr<ChatRequest> chat_request) override;
+  void ProcessChatRequest(std::shared_ptr<ChatRequest> chat_request) override;
   void ProcessChatRequestQueue() override;
 
   // Claude does not support system messages as normal messages with a role of

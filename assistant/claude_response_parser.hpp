@@ -180,6 +180,7 @@ struct ParseResult {
           StopReason::max_tokens) {
         OLOG(LogLevel::kWarning)
             << "We exceeded the requested max_tokens or the model's maximum";
+        return Reason::kMaxTokensReached;
       }
       return Reason::kDone;
     } else {

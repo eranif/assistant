@@ -152,11 +152,9 @@ bool OllamaClient::IsRunning() {
   }
 }
 
-void OllamaClient::ProcessChatRquest(
+void OllamaClient::ProcessChatRequest(
     std::shared_ptr<ChatRequest> chat_request) {
   try {
-    OLOG(LogLevel::kDebug) << "==> " << chat_request->request_;
-
     std::string model_name = chat_request->request_["model"].get<std::string>();
 
     // Prepare chat user data.
@@ -203,7 +201,7 @@ void OllamaClient::ProcessChatRequestQueue() {
     if (m_interrupt.load()) {
       break;
     }
-    ProcessChatRquest(m_queue.pop_front_and_return());
+    ProcessChatRequest(m_queue.pop_front_and_return());
   }
 }
 

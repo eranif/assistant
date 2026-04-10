@@ -70,6 +70,7 @@
 
 #include "assistant/common/base64.hpp"
 #include "assistant/helpers.hpp"
+#include "logger.hpp"
 
 // Namespace types and classes
 
@@ -124,7 +125,7 @@ class image {
     this->base64_sequence = base64_sequence;
     this->valid = valid;
   }
-  ~image(){};
+  ~image() {};
 
   static image from_file(const std::string& filepath) {
     bool valid = true;
@@ -176,7 +177,7 @@ class images : public std::vector<std::string> {
       this->push_back(value);
     }
   }
-  ~images(){};
+  ~images() {};
   std::vector<std::string> to_strings() {
     std::vector<std::string> strings;
     for (auto it = this->begin(); it != this->end(); ++it)
@@ -242,7 +243,7 @@ class messages : public std::vector<message> {
       this->push_back(value);
     }
   }
-  ~messages(){};
+  ~messages() {};
   const std::vector<std::string> to_strings() const {
     std::vector<std::string> strings;
     for (auto it = this->begin(); it != this->end(); ++it)
@@ -308,7 +309,7 @@ class request : public json {
   request(message_type type) : request() { this->type = type; }
 
   request() : json() {}
-  ~request(){};
+  ~request() {};
 
   static assistant::request from_embedding(
       const std::string& model, const std::string& input,
@@ -352,7 +353,8 @@ class response {
                  json_data["choices"].is_array() &&
                  !json_data["choices"].empty()) {
         // OpenAI format (streaming): {"choices":[{"delta":{"content":"text"}}]}
-        // OpenAI format (non-streaming): {"choices":[{"message":{"content":"text"}}]}
+        // OpenAI format (non-streaming):
+        // {"choices":[{"message":{"content":"text"}}]}
         const auto& choice = json_data["choices"][0];
         if (choice.contains("delta") && choice["delta"].is_object() &&
             choice["delta"].contains("content")) {
@@ -389,7 +391,7 @@ class response {
     json_string = "";
     valid = false;
   }
-  ~response(){};
+  ~response() {};
 
   bool is_valid() const { return valid; };
 
@@ -532,7 +534,7 @@ class ITransport {
       case assistant::EndpointKind::anthropic:
         return "/v1/messages";
       case assistant::EndpointKind::openai:
-        return "/v1/responses";
+        return "/v1/chat";
       default:
       case assistant::EndpointKind::ollama:
         return "/api/chat";
@@ -780,6 +782,9 @@ class ClientImpl : public ITransport {
       return true;
     };
 
+    OLOG_TRACE() << "Sending request to: " << GetChatPath();
+    OLOG_TRACE() << "Request string: " << request_string;
+
     if (auto res = this->cli->Post(GetChatPath(), headers_, request_string,
                                    kApplicationJson, stream_callback)) {
       if (res.value().status >= 400) {
@@ -821,6 +826,8 @@ class ClientImpl : public ITransport {
       return on_receive_token(message, user_data);
     };
 
+    OLOG_TRACE() << "Sending request to: " << GetChatPath();
+    OLOG_TRACE() << "Request string: " << request_string;
     if (auto res = this->cli->Post(GetChatPath(), headers_, request_string,
                                    kApplicationJson, stream_callback)) {
       if (res.value().status >= 400) {

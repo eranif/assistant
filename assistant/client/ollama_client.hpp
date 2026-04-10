@@ -63,7 +63,7 @@ class OllamaClient : public ClientBase {
   ///===---------------------------------------
 
  protected:
-  virtual void ProcessChatRquest(std::shared_ptr<ChatRequest> chat_request);
+  virtual void ProcessChatRequest(std::shared_ptr<ChatRequest> chat_request);
   virtual void ProcessChatRequestQueue();
   void SetClientForInterrupt(ITransport* c) {
     std::scoped_lock lk{m_client_impl_ptr_mutex};

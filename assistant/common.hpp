@@ -83,6 +83,8 @@ enum class Reason {
   kToolDenied,
   /// The model was allowed to run a tool
   kToolAllowed,
+  /// Max tokens limit reached
+  kMaxTokensReached,
 };
 
 enum class ModelCapabilities {

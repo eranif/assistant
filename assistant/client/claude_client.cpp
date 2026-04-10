@@ -113,10 +113,9 @@ void ClaudeClient::CreateAndPushChatRequest(
   m_queue.push_back(std::make_shared<ChatRequest>(ctx));
 }
 
-void ClaudeClient::ProcessChatRquest(
+void ClaudeClient::ProcessChatRequest(
     std::shared_ptr<ChatRequest> chat_request) {
   try {
-    OLOG(LogLevel::kDebug) << "==> " << std::setw(2) << chat_request->request_;
     m_responseParser->Reset();
     std::string model_name = chat_request->request_["model"].get<std::string>();
 
