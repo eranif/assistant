@@ -207,9 +207,14 @@ ParseResult ConfigBuilder::FromContent(const std::string& content,
           endpoint->active_ = endpoint_json["active"].get<bool>();
         }
 
-        if (endpoint_json.contains("max_tokens") &&
-            endpoint_json["max_tokens"].is_number_unsigned()) {
-          endpoint->max_tokens_ = endpoint_json["max_tokens"].get<size_t>();
+        static const std::array<std::string, 3> max_token_field_name{
+            "max_tokens", "max_output_tokens", "max_completion_tokens"};
+        for (const auto& field_name : max_token_field_name) {
+          if (endpoint_json.contains(field_name) &&
+              endpoint_json[field_name].is_number_unsigned()) {
+            endpoint->max_tokens_ = endpoint_json[field_name].get<size_t>();
+            break;
+          }
         }
 
         // Make sure to parse the context_size

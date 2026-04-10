@@ -168,6 +168,7 @@ void OllamaClient::ProcessChatRequest(
     {
       auto client = CreateClient();
       SetInterruptClientLocker locker{this, client.get()};
+      OLOG_DEBUG() << "Sending:" << chat_request->request_.dump(1);
       client->chat(chat_request->request_, &OllamaClient::OnResponse,
                    static_cast<void*>(&user_data));
     }
@@ -209,9 +210,6 @@ void OllamaClient::CreateAndPushChatRequest(
     std::optional<assistant::message> msg, OnResponseCallback cb,
     std::string model, ChatOptions chat_options,
     std::shared_ptr<ChatRequestFinaliser> finaliser) {
-  assistant::options opts;
-  opts["num_ctx"] = GetContextSize();
-
   assistant::messages history;
   if (IsFlagSet(chat_options, ChatOptions::kNoHistory)) {
     if (msg.has_value()) {
@@ -242,9 +240,9 @@ void OllamaClient::CreateAndPushChatRequest(
   if (!keep_alive_duration.empty()) {
     req["keep_alive"] = keep_alive_duration;
   }
-  if (opts != nullptr) {
-    req["options"] = opts["options"];
-  }
+
+  req["options"]["num_ctx"] = GetContextSize();
+  req["options"]["num_predict"] = GetMaxTokens();
   ChatRequest ctx = {
       .callback_ = cb,
       .request_ = req,

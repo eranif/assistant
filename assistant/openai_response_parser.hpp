@@ -41,11 +41,15 @@ class OpenAIResponseParser {
     inline bool HasError() const { return error_message.has_value(); }
     inline bool IsToolCall() const { return is_tool_call; }
     inline bool IsThinking() const { return false; }
+    inline bool IsMaxTokensReached() const {
+      return finish_reason.value_or("") == "length";
+    }
     inline const std::string& GetToolName() const { return tool_name; }
     inline const std::string& GeToolCallId() const { return tool_call_id; }
     inline json GetToolJson() const { return tool_args; }
     inline std::optional<Usage> GetUsage() const { return usage; }
     inline Reason GetReason() const {
+      if (IsMaxTokensReached()) return Reason::kMaxTokensReached;
       if (is_done) return Reason::kDone;
       if (error_message.has_value()) return Reason::kFatalError;
       if (!content.empty()) return Reason::kPartialResult;

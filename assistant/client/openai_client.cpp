@@ -22,6 +22,7 @@ void OpenAIClient::ProcessChatRequest(
     chat_request->request_["input"] = chat_request->request_["messages"];
     chat_request->request_.erase("messages");
   }
+  chat_request->request_["max_output_tokens"] = GetMaxTokens();
   // Re-serialize tools in /v1/responses format (flat, not nested under
   // "function")
   if (!m_function_table.IsEmpty() && chat_request->request_.contains("tools")) {
@@ -142,7 +143,7 @@ bool OpenAIClient::HandleResponse(const std::string& resp,
     return cb_result;
   } catch (const std::exception& e) {
     OLOG(LogLevel::kWarning)
-        << "ClaudeClient::HandleResponse: got an exception. " << e.what();
+        << "OpenAIClient::HandleResponse: got an exception. " << e.what();
     req->callback_(e.what(), Reason::kFatalError, false);
     m_responseParser = std::make_unique<OpenAIResponseParser>();
     return false;  // close the current session.
