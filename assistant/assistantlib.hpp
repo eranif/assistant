@@ -833,9 +833,11 @@ class ClientImpl : public ITransport {
       if (res.value().status >= 400) {
         // error code.
         if (assistant::use_exceptions) {
-          throw assistant::exception("Server responded with an error. " +
-                                     res.value().reason + " (" +
-                                     std::to_string(res.value().status) + ")");
+          std::stringstream errmsg;
+          errmsg << "Server responded with an error. " << res.value().reason
+                 << " (" << std::to_string(res.value().status) << ").\n"
+                 << res.value().body;
+          throw assistant::exception(errmsg.str());
         }
         return false;
       }
