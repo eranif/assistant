@@ -42,10 +42,10 @@ TEST(EnvExpanderTest, Expand_NonExistentVariable) {
   EnvExpander expander;
   EnvMap env_map = {{"HOME", "/home/user"}};
 
-  std::string input = "${NONEXISTENT} and $ALSO_NONEXISTENT";
+  std::string input = "${NONEXISTENT} and $ALSO_NONEXISTENT. $HOME";
   std::string result = expander.Expand(input, env_map);
 
-  EXPECT_EQ(result, "${NONEXISTENT} and $ALSO_NONEXISTENT");
+  EXPECT_EQ(result, "${NONEXISTENT} and $ALSO_NONEXISTENT. /home/user");
 }
 
 // Test $ at end of string

@@ -89,7 +89,8 @@ ParseResult ConfigBuilder::FromContent(const std::string& content,
       std::ostringstream errmsg;
       errmsg << "Failed to resolve environment variables from input json. "
              << result.GetErrorMessage();
-      return ParseResult{.errmsg_ = errmsg.str()};
+      // Log an error and continue
+      OLOG_WARN() << errmsg.str();
     }
     parsed_data = result.GetJson();
     if (parsed_data.contains("mcp_servers")) {
