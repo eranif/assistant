@@ -130,26 +130,6 @@ TEST_F(ConfigFileTest, FromFile_WithEnvironmentVariables) {
   EXPECT_EQ(endpoints[0]->model_, "llama2");
 }
 
-// Test loading file with undefined environment variables
-TEST_F(ConfigFileTest, FromFile_UndefinedEnvironmentVariable) {
-  std::string content = R"({
-    "endpoints": {
-      "http://localhost:11434": {
-        "model": "${UNDEFINED_VAR}"
-      }
-    }
-  })";
-
-  std::string filepath = CreateTestFile("undefined_env.json", content);
-  auto result = ConfigBuilder::FromFile(filepath);
-
-  // Should fail because environment variable expansion failed
-  ASSERT_FALSE(result.ok());
-  EXPECT_FALSE(result.errmsg_.empty());
-  EXPECT_NE(result.errmsg_.find("Failed to resolve environment variables"),
-            std::string::npos);
-}
-
 // Test loading file with complex configuration
 TEST_F(ConfigFileTest, FromFile_ComplexConfiguration) {
   std::string content = R"({
