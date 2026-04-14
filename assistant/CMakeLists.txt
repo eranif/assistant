@@ -10,6 +10,8 @@ add_library(
   ${CMAKE_CURRENT_LIST_DIR}/client/openai_client.hpp
   ${CMAKE_CURRENT_LIST_DIR}/client/claude_client.cpp
   ${CMAKE_CURRENT_LIST_DIR}/client/claude_client.hpp
+  ${CMAKE_CURRENT_LIST_DIR}/client/openai_messages_client.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/client/openai_messages_client.hpp
   ${CMAKE_CURRENT_LIST_DIR}/client/client_base.cpp
   ${CMAKE_CURRENT_LIST_DIR}/client/client_base.hpp
   ${CMAKE_CURRENT_LIST_DIR}/mcp.cpp

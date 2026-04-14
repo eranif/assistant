@@ -33,6 +33,7 @@ endfunction ()
 # Add all test executables
 add_gtest(test_claude_response_parser test_claude_response_parser.cpp)
 add_gtest(test_openai_client test_openai_client.cpp)
+add_gtest(test_openai_messages_client test_openai_messages_client.cpp)
 add_gtest(test_openai_response_parser test_openai_response_parser.cpp)
 add_gtest(test_openai_response_format test_openai_response_format.cpp)
 add_gtest(test_config_file test_config_file.cpp)

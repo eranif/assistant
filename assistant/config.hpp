@@ -96,6 +96,13 @@ struct OpenAIEndpoint : public Endpoint {
   }
 };
 
+struct OpenAIMessagesEndpoint : public Endpoint {
+  OpenAIMessagesEndpoint() {
+    url_ = kEndpointOpenAI;
+    type_ = EndpointKind::openai_messages;
+  }
+};
+
 struct OllamaLocalEndpoint : public Endpoint {
   OllamaLocalEndpoint() {
     url_ = kEndpointOllamaCloud;

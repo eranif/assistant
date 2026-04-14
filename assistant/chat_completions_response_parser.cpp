@@ -97,6 +97,7 @@ std::optional<json> ResponseParser::TryJson(std::string_view text) {
 
 ParseResult ResponseParser::ProcessChunk(const json& data) {
   ParseResult result;
+  OLOG_TRACE() << "Processing chunk:" << data.dump();
 
   try {
     // Extract choices array
@@ -161,8 +162,9 @@ ParseResult ResponseParser::ProcessChunk(const json& data) {
             // For arguments, handle both streaming (partial_json) and complete
             if (func.contains("arguments")) {
               if (func["arguments"].is_string()) {
-                // Complete arguments in this chunk
-                tc.arguments_json = func["arguments"].get<std::string>();
+                // Streaming arguments (accumulate)
+                // In streaming mode, each chunk contains a partial string
+                tc.arguments_json += func["arguments"].get<std::string>();
               } else if (func.contains("partial_json") &&
                          func["partial_json"].is_string()) {
                 // Streaming partial JSON (accumulate)

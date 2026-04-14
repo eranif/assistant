@@ -22,7 +22,7 @@ The Assistant Library is designed to abstract away provider-specific API details
 ### Supported Providers
 
 - **Anthropic Claude** - Cloud-based API
-- **OpenAI** - GPT models via API
+- **OpenAI** - GPT models via API (Respones & Messages endpoints)
 - **Ollama** - Local model inference
 
 ### Design Philosophy

@@ -24,7 +24,7 @@ struct ToolCall {
   std::string type;  // "function"
   std::string name;
   std::string arguments_json;
-  
+
   inline void Reset() {
     id.clear();
     type.clear();
@@ -52,7 +52,7 @@ struct ParseResult {
   inline bool IsToolCall() const { return !tool_calls.empty(); }
   inline bool HasContent() const { return !content.empty(); }
   inline const std::optional<Usage> GetUsage() const { return usage; }
-  
+
   inline Reason GetReason() const {
     if (IsDone()) {
       if (finish_reason.value_or(FinishReason::stop) == FinishReason::length) {
@@ -69,7 +69,7 @@ struct ParseResult {
 inline std::ostream& operator<<(std::ostream& os, const ParseResult& res) {
   os << "ParseResult{.is_done=" << res.is_done
      << ", .need_more_data=" << res.need_more_data
-     << ", .content=" << res.content 
+     << ", .content=" << res.content
      << ", .tool_calls.size()=" << res.tool_calls.size() << "}";
   return os;
 }
@@ -79,9 +79,9 @@ class ResponseParser {
  public:
   ResponseParser() = default;
   ~ResponseParser() = default;
-  
+
   void Parse(const std::string& text, std::function<void(ParseResult)> cb);
-  
+
   inline void Reset() {
     m_content.clear();
     m_tool_calls.clear();
@@ -93,9 +93,9 @@ class ResponseParser {
   void AppendText(const std::string& text);
   std::optional<std::string> PopLine();
   std::optional<json> TryJson(std::string_view text);
-  
+
   ParseResult ProcessChunk(const json& data);
-  
+
   std::string m_content;
   std::map<int, ToolCall> m_tool_calls;  // index -> ToolCall (for accumulating streaming tool calls)
 };

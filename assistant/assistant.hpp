@@ -4,6 +4,7 @@
 #include "assistant/client/claude_client.hpp"
 #include "assistant/client/ollama_client.hpp"
 #include "assistant/client/openai_client.hpp"
+#include "assistant/client/openai_messages_client.hpp"
 #include "assistant/config.hpp"
 #include "assistant/function.hpp"
 #include "assistant/tool.hpp"
@@ -32,6 +33,9 @@ inline std::optional<std::shared_ptr<ClientBase>> MakeClient(
         break;
       case EndpointKind::openai:
         client = std::make_shared<OpenAIClient>(*endpoint);
+        break;
+      case EndpointKind::openai_messages:
+        client = std::make_shared<OpenAIMessagesClient>(*endpoint);
         break;
     }
   } catch (const std::exception& e) {

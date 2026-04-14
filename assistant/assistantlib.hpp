@@ -82,6 +82,7 @@ enum class EndpointKind {
   ollama,
   anthropic,
   openai,
+  openai_messages,
 };
 
 enum class TransportType {
@@ -465,6 +466,11 @@ class ITransport {
           models.push_back(model["id"]);
         }
       } break;
+      case assistant::EndpointKind::openai_messages: {
+        for (auto& model : json_response["data"]) {
+          models.push_back(model["id"]);
+        }
+      } break;
       case assistant::EndpointKind::anthropic: {
         for (auto& model : json_response["data"]) {
           models.push_back(model["id"]);
@@ -524,6 +530,8 @@ class ITransport {
         return "/v1/models";
       case assistant::EndpointKind::openai:
         return "/v1/models";
+      case assistant::EndpointKind::openai_messages:
+        return "/v1/models";
       default:
       case assistant::EndpointKind::ollama:
         return "/api/tags";
@@ -535,6 +543,8 @@ class ITransport {
         return "/v1/messages";
       case assistant::EndpointKind::openai:
         return "/v1/responses";
+      case assistant::EndpointKind::openai_messages:
+        return "/v1/chat/completions";
       default:
       case assistant::EndpointKind::ollama:
         return "/api/chat";
@@ -732,10 +742,8 @@ class ClientImpl : public ITransport {
     std::string request_string = request.dump();
     if (assistant::log_requests) std::cout << request_string << std::endl;
 
-    std::shared_ptr<std::string> partial_responses =
-        std::make_shared<std::string>();
-
-    auto stream_callback = [on_receive_token, user_data, partial_responses](
+    std::string partial_messages;
+    auto stream_callback = [on_receive_token, user_data, &partial_messages](
                                const char* data, size_t data_length) -> bool {
       std::string message(data, data_length);
 
@@ -743,16 +751,16 @@ class ClientImpl : public ITransport {
         std::cout << message << std::endl;
       }
 
-      partial_responses->append(message);
+      partial_messages.append(message);
 
-      auto result = assistant::try_read_jsons_from_string(*partial_responses);
+      auto result = assistant::try_read_jsons_from_string(partial_messages);
       if (result.first.empty()) {
         // no complete jsons
         return true;
       }
 
       // "second" holds the remainder
-      *partial_responses = result.second;
+      partial_messages.swap(result.second);
 
       // Process the jsons
       for (const auto& j : result.first) {
@@ -789,10 +797,14 @@ class ClientImpl : public ITransport {
                                    kApplicationJson, stream_callback)) {
       if (res.value().status >= 400) {
         // error code.
+        std::stringstream errmsg;
+        errmsg << "Server responded with an error. " << res.value().reason
+               << " (" << std::to_string(res.value().status) << ").";
+        errmsg << "\nResponse body:\n" << res.value().body;
+        errmsg << "\nPartial buffer:\n" << partial_messages;
+        OLOG(LogLevel::kError) << errmsg.str();
         if (assistant::use_exceptions) {
-          throw assistant::exception("Server responded with an error. " +
-                                     res.value().reason + " (" +
-                                     std::to_string(res.value().status) + ")");
+          throw assistant::exception(errmsg.str());
         }
         return false;
       }
@@ -820,9 +832,11 @@ class ClientImpl : public ITransport {
     std::string request_string = request.dump();
     if (assistant::log_requests) std::cout << request_string << std::endl;
 
-    auto stream_callback = [on_receive_token, user_data](
+    std::string accumlated_buffer;
+    auto stream_callback = [&accumlated_buffer, on_receive_token, user_data](
                                const char* data, size_t data_length) -> bool {
       std::string message(data, data_length);
+      accumlated_buffer.append(message);
       return on_receive_token(message, user_data);
     };
 
@@ -832,11 +846,13 @@ class ClientImpl : public ITransport {
                                    kApplicationJson, stream_callback)) {
       if (res.value().status >= 400) {
         // error code.
+        std::stringstream errmsg;
+        errmsg << "Server responded with an error. " << res.value().reason
+               << " (" << std::to_string(res.value().status) << ").";
+        errmsg << "\nResponse body:\n" << res.value().body;
+        errmsg << "\nPayload:\n" << accumlated_buffer;
+        OLOG(LogLevel::kError) << errmsg.str();
         if (assistant::use_exceptions) {
-          std::stringstream errmsg;
-          errmsg << "Server responded with an error. " << res.value().reason
-                 << " (" << std::to_string(res.value().status) << ").\n"
-                 << res.value().body;
           throw assistant::exception(errmsg.str());
         }
         return false;
@@ -943,6 +959,10 @@ class ClientImpl : public ITransport {
         return false;
       } break;
       case assistant::EndpointKind::openai: {
+        auto res = cli->Get("/", headers_);
+        return res;
+      } break;
+      case assistant::EndpointKind::openai_messages: {
         auto res = cli->Get("/", headers_);
         return res;
       } break;

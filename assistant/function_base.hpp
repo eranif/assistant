@@ -91,6 +91,7 @@ class FunctionBase {
   json ToJSON(EndpointKind kind) const {
     switch (kind) {
       case EndpointKind::ollama:
+      case EndpointKind::openai_messages:
         return ToOllamaJson();
       case EndpointKind::openai:
         return ToOpenAIJson();
