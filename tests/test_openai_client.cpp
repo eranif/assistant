@@ -101,17 +101,6 @@ TEST(OpenAIClientTest, ContextSizeConfiguration) {
   EXPECT_EQ(client.GetContextSize(), 8192);
 }
 
-// Test history size
-TEST(OpenAIClientTest, HistorySize) {
-  OpenAIClient client;
-
-  client.SetHistorySize(100);
-  EXPECT_EQ(client.GetHistorySize(), 100);
-
-  client.SetHistorySize(500);
-  EXPECT_EQ(client.GetHistorySize(), 500);
-}
-
 // Test system messages
 TEST(OpenAIClientTest, SystemMessages) {
   OpenAIClient client;

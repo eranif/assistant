@@ -92,7 +92,6 @@ bool ClientBase::OnResponse(const assistant::response& resp, void* user_data) {
 
 void ClientBase::AddMessage(std::optional<assistant::message> msg) {
   m_history.AddMessage(msg);
-  m_history.ShrinkToFit(m_windows_size);
 }
 
 assistant::messages ClientBase::GetMessages() const {
@@ -123,7 +122,6 @@ void ClientBase::ApplyConfig(const assistant::Config* conf) {
   }
   SetEndpoint(*endpoint);
   SetTransportType(endpoint->transport_);
-  m_windows_size.store(conf->GetHistorySize());
   m_function_table.ReloadMCPServers(conf);
   m_server_timeout.set_value(conf->GetServerTimeoutSettings());
   m_keep_alive.set_value(conf->GetKeepAlive());

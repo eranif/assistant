@@ -339,11 +339,6 @@ class ClientBase {
   virtual void Interrupt() { m_interrupt.store(true); }
   inline bool IsInterrupted() const { return m_interrupt.load(); }
 
-  /// Set the number of messages to keep when chatting with the model. The
-  /// implementation uses a FIFO.
-  inline void SetHistorySize(size_t count) { m_windows_size.store(count); }
-  inline size_t GetHistorySize() const { return m_windows_size.load(); }
-
   const FunctionTable& GetFunctionTable() const { return m_function_table; }
   FunctionTable& GetFunctionTable() { return m_function_table; }
 
@@ -468,7 +463,6 @@ class ClientBase {
   FunctionTable m_function_table;
   ChatRequestQueue m_queue;
   Locker<Endpoint> m_endpoint;
-  std::atomic_size_t m_windows_size{500};
   /// Messages that were sent to the AI, will be placed here
   History m_history;
   Locker<assistant::messages> m_system_messages;

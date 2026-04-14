@@ -286,10 +286,6 @@ ParseResult ConfigBuilder::FromContent(const std::string& content,
       OLOG(LogLevel::kInfo) << *endpoint;
     }
 
-    // Global setup
-    config.m_history_size =
-        GetValueFromJsonWithDefault<size_t>(parsed_data, "history_size", 50);
-
     auto log_level = GetValueFromJson<std::string>(parsed_data, "log_level");
     if (log_level.has_value()) {
       config.m_logLevel = Logger::FromString(log_level.value());

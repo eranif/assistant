@@ -444,7 +444,6 @@ TEST(ConfigBuilderTest, FromContent_GlobalOptions) {
   ASSERT_TRUE(result.ok());
   auto config = result.config_.value();
 
-  EXPECT_EQ(config.GetHistorySize(), 100);
   EXPECT_EQ(config.GetLogLevel(), LogLevel::kDebug);
   EXPECT_EQ(config.GetKeepAlive(), "10m");
   EXPECT_FALSE(config.IsStream());
@@ -464,7 +463,6 @@ TEST(ConfigBuilderTest, FromContent_DefaultHistorySize) {
 
   ASSERT_TRUE(result.ok());
   auto config = result.config_.value();
-  EXPECT_EQ(config.GetHistorySize(), 50);  // default value
 }
 
 // Test multiple endpoints with exactly one active
@@ -645,7 +643,6 @@ TEST(ServerTimeoutTest, DefaultValues) {
 TEST(ConfigTest, DefaultValues) {
   Config config;
 
-  EXPECT_EQ(config.GetHistorySize(), 50);
   EXPECT_EQ(config.GetLogLevel(), LogLevel::kInfo);
   EXPECT_EQ(config.GetKeepAlive(), "5m");
   EXPECT_TRUE(config.IsStream());
@@ -799,7 +796,6 @@ TEST(ConfigBuilderTest, FromContent_ComplexConfiguration) {
   EXPECT_EQ(timeout.connect_ms_, 3000);
 
   // Verify global options
-  EXPECT_EQ(config.GetHistorySize(), 75);
   EXPECT_EQ(config.GetLogLevel(), LogLevel::kInfo);
   EXPECT_EQ(config.GetKeepAlive(), "8m");
   EXPECT_TRUE(config.IsStream());

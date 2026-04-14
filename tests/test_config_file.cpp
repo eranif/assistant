@@ -249,7 +249,6 @@ TEST_F(ConfigFileTest, FromFile_ComplexConfiguration) {
   EXPECT_EQ(timeout.connect_ms_, 5000);
 
   // Verify global settings
-  EXPECT_EQ(config.GetHistorySize(), 150);
   EXPECT_EQ(config.GetLogLevel(), LogLevel::kDebug);
   EXPECT_EQ(config.GetKeepAlive(), "15m");
   EXPECT_TRUE(config.IsStream());
@@ -272,7 +271,6 @@ TEST_F(ConfigFileTest, FromFile_MinimalConfiguration) {
   auto config = result.config_.value();
 
   // Should use default values
-  EXPECT_EQ(config.GetHistorySize(), 50);
   EXPECT_EQ(config.GetLogLevel(), LogLevel::kInfo);
   EXPECT_EQ(config.GetKeepAlive(), "5m");
   EXPECT_TRUE(config.IsStream());
@@ -413,18 +411,6 @@ TEST_F(ConfigFileTest, FromFile_WithUnicode) {
   const auto& endpoints = config.GetEndpoints();
   ASSERT_EQ(endpoints.size(), 1);
   EXPECT_EQ(endpoints[0]->model_, "模型测试_тест_🚀");
-}
-
-// Test SetHistorySize method
-TEST(ConfigTest, SetHistorySize) {
-  Config config;
-  EXPECT_EQ(config.GetHistorySize(), 50);
-
-  config.SetHistorySize(100);
-  EXPECT_EQ(config.GetHistorySize(), 100);
-
-  config.SetHistorySize(0);
-  EXPECT_EQ(config.GetHistorySize(), 0);
 }
 
 // Test multiple calls to GetEndpoint return the same pointer

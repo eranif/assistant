@@ -169,9 +169,6 @@ class Config {
   inline const std::vector<MCPServerConfig>& GetServers() const {
     return m_servers;
   }
-
-  void SetHistorySize(size_t history_size) { m_history_size = history_size; }
-  size_t GetHistorySize() const { return m_history_size; }
   LogLevel GetLogLevel() const { return m_logLevel; }
 
   /// Return the active endpoint. This function may return nullptr is no
@@ -204,7 +201,6 @@ class Config {
 
  private:
   std::vector<MCPServerConfig> m_servers;
-  size_t m_history_size{50};
   LogLevel m_logLevel{LogLevel::kInfo};
   std::string m_keep_alive{"5m"};
   bool m_stream{true};
