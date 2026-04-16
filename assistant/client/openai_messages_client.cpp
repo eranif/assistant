@@ -32,6 +32,7 @@ void OpenAIMessagesClient::ProcessChatRequest(
   // Remove parameters unsupported by /v1/chat/completions
   chat_request->request_.erase("keep_alive");
   chat_request->request_.erase("options");
+  chat_request->request_["thinking"] = {{"type", "disabled"}};
 
   try {
     m_responseParser = std::make_unique<chat_completions::ResponseParser>();
@@ -159,7 +160,9 @@ bool OpenAIMessagesClient::HandleResponse(const std::string& resp,
             << "User cancelled response processing (callback returned false).";
       }
       OLOG(LogLevel::kInfo) << "<== " << msg;
-      AddMessage(std::move(msg));
+      if (!chat_context->current_response.empty()) {
+        AddMessage(std::move(msg));
+      }
 
       if (!cb_result) {
         return false;
