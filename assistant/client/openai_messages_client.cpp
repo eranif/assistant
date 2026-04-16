@@ -59,7 +59,8 @@ void OpenAIMessagesClient::ProcessChatRequest(
     }
 
     if (!chat_request->func_calls_.empty()) {
-      chat_request->InvokeTools(this, chat_request->finaliser_);
+      InvokeTools(chat_request, chat_request->finaliser_);
+      chat_request->func_calls_.clear();
     }
   } catch (std::exception& e) {
     chat_request->callback_(e.what(), Reason::kFatalError, false);
@@ -201,4 +202,63 @@ void OpenAIMessagesClient::AddToolsResult(
   }
 }
 
+void OpenAIMessagesClient::InvokeTools(
+    std::shared_ptr<ChatRequest> request,
+    std::shared_ptr<ChatRequestFinaliser> finaliser) {
+  if (request->func_calls_.empty()) {
+    return;
+  }
+
+  for (auto [msg, calls] : request->func_calls_) {
+    if (m_interrupt.load()) {
+      return;
+    }
+    AddMessage(std::move(msg));
+    for (auto func_call : calls) {
+      if (IsInterrupted()) {
+        OLOG(LogLevel::kWarning) << "User interrupted.";
+        return;
+      }
+      std::stringstream ss;
+      ss << "Invoking tool: '" << func_call.name << "', args:\n";
+      auto args = func_call.args.items();
+      for (const auto& [name, value] : args) {
+        ss << std::setw(2) << "  " << name << " => " << value << "\n";
+      }
+
+      request->callback_(ss.str(), Reason::kLogNotice, false);
+
+      FunctionResult result;
+
+      CanInvokeToolResult can_run_tool{.can_invoke = true};
+      auto res = GetFunctionTable().CanRunTool(func_call.name, func_call.args);
+      if (res.has_value()) {
+        can_run_tool = res.value();
+      } else if (m_on_invoke_tool_cb) {
+        // No function level human-in-the-loop method was registered,
+        // try the global method (client level)
+        can_run_tool = m_on_invoke_tool_cb(func_call.name, func_call.args);
+      }
+
+      if (!can_run_tool.IsAllowed()) {
+        result.isError = true;
+        result.text = can_run_tool.reason;
+        request->callback_(ss.str(), Reason::kToolDenied, false);
+
+      } else {
+        ss = {};
+        ss << "Permission to run tool: " << func_call.name << " is granted.";
+        request->callback_(ss.str(), Reason::kToolAllowed, false);
+        result = GetFunctionTable().Call(func_call);
+
+        ss = {};
+        ss << "Tool output: " << result;
+        request->callback_(ss.str(), Reason::kLogNotice, false);
+      }
+      AddToolsResult({{func_call, result}});
+    }
+  }
+  CreateAndPushChatRequest(std::nullopt, request->callback_, request->model_,
+                           ChatOptions::kDefault, finaliser);
+}
 }  // namespace assistant

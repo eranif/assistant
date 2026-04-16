@@ -1,7 +1,7 @@
 #pragma once
 
-#include "assistant/client/ollama_client.hpp"
 #include "assistant/chat_completions_response_parser.hpp"
+#include "assistant/client/ollama_client.hpp"
 
 namespace assistant {
 
@@ -26,8 +26,11 @@ class OpenAIMessagesClient : public OllamaClient {
 
  protected:
   static bool OnRawResponse(const std::string& resp, void* user_data);
+  void InvokeTools(std::shared_ptr<ChatRequest> request,
+                   std::shared_ptr<ChatRequestFinaliser> finaliser);
   void ProcessChatRequest(std::shared_ptr<ChatRequest> chat_request) override;
-  virtual bool HandleResponse(const std::string& resp, ChatContext* chat_context);
+  virtual bool HandleResponse(const std::string& resp,
+                              ChatContext* chat_context);
 
   std::unique_ptr<chat_completions::ResponseParser> m_responseParser;
 };
