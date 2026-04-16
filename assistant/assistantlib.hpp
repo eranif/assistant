@@ -82,7 +82,7 @@ enum class EndpointKind {
   ollama,
   anthropic,
   openai,
-  openai_messages,
+  moonshotai,
 };
 
 enum class TransportType {
@@ -466,7 +466,7 @@ class ITransport {
           models.push_back(model["id"]);
         }
       } break;
-      case assistant::EndpointKind::openai_messages: {
+      case assistant::EndpointKind::moonshotai: {
         for (auto& model : json_response["data"]) {
           models.push_back(model["id"]);
         }
@@ -530,7 +530,7 @@ class ITransport {
         return "/v1/models";
       case assistant::EndpointKind::openai:
         return "/v1/models";
-      case assistant::EndpointKind::openai_messages:
+      case assistant::EndpointKind::moonshotai:
         return "/v1/models";
       default:
       case assistant::EndpointKind::ollama:
@@ -543,7 +543,7 @@ class ITransport {
         return "/v1/messages";
       case assistant::EndpointKind::openai:
         return "/v1/responses";
-      case assistant::EndpointKind::openai_messages:
+      case assistant::EndpointKind::moonshotai:
         return "/v1/chat/completions";
       default:
       case assistant::EndpointKind::ollama:
@@ -962,7 +962,7 @@ class ClientImpl : public ITransport {
         auto res = cli->Get("/", headers_);
         return res;
       } break;
-      case assistant::EndpointKind::openai_messages: {
+      case assistant::EndpointKind::moonshotai: {
         auto res = cli->Get("/", headers_);
         return res;
       } break;

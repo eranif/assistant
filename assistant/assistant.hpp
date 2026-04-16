@@ -34,7 +34,7 @@ inline std::optional<std::shared_ptr<ClientBase>> MakeClient(
       case EndpointKind::openai:
         client = std::make_shared<OpenAIClient>(*endpoint);
         break;
-      case EndpointKind::openai_messages:
+      case EndpointKind::moonshotai:
         client = std::make_shared<OpenAIMessagesClient>(*endpoint);
         break;
     }

@@ -25,14 +25,18 @@ void OpenAIMessagesClient::ProcessChatRequest(
   // Tools are in standard OpenAI format for /v1/chat/completions
   // They should have the structure: {type: "function", function: {...}}
   if (!m_function_table.IsEmpty() && chat_request->request_.contains("tools")) {
-    chat_request->request_["tools"] = m_function_table.ToJSON(
-        EndpointKind::openai_messages, GetCachingPolicy());
+    chat_request->request_["tools"] =
+        m_function_table.ToJSON(EndpointKind::moonshotai, GetCachingPolicy());
   }
 
   // Remove parameters unsupported by /v1/chat/completions
   chat_request->request_.erase("keep_alive");
   chat_request->request_.erase("options");
-  chat_request->request_["thinking"] = {{"type", "disabled"}};
+
+  if (GetEndpointKind() == EndpointKind::moonshotai) {
+    // disable Thinking mode for MoonshotAI.
+    chat_request->request_["thinking"] = {{"type", "disabled"}};
+  }
 
   try {
     m_responseParser = std::make_unique<chat_completions::ResponseParser>();

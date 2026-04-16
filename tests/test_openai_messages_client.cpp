@@ -6,15 +6,15 @@
 using namespace assistant;
 
 TEST(OpenAIMessagesClient, EndpointConfiguration) {
-  OpenAIMessagesEndpoint endpoint;
+  MoonshotAIEndpoint endpoint;
 
   // Verify endpoint is configured for OpenAI messages API
-  EXPECT_EQ(endpoint.type_, EndpointKind::openai_messages);
+  EXPECT_EQ(endpoint.type_, EndpointKind::moonshotai);
   EXPECT_EQ(endpoint.url_, kEndpointOpenAI);
 }
 
 TEST(OpenAIMessagesClient, ClientCreation) {
-  OpenAIMessagesEndpoint endpoint;
+  MoonshotAIEndpoint endpoint;
   endpoint.headers_["Authorization"] = "Bearer test-key";
 
   OpenAIMessagesClient client(endpoint);
@@ -24,7 +24,7 @@ TEST(OpenAIMessagesClient, ClientCreation) {
 }
 
 TEST(OpenAIMessagesClient, ModelCapabilities) {
-  OpenAIMessagesEndpoint endpoint;
+  MoonshotAIEndpoint endpoint;
   OpenAIMessagesClient client(endpoint);
 
   auto caps = client.GetModelCapabilities("gpt-4o");

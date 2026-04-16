@@ -96,10 +96,10 @@ struct OpenAIEndpoint : public Endpoint {
   }
 };
 
-struct OpenAIMessagesEndpoint : public Endpoint {
-  OpenAIMessagesEndpoint() {
+struct MoonshotAIEndpoint : public Endpoint {
+  MoonshotAIEndpoint() {
     url_ = kEndpointOpenAI;
-    type_ = EndpointKind::openai_messages;
+    type_ = EndpointKind::moonshotai;
   }
 };
 

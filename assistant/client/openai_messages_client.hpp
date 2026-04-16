@@ -13,7 +13,7 @@ namespace assistant {
  */
 class OpenAIMessagesClient : public OllamaClient {
  public:
-  OpenAIMessagesClient(const Endpoint& ep = OpenAIMessagesEndpoint{});
+  OpenAIMessagesClient(const Endpoint& ep = MoonshotAIEndpoint{});
   ~OpenAIMessagesClient() override = default;
 
   std::optional<ModelCapabilities> GetModelCapabilities(
