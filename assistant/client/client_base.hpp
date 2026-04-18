@@ -42,8 +42,6 @@ struct ChatRequest {
   std::vector<
       std::pair<std::optional<assistant::message>, std::vector<FunctionCall>>>
       func_calls_;
-  void InvokeTools(ClientBase* client,
-                   std::shared_ptr<ChatRequestFinaliser> finaliser);
 };
 
 /// We pass this struct to provide context in the callback.
@@ -326,6 +324,8 @@ class ClientBase {
     m_on_invoke_tool_cb = std::move(cb);
   }
 
+  virtual void InvokeTools(std::shared_ptr<ChatRequest> request);
+
   virtual void ApplyConfig(const assistant::Config* conf);
   virtual void Startup() { m_interrupt.store(false); }
   virtual void Shutdown() {
@@ -517,6 +517,7 @@ class ClientBase {
   std::atomic_bool m_multi_tool_reply_as_array{false};
   Locker<CachePolicy> m_caching_policy{CachePolicy::kNone};
   Locker<TransportType> m_transport_type{TransportType::httplib};
+  std::vector<std::string> m_pendingMessages;
   friend struct ChatRequest;
 };
 }  // namespace assistant

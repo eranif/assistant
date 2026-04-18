@@ -355,13 +355,7 @@ int main(int argc, char** argv) {
             // Register a specific callback for this method to always allow
             // this will override the "CanRunTool" method set on the client
             // level.
-            .SetHumanInTheLoopCallabck(
-                [](const std::string& tool_name,
-                   assistant::json args) -> assistant::CanInvokeToolResult {
-                  std::cout << "\n✔ Permission to run tool: " << tool_name
-                            << " is ALWAYS granted." << std::endl;
-                  return assistant::CanInvokeToolResult{.can_invoke = true};
-                })
+            .SetHumanInTheLoopCallabck(CanRunTool)
             .Build());
     cli->GetFunctionTable().Add(
         FunctionBuilder("Create_new_file")

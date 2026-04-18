@@ -24,20 +24,6 @@ std::optional<ModelCapabilities> ClaudeClient::GetModelCapabilities(
   return flags;
 }
 
-void ClaudeClient::Chat(std::string msg, OnResponseCallback cb,
-                        ChatOptions chat_options) {
-  assistant::message json_message{"user", msg};
-  std::shared_ptr<ChatRequestFinaliser> finaliser{nullptr};
-  if (assistant::IsFlagSet(chat_options, ChatOptions::kNoHistory)) {
-    m_history.SwapToTempHistory();
-    finaliser = std::make_shared<ChatRequestFinaliser>(
-        [this]() { m_history.SwapToMainHistory(); });
-  }
-  CreateAndPushChatRequest(json_message, cb, GetModel(), chat_options,
-                           finaliser);
-  ProcessChatRequestQueue();
-}
-
 void ClaudeClient::CreateAndPushChatRequest(
     std::optional<assistant::message> msg, OnResponseCallback cb,
     std::string model, ChatOptions chat_options,
@@ -136,7 +122,7 @@ void ClaudeClient::ProcessChatRequest(
     }
 
     if (!chat_request->func_calls_.empty()) {
-      chat_request->InvokeTools(this, chat_request->finaliser_);
+      InvokeTools(chat_request);
     }
   } catch (std::exception& e) {
     chat_request->callback_(e.what(), Reason::kFatalError, false);
@@ -256,10 +242,17 @@ void ClaudeClient::AddToolsResult(
     json res = json::object();
     res["type"] = "tool_result";
     res["tool_use_id"] = fcall.invocation_id.value_or("");
-    res["content"] = reply.text;
+
+    auto p = BuildToolResponseContent(fcall, reply);
+    if (!p.second.empty()) {
+      m_pendingMessages.push_back(p.second);
+    }
+
+    res["content"] = p.first;
     content_array.push_back(res);
   }
-  assistant::message msg{"user", ""};
+  assistant::message msg;
+  msg["role"] = "user";
   msg["content"] = content_array;
   AddMessage(std::move(msg));
 }

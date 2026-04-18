@@ -70,7 +70,8 @@ class OllamaClient : public ClientBase {
     m_client_impl_ptr = c;
   }
   virtual std::unique_ptr<ITransport> CreateClient();
-
+  std::pair<std::string, std::string> BuildToolResponseContent(
+      const FunctionCall& fcall, const FunctionResult& reply) const;
   std::optional<ModelCapabilities> GetOllamaModelCapabilities(
       const std::string& model);
 

@@ -26,8 +26,7 @@ class OpenAIMessagesClient : public OllamaClient {
 
  protected:
   static bool OnRawResponse(const std::string& resp, void* user_data);
-  void InvokeTools(std::shared_ptr<ChatRequest> request,
-                   std::shared_ptr<ChatRequestFinaliser> finaliser);
+  void InvokeTools(std::shared_ptr<ChatRequest> request) override;
   void ProcessChatRequest(std::shared_ptr<ChatRequest> chat_request) override;
   virtual bool HandleResponse(const std::string& resp,
                               ChatContext* chat_context);

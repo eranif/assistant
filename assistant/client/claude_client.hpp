@@ -18,9 +18,6 @@ class ClaudeClient : public OllamaClient {
   std::optional<ModelCapabilities> GetModelCapabilities(
       const std::string& model) override;
 
-  void Chat(std::string msg, OnResponseCallback cb,
-            ChatOptions chat_options) override;
-
   void CreateAndPushChatRequest(
       std::optional<assistant::message> msg, OnResponseCallback cb,
       std::string model, ChatOptions chat_options,

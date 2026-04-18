@@ -53,7 +53,7 @@ void OpenAIClient::ProcessChatRequest(
     }
 
     if (!chat_request->func_calls_.empty()) {
-      chat_request->InvokeTools(this, chat_request->finaliser_);
+      InvokeTools(chat_request);
     }
   } catch (std::exception& e) {
     chat_request->callback_(e.what(), Reason::kFatalError, false);
@@ -161,7 +161,12 @@ void OpenAIClient::AddToolsResult(
     assistant::message tool_response;
     tool_response["type"] = "function_call_output";
     tool_response["call_id"] = fcall.invocation_id.value_or("");
-    tool_response["output"] = reply.text;
+
+    auto p = BuildToolResponseContent(fcall, reply);
+    if (!p.second.empty()) {
+      m_pendingMessages.push_back(p.second);
+    }
+    tool_response["output"] = p.first;
     AddMessage(std::move(tool_response));
   }
 }

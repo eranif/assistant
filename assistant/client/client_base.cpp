@@ -128,20 +128,19 @@ void ClientBase::ApplyConfig(const assistant::Config* conf) {
   m_stream = conf->IsStream();
 }
 
-void ChatRequest::InvokeTools(ClientBase* client,
-                              std::shared_ptr<ChatRequestFinaliser> finaliser) {
-  if (func_calls_.empty()) {
+void ClientBase::InvokeTools(std::shared_ptr<ChatRequest> request) {
+  if (request->func_calls_.empty()) {
     return;
   }
 
   std::vector<std::pair<FunctionCall, FunctionResult>> tool_call_results;
-  for (auto [msg, calls] : func_calls_) {
-    if (client->m_interrupt.load()) {
+  for (auto [msg, calls] : request->func_calls_) {
+    if (m_interrupt.load()) {
       return;
     }
-    client->AddMessage(std::move(msg));
+    AddMessage(std::move(msg));
     for (auto func_call : calls) {
-      if (client->IsInterrupted()) {
+      if (IsInterrupted()) {
         OLOG(LogLevel::kWarning) << "User interrupted.";
         return;
       }
@@ -152,47 +151,45 @@ void ChatRequest::InvokeTools(ClientBase* client,
         ss << std::setw(2) << "  " << name << " => " << value << "\n";
       }
 
-      callback_(ss.str(), Reason::kLogNotice, false);
+      request->callback_(ss.str(), Reason::kLogNotice, false);
 
       FunctionResult result;
 
       CanInvokeToolResult can_run_tool{.can_invoke = true};
-      auto res =
-          client->GetFunctionTable().CanRunTool(func_call.name, func_call.args);
+      auto res = GetFunctionTable().CanRunTool(func_call.name, func_call.args);
       if (res.has_value()) {
         can_run_tool = res.value();
-      } else if (client->m_on_invoke_tool_cb) {
+      } else if (m_on_invoke_tool_cb) {
         // No function level human-in-the-loop method was registered,
         // try the global method (client level)
-        can_run_tool =
-            client->m_on_invoke_tool_cb(func_call.name, func_call.args);
+        can_run_tool = m_on_invoke_tool_cb(func_call.name, func_call.args);
       }
 
       if (!can_run_tool.IsAllowed()) {
         result.isError = true;
         result.text = can_run_tool.reason;
-        callback_(ss.str(), Reason::kToolDenied, false);
+        request->callback_(ss.str(), Reason::kToolDenied, false);
 
       } else {
         ss = {};
         ss << "Permission to run tool: " << func_call.name << " is granted.";
-        callback_(ss.str(), Reason::kToolAllowed, false);
-        result = client->GetFunctionTable().Call(func_call);
+        request->callback_(ss.str(), Reason::kToolAllowed, false);
+        result = GetFunctionTable().Call(func_call);
 
         ss = {};
         ss << "Tool output: " << result;
-        callback_(ss.str(), Reason::kLogNotice, false);
+        request->callback_(ss.str(), Reason::kLogNotice, false);
       }
       tool_call_results.push_back({func_call, result});
     }
   }
 
   if (!tool_call_results.empty()) {
-    client->AddToolsResult(std::move(tool_call_results));
+    AddToolsResult(std::move(tool_call_results));
   }
 
-  client->CreateAndPushChatRequest(std::nullopt, callback_, model_,
-                                   ChatOptions::kDefault, finaliser);
+  CreateAndPushChatRequest(std::nullopt, request->callback_, request->model_,
+                           ChatOptions::kDefault, request->finaliser_);
 }
 
 bool ClientBase::ModelHasCapability(const std::string& model_name,

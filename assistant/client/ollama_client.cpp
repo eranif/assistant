@@ -174,7 +174,7 @@ void OllamaClient::ProcessChatRequest(
     }
 
     if (!chat_request->func_calls_.empty()) {
-      chat_request->InvokeTools(this, chat_request->finaliser_);
+      InvokeTools(chat_request);
     }
   } catch (std::exception& e) {
     chat_request->callback_(e.what(), Reason::kFatalError, false);
@@ -184,17 +184,26 @@ void OllamaClient::ProcessChatRequest(
 
 void OllamaClient::Chat(std::string msg, OnResponseCallback cb,
                         ChatOptions chat_options) {
-  assistant::message json_message{"user", msg};
-  std::shared_ptr<ChatRequestFinaliser> finaliser{nullptr};
-  if (assistant::IsFlagSet(chat_options, ChatOptions::kNoHistory)) {
-    m_history.SwapToTempHistory();
-    finaliser = std::make_shared<ChatRequestFinaliser>(
-        [this]() { m_history.SwapToMainHistory(); });
-  }
+  auto DoChat = [this](const std::string& msg, OnResponseCallback& cb,
+                       ChatOptions chat_options) {
+    assistant::message json_message{"user", msg};
+    std::shared_ptr<ChatRequestFinaliser> finaliser{nullptr};
+    if (assistant::IsFlagSet(chat_options, ChatOptions::kNoHistory)) {
+      m_history.SwapToTempHistory();
+      finaliser = std::make_shared<ChatRequestFinaliser>(
+          [this]() { m_history.SwapToMainHistory(); });
+    }
+    CreateAndPushChatRequest(json_message, cb, GetModel(), chat_options,
+                             finaliser);
+    ProcessChatRequestQueue();
+  };
 
-  CreateAndPushChatRequest(json_message, cb, GetModel(), chat_options,
-                           finaliser);
-  ProcessChatRequestQueue();
+  DoChat(msg, cb, chat_options);
+  // Drain all pending messages that were created during this chat request
+  for (const auto& pending_msg : m_pendingMessages) {
+    DoChat(pending_msg, cb, chat_options);
+  }
+  m_pendingMessages.clear();
 }
 
 void OllamaClient::ProcessChatRequestQueue() {
@@ -263,26 +272,34 @@ void OllamaClient::AddToolsResult(
   // Ollama expects a message per tool invocation, in the order of calling.
   for (const auto& [fcall, reply] : result) {
     // Add the tool response
-    std::stringstream ss;
-    if (reply.isError) {
-      if (!reply.text.empty()) {
-        // If user provided a reason, send it as it.
-        ss << reply.text;
-      } else {
-        // Construct our own message.
-        ss << "An error occurred while executing tool: '" << fcall.name << "'.";
-      }
-      OLOG(LogLevel::kWarning) << ss.str();
-    } else {
-      // In case of a success, do not manipulate the response.
-      ss << reply.text;
-      OLOG(LogLevel::kInfo) << ss.str();
-    }
+    auto p = BuildToolResponseContent(fcall, reply);
+    assistant::message msg{"tool", p.first};
 
-    assistant::message msg{"tool", ss.str()};
     msg["tool_name"] = fcall.name;
     AddMessage(std::move(msg));
+    if (!p.second.empty()) {
+      m_pendingMessages.push_back(p.second);
+    }
   }
 }
 
+std::pair<std::string, std::string> OllamaClient::BuildToolResponseContent(
+    const FunctionCall& fcall, const FunctionResult& reply) const {
+  std::stringstream ss;
+  if (reply.isError) {
+    if (!reply.text.empty()) {
+      ss << "Status Aborted. Reason: user redirected task. New task: "
+         << reply.text;
+    } else {
+      ss << "Permission Denied";
+    }
+
+    OLOG(LogLevel::kWarning) << ss.str();
+  } else {
+    // In case of a success, do not manipulate the response.
+    ss << reply.text;
+    OLOG(LogLevel::kInfo) << ss.str();
+  }
+  return std::make_pair(ss.str(), "");
+}
 }  // namespace assistant

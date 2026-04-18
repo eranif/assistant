@@ -59,7 +59,7 @@ void OpenAIMessagesClient::ProcessChatRequest(
     }
 
     if (!chat_request->func_calls_.empty()) {
-      InvokeTools(chat_request, chat_request->finaliser_);
+      InvokeTools(chat_request);
       chat_request->func_calls_.clear();
     }
   } catch (std::exception& e) {
@@ -192,23 +192,27 @@ void OpenAIMessagesClient::AddToolsResult(
   }
   OLOG(LogLevel::kDebug) << "Processing " << result.size()
                          << " tool calls responses";
+
   for (const auto& [fcall, reply] : result) {
     // /v1/chat/completions uses the "tool" role for tool responses
     assistant::message tool_response;
+    auto p = BuildToolResponseContent(fcall, reply);
+    if (!p.second.empty()) {
+      m_pendingMessages.push_back(p.second);
+    }
     tool_response["role"] = "tool";
     tool_response["tool_call_id"] = fcall.invocation_id.value_or("");
-    tool_response["content"] = reply.text;
+    tool_response["content"] = p.first;
     AddMessage(std::move(tool_response));
   }
 }
 
-void OpenAIMessagesClient::InvokeTools(
-    std::shared_ptr<ChatRequest> request,
-    std::shared_ptr<ChatRequestFinaliser> finaliser) {
+void OpenAIMessagesClient::InvokeTools(std::shared_ptr<ChatRequest> request) {
   if (request->func_calls_.empty()) {
     return;
   }
 
+  std::vector<std::string> extra_requests;
   for (auto [msg, calls] : request->func_calls_) {
     if (m_interrupt.load()) {
       return;
@@ -259,6 +263,6 @@ void OpenAIMessagesClient::InvokeTools(
     }
   }
   CreateAndPushChatRequest(std::nullopt, request->callback_, request->model_,
-                           ChatOptions::kDefault, finaliser);
+                           ChatOptions::kDefault, request->finaliser_);
 }
 }  // namespace assistant
