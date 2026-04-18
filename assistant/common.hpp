@@ -206,6 +206,65 @@ struct Usage {
   }
 };
 
+/**
+ * @brief Tracks token usage statistics relative to the context size.
+ *
+ * This structure provides information about how many tokens have been used
+ * out of the available context size, including percentages and warnings
+ * when approaching limits.
+ */
+struct TokenUsageStats {
+  /// Total tokens used (input + output)
+  int total_tokens_used{0};
+  /// Input tokens consumed
+  int input_tokens{0};
+  /// Output tokens consumed
+  int output_tokens{0};
+  /// Cache creation input tokens (if applicable)
+  int cache_creation_input_tokens{0};
+  /// Cache read input tokens (if applicable)
+  int cache_read_input_tokens{0};
+  /// Maximum context size available
+  size_t context_size{0};
+  /// Maximum tokens allowed for response
+  size_t max_tokens{0};
+
+  /**
+   * @brief Calculates the percentage of context size used.
+   * @return Percentage (0.0 to 100.0) of context used.
+   */
+  [[nodiscard]] double GetContextUsagePercentage() const {
+    if (context_size == 0) return 0.0;
+    return (static_cast<double>(total_tokens_used) /
+            static_cast<double>(context_size)) *
+           100.0;
+  }
+
+  /**
+   * @brief Returns the number of tokens remaining in context.
+   * @return Available tokens remaining.
+   */
+  [[nodiscard]] int GetRemainingTokens() const {
+    if (static_cast<size_t>(total_tokens_used) >= context_size) return 0;
+    return static_cast<int>(context_size) - total_tokens_used;
+  }
+
+  /**
+   * @brief Checks if token usage is approaching the context limit.
+   * @param threshold_percentage Percentage threshold (default 80.0).
+   * @return true if usage is at or above the threshold.
+   */
+  [[nodiscard]] bool IsNearContextLimit(
+      double threshold_percentage = 80.0) const {
+    return GetContextUsagePercentage() >= threshold_percentage;
+  }
+
+  /// Returns true if total tokens used exceeds or equals context size.
+  [[nodiscard]] bool IsContextExceeded() const {
+    return static_cast<size_t>(total_tokens_used) >= context_size;
+  }
+};
+
 // Initialized map with per-token prices (USD)
 // All units are in: $ per 1 token
 // input_tokens, cache_creation_input_tokens, cache_read_input_tokens,

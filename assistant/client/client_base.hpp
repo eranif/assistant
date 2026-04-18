@@ -432,6 +432,42 @@ class ClientBase {
     return m_aggregated_usage.get_value();
   }
 
+  ///===---------------------------
+  /// Token Usage vs Context Size API - START
+  ///===---------------------------
+
+  /**
+   * @brief Get token usage statistics relative to context size.
+   *
+   * Returns a TokenUsageStats structure containing the current token usage
+   * (from the last request) compared against the configured context size.
+   *
+   * @return TokenUsageStats with usage information and context limits.
+   */
+  TokenUsageStats GetTokenUsageStats() const;
+
+  /**
+   * @brief Get aggregated token usage statistics relative to context size.
+   *
+   * Returns a TokenUsageStats structure containing the accumulated token usage
+   * across all requests compared against the configured context size.
+   *
+   * @return TokenUsageStats with aggregated usage information.
+   */
+  TokenUsageStats GetAggregatedTokenUsageStats() const;
+
+  /**
+   * @brief Check if the current token usage is near the context limit.
+   *
+   * @param threshold_percentage Percentage threshold (default 80.0).
+   * @return true if usage is at or above the threshold.
+   */
+  bool IsNearContextLimit(double threshold_percentage = 80.0) const;
+
+  ///===---------------------------
+  /// Token Usage vs Context Size API - END
+  ///===---------------------------
+
   inline void SetCachingPolicy(CachePolicy policy) {
     m_caching_policy.set_value(policy);
   }

@@ -213,4 +213,47 @@ bool ClientBase::ModelHasCapability(const std::string& model_name,
   });
   return found;
 }
+
+TokenUsageStats ClientBase::GetTokenUsageStats() const {
+  TokenUsageStats stats;
+  stats.context_size = GetContextSize();
+  stats.max_tokens = GetMaxTokens();
+
+  auto last_usage = GetLastRequestUsage();
+  if (last_usage.has_value()) {
+    stats.input_tokens = last_usage->input_tokens;
+    stats.output_tokens = last_usage->output_tokens;
+    stats.cache_creation_input_tokens = last_usage->cache_creation_input_tokens;
+    stats.cache_read_input_tokens = last_usage->cache_read_input_tokens;
+    stats.total_tokens_used = last_usage->input_tokens +
+                              last_usage->output_tokens +
+                              last_usage->cache_creation_input_tokens +
+                              last_usage->cache_read_input_tokens;
+  }
+
+  return stats;
+}
+
+TokenUsageStats ClientBase::GetAggregatedTokenUsageStats() const {
+  TokenUsageStats stats;
+  stats.context_size = GetContextSize();
+  stats.max_tokens = GetMaxTokens();
+
+  Usage aggregated = GetAggregatedUsage();
+  stats.input_tokens = aggregated.input_tokens;
+  stats.output_tokens = aggregated.output_tokens;
+  stats.cache_creation_input_tokens = aggregated.cache_creation_input_tokens;
+  stats.cache_read_input_tokens = aggregated.cache_read_input_tokens;
+  stats.total_tokens_used = aggregated.input_tokens + aggregated.output_tokens +
+                            aggregated.cache_creation_input_tokens +
+                            aggregated.cache_read_input_tokens;
+
+  return stats;
+}
+
+bool ClientBase::IsNearContextLimit(double threshold_percentage) const {
+  // Use aggregated usage to check overall context consumption
+  TokenUsageStats stats = GetAggregatedTokenUsageStats();
+  return stats.IsNearContextLimit(threshold_percentage);
+}
 }  // namespace assistant
