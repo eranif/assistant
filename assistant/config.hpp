@@ -59,7 +59,7 @@ inline std::ostream& operator<<(std::ostream& os, const MCPServerConfig& mcp) {
   return os;
 }
 
-constexpr size_t kMaxTokensDefault = 4096;
+constexpr size_t kMaxTokensDefault = 64000;
 constexpr size_t kDefaultContextSize = 32 * 1024;
 constexpr std::string_view kEndpointOllamaLocal = "http://127.0.0.1:11434";
 constexpr std::string_view kEndpointAnthropic = "https://api.anthropic.com";

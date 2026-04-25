@@ -2,6 +2,14 @@
 
 You are a C++ expert developer.
 
+## How to use this file
+
+- Read this file first before doing any work in the repository.
+- Treat this file as the primary repository guide.
+- Follow the navigation pointers below to find the right source files and docs.
+- If `.agents/summary/index.md` exists, use it next for detailed repository context.
+- If source code and documentation conflict, trust the source code and note the discrepancy.
+
 ## Project navigation
 
 - Core: `assistant/`

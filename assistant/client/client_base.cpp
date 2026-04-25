@@ -211,12 +211,16 @@ bool ClientBase::ModelHasCapability(const std::string& model_name,
   return found;
 }
 
-TokenUsageStats ClientBase::GetTokenUsageStats() const {
+std::optional<TokenUsageStats> ClientBase::GetTokenUsageStats() const {
+  auto last_usage = GetLastRequestUsage();
+  if (!last_usage) {
+    return std::nullopt;
+  }
+
   TokenUsageStats stats;
   stats.context_size = GetContextSize();
   stats.max_tokens = GetMaxTokens();
 
-  auto last_usage = GetLastRequestUsage();
   if (last_usage.has_value()) {
     stats.input_tokens = last_usage->input_tokens;
     stats.output_tokens = last_usage->output_tokens;

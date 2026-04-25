@@ -21,7 +21,8 @@ class OpenAIClient : public OllamaClient {
  protected:
   static bool OnRawResponse(const std::string& resp, void* user_data);
   void ProcessChatRequest(std::shared_ptr<ChatRequest> chat_request) override;
-  virtual bool HandleResponse(const std::string& resp, ChatContext* chat_context);
+  virtual bool HandleResponse(const std::string& resp,
+                              ChatContext* chat_context);
 
   std::unique_ptr<OpenAIResponseParser> m_responseParser;
 };

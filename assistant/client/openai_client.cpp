@@ -23,6 +23,7 @@ void OpenAIClient::ProcessChatRequest(
     chat_request->request_.erase("messages");
   }
   chat_request->request_["max_output_tokens"] = GetMaxTokens();
+
   // Re-serialize tools in /v1/responses format (flat, not nested under
   // "function")
   if (!m_function_table.IsEmpty() && chat_request->request_.contains("tools")) {
@@ -107,17 +108,20 @@ bool OpenAIClient::HandleResponse(const std::string& resp,
                                    token.IsThinking());
         auto usage = token.GetUsage();
         auto cost = GetPricing();
-        if (usage.has_value() && cost.has_value()) {
-          double this_requests_cost = usage.value().CalculateCost(cost.value());
-          SetLastRequestCost(this_requests_cost);
-          std::stringstream ss;
-          ss << "Total cost: $" << GetTotalCost() << "\n"
-             << "Last request cost: $" << GetLastRequestCost();
-          ss << " Cached tokens: "
-             << GetAggregatedUsage().cache_creation_input_tokens
-             << ", Cached tokens read: "
-             << GetAggregatedUsage().cache_read_input_tokens << "\n";
-          req->callback_(ss.str(), Reason::kRequestCost, false);
+        if (usage.has_value()) {
+          if (cost.has_value()) {
+            double this_requests_cost =
+                usage.value().CalculateCost(cost.value());
+            SetLastRequestCost(this_requests_cost);
+            std::stringstream ss;
+            ss << "Total cost: $" << GetTotalCost() << "\n"
+               << "Last request cost: $" << GetLastRequestCost();
+            ss << " Cached tokens: "
+               << GetAggregatedUsage().cache_creation_input_tokens
+               << ", Cached tokens read: "
+               << GetAggregatedUsage().cache_read_input_tokens << "\n";
+            req->callback_(ss.str(), Reason::kRequestCost, false);
+          }
           SetLastRequestUsage(usage.value());
         }
         chat_context->current_response += token.content;

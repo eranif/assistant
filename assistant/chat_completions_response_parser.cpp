@@ -212,8 +212,8 @@ ParseResult ResponseParser::ProcessChunk(const json& data) {
     }
 
     // Extract usage if present
-    if (data.contains("usage") && data["usage"].is_object()) {
-      const auto& usage_obj = data["usage"];
+    if (choice.contains("usage") && choice["usage"].is_object()) {
+      const auto& usage_obj = choice["usage"];
       Usage usage;
 
       if (usage_obj.contains("prompt_tokens") &&
@@ -239,7 +239,6 @@ ParseResult ResponseParser::ProcessChunk(const json& data) {
         usage.cache_read_input_tokens =
             usage_obj["cache_read_input_tokens"].get<int>();
       }
-
       result.usage = usage;
     }
 

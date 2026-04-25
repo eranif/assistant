@@ -383,11 +383,11 @@ class ClientBase {
     m_endpoint.with_mut([kind](Endpoint& ep) { ep.type_ = kind; });
   }
 
-  inline size_t GetMaxTokens() const {
+  virtual inline size_t GetMaxTokens() const {
     return m_endpoint.get_value().max_tokens_.value_or(kMaxTokensDefault);
   }
 
-  inline size_t GetContextSize() const {
+  virtual inline size_t GetContextSize() const {
     return m_endpoint.get_value().context_size_.value_or(kDefaultContextSize);
   }
 
@@ -444,7 +444,7 @@ class ClientBase {
    *
    * @return TokenUsageStats with usage information and context limits.
    */
-  TokenUsageStats GetTokenUsageStats() const;
+  std::optional<TokenUsageStats> GetTokenUsageStats() const;
 
   /**
    * @brief Get aggregated token usage statistics relative to context size.

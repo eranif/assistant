@@ -288,6 +288,12 @@ void HandlePrompt(std::shared_ptr<assistant::ClientBase> cli,
     }
     break;
   }
+
+  auto usage = cli->GetTokenUsageStats();
+  if (usage) {
+    std::cout << "\nTokens used: " << usage->total_tokens_used << " / "
+              << usage->context_size << std::endl;
+  }
   PrintPrompt();
 }
 

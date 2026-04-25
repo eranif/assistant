@@ -652,7 +652,7 @@ TEST(ConfigTest, DefaultValues) {
 
 // Test Endpoint constants
 TEST(EndpointTest, Constants) {
-  EXPECT_EQ(kMaxTokensDefault, 4096);
+  EXPECT_EQ(kMaxTokensDefault, 64000);
   EXPECT_EQ(kDefaultContextSize, 32 * 1024);
   EXPECT_EQ(kEndpointOllamaLocal, "http://127.0.0.1:11434");
   EXPECT_EQ(kEndpointAnthropic, "https://api.anthropic.com");
