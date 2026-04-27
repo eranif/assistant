@@ -1,91 +1,90 @@
-# Assistant Library - Modern C++ Agent Framework
+# Assistant Library
 
-A powerful, production-grade C++ library for building AI-powered agents that seamlessly interact with multiple AI model providers. The library provides a unified, provider-agnostic interface for creating intelligent agents with support for function calling, streaming responses, and advanced agent orchestration patterns.
+`assistant` is a C++20 library for building provider-neutral AI assistants and agent-style applications. It offers a unified interface over multiple model providers, streaming responses, tool/function calling, conversation history, and MCP-backed external tools.
 
 ## Table of Contents
 
 1. [Overview](#overview)
-2. [Key Features](#key-features)
+2. [Features](#features)
 3. [Architecture](#architecture)
 4. [Getting Started](#getting-started)
-5. [Core Components](#core-components)
-6. [API Reference](#api-reference)
-7. [Advanced Topics](#advanced-topics)
-8. [Configuration](#configuration)
-9. [Building](#building)
-10. [Examples](#examples)
+5. [Configuration](#configuration)
+6. [Building](#building)
+7. [Project Layout](#project-layout)
+8. [Examples](#examples)
+9. [API Notes](#api-notes)
 
 ## Overview
 
-The Assistant Library is designed to abstract away provider-specific API details, allowing developers to focus on building intelligent agents without worrying about which AI backend they're using. Whether you're using local models via Ollama, cloud-based Claude APIs, or OpenAI endpoints, the library provides a consistent interface.
+The library abstracts provider-specific API details so applications can switch between backends by changing configuration rather than rewriting client code. It is designed around a shared `ClientBase` interface and concrete clients for providers such as Ollama, Anthropic Claude, OpenAI, and OpenAI-compatible messages endpoints.
 
 ### Supported Providers
 
-- **Anthropic Claude** - Cloud-based API
-- **OpenAI** - GPT models via API (Respones & Messages endpoints)
+- **Anthropic Claude** - cloud API
+- **OpenAI** - responses API and messages-compatible endpoints
 - **Ollama** - Local model inference
 
 ### Design Philosophy
 
-- **Unified Interface**: Single API for all providers
-- **Zero Provider Lock-in**: Switch providers by changing configuration
-- **Type-Safe**: Leverages modern C++20 features
-- **Thread-Safe**: Built with concurrency in mind
-- **Extensible**: Plugin-based architecture for custom tools/agents
+- **Unified interface**: one API for all supported providers
+- **Configuration-driven selection**: switch providers through config
+- **Type-safe C++20**: modern standard library features and strong typing
+- **Thread-safe state**: history and queues are guarded for concurrent use
+- **Extensible tool system**: local functions and MCP-backed tools share a common abstraction
 
-## Key Features
+## Features
 
-### 1. **Multi-Provider Support**
+### Multi-provider support
 Work with different AI models and providers interchangeably without changing application code. Simply update the configuration.
 
-### 2. **Function/Tool Calling**
+### Function and tool calling
 - Native support for AI-called tools/functions
 - Automatic tool invocation and result handling
 - Tool registry management
 - Support for both local and remote tools via MCP (Model Context Protocol)
 
-### 3. **Streaming Responses**
+### Streaming responses
 - Real-time response streaming as generated
 - Extended thinking/reasoning display
 - Progress callbacks with detailed status information
 - Low-latency response delivery
 
-### 4. **Conversation Management**
+### Conversation management
 - Automatic conversation history tracking
 - Configurable history window size
 - Conversation state management
 - System message support for agent behavior guidance
 
-### 5. **Advanced Caching**
+### Caching support
 - Static content caching (supported by Claude)
 - Automatic caching management
 - Cache policy configuration
 - Token usage optimization
 
-### 6. **Cost Tracking & Analytics**
+### Cost tracking
 - Per-request cost calculation
 - Aggregated usage tracking
 - Token usage monitoring
 - Built-in pricing tables for major providers
 
-### 7. **MCP Integration**
+### MCP integration
 - Native Model Context Protocol support
 - Both STDIO and SSE transport mechanisms
 - Remote MCP server support via SSH
 - Dynamic tool registration from MCP servers
 
-### 8. **Thread Safety**
+### Thread safety
 - Atomic operations for state management
 - Mutex-protected shared resources
 - Thread-safe request queuing
 - Safe concurrent access patterns
 
-### 9. **Human-in-the-Loop**
+### Human-in-the-loop approval
 - Optional approval callbacks before tool execution
 - Fine-grained control over agent actions
 - User override capabilities
 
-### 10. **Extended Reasoning**
+### Extended reasoning
 - Support for extended thinking models
 - Thinking state tracking
 - Separate thinking/output display
@@ -94,67 +93,62 @@ Work with different AI models and providers interchangeably without changing app
 
 ### Core Design Pattern
 
-```
-┌─────────────────────────────────────────────┐
-│         Application Code                    │
-└─────────────────────────────────────────────┘
-                    │
-                    ▼
-┌─────────────────────────────────────────────┐
-│         ClientBase Interface                │
-│  (Chat, Stream, Tools, Config, History)    │
-└─────────────────────────────────────────────┘
-                    │
-        ┌───────────┼───────────┐
-        ▼           ▼           ▼
-    OllamaClient  ClaudeClient  OpenAIClient
-   (Implementation) (Implementation) (Implementation)
-        │           │           │
-        └───────────┼───────────┘
-                    │
-        ┌───────────┼───────────┐
-        ▼           ▼           ▼
-    STDIO        HTTP/REST     API-Specific
-   Requests    Connections     Serialization
+```mermaid
+flowchart TD
+  App[Application Code] --> Base[ClientBase Interface\nChat / Stream / Tools / Config / History]
+  Base --> Ollama[OllamaClient]
+  Base --> Claude[ClaudeClient]
+  Base --> OpenAI[OpenAIClient]
+  Base --> OpenAIMsg[OpenAIMessagesClient]
+
+  Ollama --> Local[Local model transport]
+  Claude --> HTTP1[HTTP / REST transport]
+  OpenAI --> HTTP2[HTTP / REST transport]
+  OpenAIMsg --> HTTP3[API-compatible messages transport]
+
+  Base --> Tools[FunctionTable / Tool system]
+  Tools --> InProc[In-process functions]
+  Tools --> MCP[MCP-backed external tools]
 ```
 
 ### Key Components
 
 #### 1. **ClientBase**
-Abstract base class defining the unified agent interface:
-- Chat management
-- Model interaction
-- Function table management
-- History management
-- Configuration application
+Abstract base class defining the unified runtime interface:
+- chat management
+- model interaction
+- function table management
+- history management
+- configuration application
 
 #### 2. **Specific Clients**
 Provider-specific implementations:
-- `OllamaClient` - Local model inference
+- `OllamaClient` - local model inference
 - `ClaudeClient` - Anthropic Claude API
-- `OpenAIClient` - OpenAI models
+- `OpenAIClient` - OpenAI responses API
+- `OpenAIMessagesClient` - OpenAI-compatible messages endpoints
 
 #### 3. **FunctionTable**
-Registry for all available tools:
-- Thread-safe function management
-- Dynamic function registration
-- Format conversion for different providers
-- Function lookup and invocation
+Registry for available tools:
+- thread-safe function management
+- dynamic function registration
+- provider-specific tool conversion
+- function lookup and invocation
 
 #### 4. **ChatRequest**
-Manages individual chat requests:
-- Request metadata
-- Callback handling
-- Tool invocation tracking
-- Finalization logic
+Represents an in-flight chat request:
+- request metadata
+- callback handling
+- tool invocation tracking
+- finalization logic
 
 #### 5. **Configuration System**
 JSON-based configuration:
-- Endpoint specification
+- endpoint specification
 - MCP server registration
-- Timeout settings
-- Logging configuration
-- History window size
+- timeout settings
+- logging configuration
+- history window size
 
 ## Getting Started
 
@@ -167,34 +161,46 @@ JSON-based configuration:
 using namespace assistant;
 
 int main() {
-    // Create client from configuration
-    auto cli_opt = MakeClient("config.json");
+    auto conf_result = ConfigBuilder::FromFile("config.json");
+    if (!conf_result.ok()) {
+        std::cerr << "Failed to parse configuration: "
+                  << conf_result.errmsg_ << std::endl;
+        return 1;
+    }
+
+    auto cli_opt = MakeClient(conf_result.config_.value());
     if (!cli_opt.has_value()) {
         std::cerr << "Failed to create client" << std::endl;
         return 1;
     }
 
     auto client = cli_opt.value();
+    client->SetToolInvokeCallback([](const std::string& tool_name) {
+        std::cout << "Tool requested: " << tool_name << std::endl;
+        return true;
+    });
 
-    // Send a message
     client->Chat(
         "Hello, what is 2+2?",
-        [](const std::string& text, Reason reason, bool thinking) -> bool {
+        [](const std::string& text, assistant::Reason reason,
+           bool thinking) -> bool {
             switch (reason) {
-                case Reason::kPartialResult:
+                case assistant::Reason::kPartialResult:
                     std::cout << text;
                     std::cout.flush();
                     break;
-                case Reason::kDone:
+                case assistant::Reason::kDone:
                     std::cout << std::endl;
                     break;
-                case Reason::kFatalError:
+                case assistant::Reason::kFatalError:
                     std::cerr << "Error: " << text << std::endl;
                     break;
+                default:
+                    break;
             }
-            return true; // Continue processing
+            return true;
         },
-        ChatOptions::kDefault
+        assistant::ChatOptions::kDefault
     );
 
     return 0;
@@ -212,12 +218,63 @@ int main() {
     "headers": {
       "x-api-key": "${ANTHROPIC_API_KEY}"
     },
-    "max_tokens": 4096
+    "max_tokens": 4096,
+    "verify_server_ssl": true,
+    "context_size": 32768
   },
   "log_level": "error",
-  "window_size": 50
+  "stream": true,
+  "keep_alive": "5m"
 }
 ```
+
+## Building
+
+Typical CMake workflow:
+
+```bash
+mkdir -p .build
+cd .build
+cmake .. -DCMAKE_BUILD_TYPE=Debug -DASSISTANTLIB_BUILD_TESTS=ON
+cmake --build .
+```
+
+Useful options:
+
+- `ASSISTANTLIB_WITH_OPENSSL` - enable TLS support when available
+- `ASSISTANTLIB_BUILD_EXAMPLE` - build the CLI example
+- `ASSISTANTLIB_BUILD_TESTS` - build unit tests
+
+## Project Layout
+
+- `assistant/` - core library implementation and public headers
+- `assistant/client/` - provider clients and shared client base
+- `assistant/cpp-mcp/` - MCP protocol integration
+- `cli/` - interactive demo / entry point
+- `tests/` - GoogleTest-based unit tests
+- `examples/` - sample configuration and usage artifacts
+- `submodules/googletest/` - vendored test dependency
+
+## Examples
+
+The CLI example in `cli/main.cpp` shows how to:
+
+- load configuration
+- create a client with `MakeClient(...)`
+- register local functions and MCP tools
+- approve or deny tool execution
+- stream assistant responses
+- maintain and customize chat history
+
+## API Notes
+
+Primary entry points include:
+
+- `assistant::MakeClient(std::optional<Config>)`
+- `assistant::MakeClient(const std::string& config_content)`
+- `assistant::MakeClient(const std::filesystem::path& path)`
+
+`ClientBase` exposes the main runtime operations, including chat, history, tool registration, model information, and configuration application. The exact provider behavior differs by backend, so consult the implementation files when changing request/response handling.
 
 ## Core Components
 
@@ -228,18 +285,14 @@ The foundation of the library. All agents inherit from or use `ClientBase`.
 #### Primary Methods
 
 ```cpp
-// Chat - The main interaction method
 virtual void Chat(std::string msg,
                   OnResponseCallback cb,
                   ChatOptions chat_options) = 0;
 
-// Server status
 virtual bool IsRunning() = 0;
 
-// Model listing
 virtual std::vector<std::string> List() = 0;
 
-// Model information
 virtual std::optional<json> GetModelInfo(const std::string& model) = 0;
 virtual std::optional<ModelCapabilities> GetModelCapabilities(
     const std::string& model) = 0;
@@ -249,21 +302,21 @@ virtual std::optional<ModelCapabilities> GetModelCapabilities(
 
 ```cpp
 using OnResponseCallback = std::function<bool(
-    const std::string& text,    // Response content
-    Reason call_reason,         // Why callback invoked
-    bool thinking               // In thinking mode?
+    const std::string& text,
+    Reason call_reason,
+    bool thinking
 )>;
 ```
 
 #### Response Reasons
 
-- `kPartialResult` - Streaming chunk of response
-- `kDone` - Request completed successfully
-- `kFatalError` - Unrecoverable error
-- `kCancelled` - User cancelled the request
-- `kLogNotice` - Informational log message
-- `kLogDebug` - Debug-level log message
-- `kRequestCost` - Cost/usage information
+- `kPartialResult` - streaming chunk of response
+- `kDone` - request completed successfully
+- `kFatalError` - unrecoverable error
+- `kCancelled` - user cancelled the request
+- `kLogNotice` - informational log message
+- `kLogDebug` - debug-level log message
+- `kRequestCost` - cost/usage information
 
 ### 2. Function/Tool System
 
