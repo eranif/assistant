@@ -62,7 +62,7 @@ void FunctionTable::ReloadMCPServers(const Config* config) {
         const auto& headers = params.headers.value();
         http_headers.reserve(headers.size());
         for (const auto& [name, value] : headers.items()) {
-          http_headers.push_back(std::make_pair(name, value));
+          http_headers.emplace_back(name, value.get<std::string>());
         }
       }
       client = std::make_shared<MCPClient>(params.baseurl, params.endpoint,

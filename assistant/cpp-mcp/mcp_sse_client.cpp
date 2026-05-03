@@ -211,8 +211,8 @@ std::vector<tool> sse_client::get_tools() {
 
   for (const auto& tool_json : tools_json) {
     tool t;
-    t.name = tool_json["name"];
-    t.description = tool_json["description"];
+    t.name = tool_json["name"].get<std::string>();
+    t.description = tool_json["description"].get<std::string>();
 
     if (tool_json.contains("inputSchema")) {
       t.parameters_schema = tool_json["inputSchema"];
@@ -544,8 +544,8 @@ json sse_client::send_jsonrpc(const request& req) {
       }
 
       if (res_json.contains("error")) {
-        int code = res_json["error"]["code"];
-        std::string message = res_json["error"]["message"];
+        int code = res_json["error"]["code"].get<int>();
+        std::string message = res_json["error"]["message"].get<std::string>();
 
         throw mcp_exception(static_cast<error_code>(code), message);
       }

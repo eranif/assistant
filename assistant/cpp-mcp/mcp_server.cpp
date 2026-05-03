@@ -271,7 +271,7 @@ void server::register_resource(const std::string& path,
                             "Missing 'uri' parameter");
       }
 
-      std::string uri = params["uri"];
+      std::string uri = params["uri"].get<std::string>();
       auto it = resources_.find(uri);
       if (it == resources_.end()) {
         throw mcp_exception(error_code::invalid_params,
@@ -312,7 +312,7 @@ void server::register_resource(const std::string& path,
                             "Missing 'uri' parameter");
       }
 
-      std::string uri = params["uri"];
+      std::string uri = params["uri"].get<std::string>();
       auto it = resources_.find(uri);
       if (it == resources_.end()) {
         throw mcp_exception(error_code::invalid_params,
@@ -356,7 +356,7 @@ void server::register_tool(const tool& tool, tool_handler handler) {
                             "Missing 'name' parameter");
       }
 
-      std::string tool_name = params["name"];
+      std::string tool_name = params["name"].get<std::string>();
       auto it = tools_.find(tool_name);
       if (it == tools_.end()) {
         throw mcp_exception(error_code::invalid_params,
@@ -764,10 +764,10 @@ json server::handle_initialize(const request& req,
 
   if (params.contains("clientInfo")) {
     if (params["clientInfo"].contains("name")) {
-      client_name = params["clientInfo"]["name"];
+      client_name = params["clientInfo"]["name"].get<std::string>();
     }
     if (params["clientInfo"].contains("version")) {
-      client_version = params["clientInfo"]["version"];
+      client_version = params["clientInfo"]["version"].get<std::string>();
     }
   }
 
