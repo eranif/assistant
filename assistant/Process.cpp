@@ -29,8 +29,8 @@ static bool enable_exec_log{false};
 void Process::EnableExecLog(bool b) { enable_exec_log = b; }
 bool Process::IsExecLogEnabled() { return enable_exec_log; }
 
-constexpr int kBufferSize = 256;
-constexpr int kMaxChunkSize = 1024;
+constexpr int kBufferSize = 65536;
+constexpr int kMaxChunkSize = 1048576;
 
 #ifdef _WIN32
 
