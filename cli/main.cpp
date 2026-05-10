@@ -146,7 +146,7 @@ assistant::FunctionResult WriteFileContent(const assistant::json& args) {
 
 assistant::FunctionResult ToolReadFileContent(const assistant::json& args) {
   std::stringstream ss;
-  if (args.size() != 1) {
+  if (args.size() != 3) {
     return assistant::FunctionResult{.isError = true,
                                      .text = "Invalid number of arguments"};
   }
@@ -355,8 +355,9 @@ int main(int argc, char** argv) {
             .SetDescription("Read file content from the disk at a given path.")
             .AddRequiredParam("filepath", "the path of the file on the disk.",
                               "string")
-            .AddOptionalParam("start_line", "starting line", "number")
-            .AddOptionalParam("count", "number of lines to read", "number")
+            .AddRequiredParam("start_line", "starting line", "number")
+            .AddRequiredParam("count", "number of lines to read", "number")
+            .AddMinMaxValidation("count", 1, 5)
             .SetCallback(ToolReadFileContent)
             // Register a specific callback for this method to always allow
             // this will override the "CanRunTool" method set on the client

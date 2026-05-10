@@ -56,15 +56,36 @@ class Param {
         j["type"] = m_type;
         break;
     }
+
+    if (m_minValue) {
+      j["minimum"] = *m_minValue;
+    }
+
+    if (m_maxValue) {
+      j["maximum"] = *m_maxValue;
+    }
+
+    if (m_stringEnum) {
+      j["enum"] = *m_stringEnum;
+    }
     return j;
   }
+
   inline const std::string& GetName() const { return m_name; }
   inline bool IsRequired() const { return m_required; }
+  inline void SetMinValue(std::optional<int> value) { m_minValue = value; }
+  inline void SetMaxValue(std::optional<int> value) { m_maxValue = value; }
+  inline void SetStringEnum(std::optional<std::vector<std::string>> value) {
+    m_stringEnum = std::move(value);
+  }
 
  private:
   std::string m_name;
   std::string m_desc;
   std::string m_type;
+  std::optional<int> m_minValue{std::nullopt};
+  std::optional<int> m_maxValue{std::nullopt};
+  std::optional<std::vector<std::string>> m_stringEnum{std::nullopt};
   bool m_required{true};
 };
 
@@ -465,6 +486,26 @@ class FunctionBuilder {
     return *this;
   }
 
+  FunctionBuilder& AddMinMaxValidation(const std::string& name,
+                                       std::optional<int> min_value,
+                                       std::optional<int> max_value) {
+    auto param = FindParam(name);
+    if (param) {
+      param.value()->SetMinValue(min_value);
+      param.value()->SetMaxValue(max_value);
+    }
+    return *this;
+  }
+
+  FunctionBuilder& AddStringEnumValidation(const std::string& name,
+                                           std::vector<std::string> values) {
+    auto param = FindParam(name);
+    if (param) {
+      param.value()->SetStringEnum(std::move(values));
+    }
+    return *this;
+  }
+
   FunctionBuilder& SetCallback(FunctionSignature func) {
     m_func = std::move(func);
     return *this;
@@ -484,6 +525,15 @@ class FunctionBuilder {
   }
 
  private:
+  std::optional<Param*> FindParam(const std::string& name) {
+    for (size_t i = 0; i < m_params.size(); ++i) {
+      if (m_params[i].GetName() == name) {
+        return &m_params[i];
+      }
+    }
+    return std::nullopt;
+  }
+
   std::string m_name;
   std::string m_desc;
   FunctionSignature m_func{nullptr};

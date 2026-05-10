@@ -1,7 +1,7 @@
 #include "assistant/function.hpp"
 
-#include "assistant/mcp.hpp"
 #include "assistant/config.hpp"
+#include "assistant/mcp.hpp"
 
 namespace assistant {
 void FunctionTable::AddMCPServer(std::shared_ptr<MCPClient> client) {
