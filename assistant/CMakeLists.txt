@@ -18,8 +18,6 @@ add_library(
   ${CMAKE_CURRENT_LIST_DIR}/mcp.hpp
   ${CMAKE_CURRENT_LIST_DIR}/function.cpp
   ${CMAKE_CURRENT_LIST_DIR}/function.hpp
-  ${CMAKE_CURRENT_LIST_DIR}/function_base.cpp
-  ${CMAKE_CURRENT_LIST_DIR}/function_base.hpp
   ${CMAKE_CURRENT_LIST_DIR}/config.cpp
   ${CMAKE_CURRENT_LIST_DIR}/config.hpp
   ${CMAKE_CURRENT_LIST_DIR}/Curl.cpp

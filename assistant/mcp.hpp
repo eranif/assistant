@@ -4,7 +4,7 @@
 #include <vector>
 
 #include "assistant/cpp-mcp/mcp_client.h"
-#include "assistant/function_base.hpp"
+#include "assistant/function.hpp"
 
 namespace assistant {
 class ExternalFunction;
