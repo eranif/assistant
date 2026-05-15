@@ -35,14 +35,17 @@ struct ToolCall {
 
 inline std::ostream& operator<<(std::ostream& os, const ToolCall& tc) {
   os << "ToolCall{.id=" << tc.id << ", .type=" << tc.type
-     << ", .name=" << tc.name << ", .arguments_json=" << tc.arguments_json << "}";
+     << ", .name=" << tc.name << ", .arguments_json=" << tc.arguments_json
+     << "}";
   return os;
 }
 
 struct ParseResult {
   bool is_done{false};
+  bool is_error{false};
   bool need_more_data{false};
   std::string content;
+  std::string error_message;
   std::optional<FinishReason> finish_reason{std::nullopt};
   std::vector<ToolCall> tool_calls;
   std::optional<Usage> usage{std::nullopt};
@@ -51,9 +54,12 @@ struct ParseResult {
   inline bool IsDone() const { return is_done; }
   inline bool IsToolCall() const { return !tool_calls.empty(); }
   inline bool HasContent() const { return !content.empty(); }
+  inline bool IsError() const { return is_error; }
   inline const std::optional<Usage> GetUsage() const { return usage; }
 
   inline Reason GetReason() const {
+    if (is_error) return Reason::kFatalError;
+
     if (IsDone()) {
       if (finish_reason.value_or(FinishReason::stop) == FinishReason::length) {
         OLOG(LogLevel::kWarning)
@@ -87,7 +93,8 @@ class ResponseParser {
     m_tool_calls.clear();
   }
 
-  static std::optional<std::string> GetErrorMessage(const std::string& response);
+  static std::optional<std::string> GetErrorMessage(
+      const std::string& response);
 
  private:
   void AppendText(const std::string& text);
@@ -97,7 +104,8 @@ class ResponseParser {
   ParseResult ProcessChunk(const json& data);
 
   std::string m_content;
-  std::map<int, ToolCall> m_tool_calls;  // index -> ToolCall (for accumulating streaming tool calls)
+  std::map<int, ToolCall> m_tool_calls;  // index -> ToolCall (for accumulating
+                                         // streaming tool calls)
 };
 
 }  // namespace assistant::chat_completions

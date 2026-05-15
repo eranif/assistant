@@ -100,6 +100,19 @@ ParseResult ResponseParser::ProcessChunk(const json& data) {
   OLOG_TRACE() << "Processing chunk:" << data.dump();
 
   try {
+    if (data.contains("error") && data["error"].is_object()) {
+      const auto& error = data["error"];
+      result.is_done = true;
+      result.is_error = true;
+      // Extract the error string
+      if (error.contains("message") && error["message"].is_string()) {
+        result.error_message = error["message"].get<std::string>();
+      } else {
+        result.error_message = "Unknown error";
+      }
+      return result;
+    }
+
     // Extract choices array
     if (!data.contains("choices") || !data["choices"].is_array() ||
         data["choices"].empty()) {

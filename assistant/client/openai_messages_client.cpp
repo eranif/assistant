@@ -134,7 +134,10 @@ bool OpenAIMessagesClient::HandleResponse(const std::string& resp,
           req->func_calls_.push_back({tool_invoke_msg, {std::move(fcall)}});
         }
       } else {
-        if (token.HasContent()) {
+        if (token.IsError()) {
+          cb_result =
+              req->callback_(token.error_message, token.GetReason(), false);
+        } else if (token.HasContent()) {
           cb_result = req->callback_(token.content, token.GetReason(), false);
         }
         auto usage = token.GetUsage();
@@ -172,11 +175,6 @@ bool OpenAIMessagesClient::HandleResponse(const std::string& resp,
       if (!chat_context->current_response.empty()) {
         AddMessage(std::move(msg));
       }
-
-      if (!cb_result) {
-        return false;
-      }
-      return true;
     }
     return cb_result;
   } catch (const std::exception& e) {
