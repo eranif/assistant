@@ -511,7 +511,7 @@ class FunctionBuilder {
     return *this;
   }
 
-  FunctionBuilder& SetHumanInTheLoopCallabck(OnToolInvokeCallback func) {
+  FunctionBuilder& SetHumanInTheLoopCallback(OnToolInvokeCallback func) {
     m_humanInTheLoopCB = std::move(func);
     return *this;
   }

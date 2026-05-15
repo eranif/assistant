@@ -362,7 +362,7 @@ int main(int argc, char** argv) {
             // Register a specific callback for this method to always allow
             // this will override the "CanRunTool" method set on the client
             // level.
-            .SetHumanInTheLoopCallabck(CanRunTool)
+            .SetHumanInTheLoopCallback(CanRunTool)
             .Build());
     cli->GetFunctionTable().Add(
         FunctionBuilder("Create_new_file")

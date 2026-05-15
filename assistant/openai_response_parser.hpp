@@ -50,8 +50,8 @@ class OpenAIResponseParser {
     inline std::optional<Usage> GetUsage() const { return usage; }
     inline Reason GetReason() const {
       if (IsMaxTokensReached()) return Reason::kMaxTokensReached;
+      if (is_error) return Reason::kFatalError;  // implies "is_done == true"
       if (is_done) return Reason::kDone;
-      if (error_message.has_value()) return Reason::kFatalError;
       if (!content.empty()) return Reason::kPartialResult;
       return Reason::kPartialResult;
     }

@@ -61,7 +61,14 @@ void OpenAIResponseParser::ParseLine(const std::string& line,
 
   try {
     auto json_obj = json::parse(data_content);
-    auto event_type = json_obj["type"].get<std::string>();
+    std::string event_type;
+    if (json_obj.contains("type") && json_obj["type"].is_string()) {
+      event_type = json_obj["type"].get<std::string>();
+    } else if (!m_current_event.empty()) {
+      event_type = m_current_event;
+    } else {
+      return;
+    }
 
     if (event_type == "response.failed") {
       auto reason = ExtractError(json_obj);
@@ -87,7 +94,10 @@ void OpenAIResponseParser::ParseLine(const std::string& line,
     }
 
     if (event_type == "response.incomplete") {
-      ParseResult result{.is_done = true, .is_error = true};
+      ParseResult result{
+          .is_done = true,
+          .is_error = true,
+      };
       if (json_obj.contains("response") && json_obj["response"].is_object()) {
         result.usage = ExtractUsage(json_obj["response"]);
       }
@@ -196,9 +206,17 @@ std::optional<Usage> OpenAIResponseParser::ExtractUsage(const json& json_obj) {
 std::optional<std::string> OpenAIResponseParser::ExtractFinishReason(
     const json& json_obj) {
   try {
-    // /v1/responses format: top-level "status" field
+    // /v1/responses format: response.status field
     if (json_obj.contains("status") && json_obj["status"].is_string()) {
       return json_obj["status"].get<std::string>();
+    }
+
+    if (json_obj.contains("response") && json_obj["response"].is_object()) {
+      const auto& response_obj = json_obj["response"];
+      if (response_obj.contains("status") &&
+          response_obj["status"].is_string()) {
+        return response_obj["status"].get<std::string>();
+      }
     }
     return std::nullopt;
   } catch (...) {
@@ -223,15 +241,22 @@ std::optional<std::vector<json>> OpenAIResponseParser::ExtractOutput(
 std::optional<std::string> OpenAIResponseParser::ExtractError(
     const json& json_obj) {
   try {
-    // OpenAI error format: {"error":{"message":"error
-    // text","type":"error_type"}}
-    if (!json_obj.contains("error")) {
-      return std::nullopt;
+    // OpenAI error format may be top-level or nested under response.
+    const json* error_obj = nullptr;
+
+    if (json_obj.contains("error") && json_obj["error"].is_object()) {
+      error_obj = &json_obj["error"];
+    } else if (json_obj.contains("response") &&
+               json_obj["response"].is_object()) {
+      const auto& response_obj = json_obj["response"];
+      if (response_obj.contains("error") && response_obj["error"].is_object()) {
+        error_obj = &response_obj["error"];
+      }
     }
 
-    const auto& error = json_obj["error"];
-    if (error.is_object() && error.contains("message")) {
-      return error["message"].get<std::string>();
+    if (error_obj != nullptr && error_obj->contains("message") &&
+        (*error_obj)["message"].is_string()) {
+      return (*error_obj)["message"].get<std::string>();
     }
 
     return std::nullopt;
