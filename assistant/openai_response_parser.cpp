@@ -73,18 +73,22 @@ void OpenAIResponseParser::ParseLine(const std::string& line,
 
     if (event_type == "error") {
       auto reason = ExtractError(json_obj);
-      ParseResult result{.is_done = true,
-                         .is_error = true,
-                         .error_message = reason.value_or("")};
+      ParseResult result{
+          .is_done = true,
+          .is_error = true,
+          .error_message = reason.value_or(""),
+      };
       cb(result);
       return;
     }
 
     if (event_type == "response.failed") {
       auto reason = ExtractError(json_obj);
-      ParseResult result{.is_done = true,
-                         .is_error = true,
-                         .error_message = reason.value_or("")};
+      ParseResult result{
+          .is_done = true,
+          .is_error = true,
+          .error_message = reason.value_or(""),
+      };
       if (json_obj.contains("response") && json_obj["response"].is_object()) {
         result.usage = ExtractUsage(json_obj["response"]);
       }
@@ -93,12 +97,28 @@ void OpenAIResponseParser::ParseLine(const std::string& line,
     }
 
     if (event_type == "response.completed") {
-      ParseResult result{.is_done = true};
+      ParseResult result{
+          .is_done = true,
+      };
       if (json_obj.contains("response") && json_obj["response"].is_object()) {
         result.usage = ExtractUsage(json_obj["response"]);
       }
 
       result.finish_reason = ExtractFinishReason(json_obj);
+      cb(result);
+      return;
+    }
+
+    if (event_type == "response.compaction") {
+      ParseResult result{
+          .is_done = false,
+          .is_compaction_response = true,
+          .usage = ExtractUsage(json_obj),
+      };
+
+      if (json_obj.contains("output") && json_obj["output"].is_array()) {
+        result.compaction_output = json_obj["output"];
+      }
       cb(result);
       return;
     }
@@ -117,7 +137,13 @@ void OpenAIResponseParser::ParseLine(const std::string& line,
 
     if (event_type == "response.output_text.delta") {
       auto text = json_obj["delta"].get<std::string>();
-      cb(ParseResult{.content = text});
+      ParseResult result{
+          .content = text,
+      };
+      if (json_obj.contains("response") && json_obj["response"].is_object()) {
+        result.usage = ExtractUsage(json_obj["response"]);
+      }
+      cb(result);
       return;
     }
 
@@ -132,6 +158,20 @@ void OpenAIResponseParser::ParseLine(const std::string& line,
       cb(tool_call);
       return;
     }
+
+    if (event_type == "response.output_item.done" &&
+        json_obj.contains("item") && json_obj["item"].is_object() &&
+        json_obj["item"]["type"].get<std::string>() == "compaction") {
+      ParseResult result{
+          .is_done = false,
+          .is_compaction_response = true,
+      };
+
+      result.compaction_output = json_obj["item"];
+      cb(result);
+      return;
+    }
+
   } catch (const json::parse_error& e) {
     OLOG(LogLevel::kError) << "OpenAI response parser: JSON parse error: "
                            << e.what();

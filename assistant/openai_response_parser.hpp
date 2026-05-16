@@ -26,23 +26,29 @@ class OpenAIResponseParser {
     bool is_done{false};
     bool need_more_data{false};
     bool is_error{false};
-    std::optional<Usage> usage;
-    std::optional<std::string> finish_reason;
+    bool is_compaction_response{false};
+    std::optional<Usage> usage{std::nullopt};
+    std::optional<std::string> finish_reason{std::nullopt};
     std::string error_message;
     // Tool call fields
     std::string tool_name;
     std::string tool_call_id;
     json tool_args;
+    std::optional<json> compaction_output{std::nullopt};
     bool is_tool_call{false};
 
     inline bool HasValue() const { return !content.empty(); }
     inline bool IsDone() const { return is_done; }
+    inline bool IsCompactionResponse() const { return is_compaction_response; }
     inline bool NeedMoreData() const { return need_more_data; }
     inline bool IsError() const { return is_error; }
     inline bool IsToolCall() const { return is_tool_call; }
     inline bool IsThinking() const { return false; }
     inline bool IsMaxTokensReached() const {
       return finish_reason.value_or("") == "length";
+    }
+    inline std::optional<json> GetCompactionOutput() const {
+      return compaction_output;
     }
     inline const std::string& GetToolName() const { return tool_name; }
     inline const std::string& GeToolCallId() const { return tool_call_id; }

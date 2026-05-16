@@ -208,6 +208,12 @@ ParseResult ConfigBuilder::FromContent(const std::string& content,
           endpoint->active_ = endpoint_json["active"].get<bool>();
         }
 
+        if (endpoint_json.contains("compaction_threshold") &&
+            endpoint_json["compaction_threshold"].is_number_unsigned()) {
+          endpoint->compaction_threshold_ =
+              endpoint_json["compaction_threshold"].get<size_t>();
+        }
+
         static const std::array<std::string, 3> max_token_field_name{
             "max_tokens", "max_output_tokens", "max_completion_tokens"};
         for (const auto& field_name : max_token_field_name) {

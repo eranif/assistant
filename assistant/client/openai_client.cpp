@@ -24,6 +24,12 @@ void OpenAIClient::ProcessChatRequest(
   }
   chat_request->request_["max_output_tokens"] = GetMaxTokens();
 
+  // Auto-compaction
+  chat_request->request_["context_management"] = {{
+      {"type", "compaction"},
+      {"compact_threshold", GetCompactionThreshold()},
+  }};
+
   // Re-serialize tools in /v1/responses format (flat, not nested under
   // "function")
   if (!m_function_table.IsEmpty() && chat_request->request_.contains("tools")) {
@@ -89,9 +95,11 @@ bool OpenAIClient::HandleResponse(const std::string& resp,
       }
 
       if (token.IsToolCall()) {
-        FunctionCall fcall{.name = token.GetToolName(),
-                           .args = token.GetToolJson(),
-                           .invocation_id = token.GeToolCallId()};
+        FunctionCall fcall{
+            .name = token.GetToolName(),
+            .args = token.GetToolJson(),
+            .invocation_id = token.GeToolCallId(),
+        };
 
         // Build the AI request message
         assistant::message tool_invoke_msg;
@@ -103,6 +111,13 @@ bool OpenAIClient::HandleResponse(const std::string& resp,
         OLOG(LogLevel::kDebug)
             << "Got tool request: " << std::setw(2) << tool_invoke_msg;
         req->func_calls_.push_back({tool_invoke_msg, {std::move(fcall)}});
+      } else if (token.IsCompactionResponse() && token.GetCompactionOutput()) {
+        OLOG_INFO() << "Replacing history with compaction result!";
+        // Replace the history with the compaction output
+        auto output = token.GetCompactionOutput().value();
+        m_history.ClearAll();
+        assistant::message msg{output};
+        AddMessage(std::move(msg));
       } else {
         if (token.IsError()) {
           cb_result =
@@ -143,11 +158,6 @@ bool OpenAIClient::HandleResponse(const std::string& resp,
       }
       OLOG(LogLevel::kInfo) << "<== " << msg;
       AddMessage(std::move(msg));
-
-      if (!cb_result) {
-        return false;
-      }
-      return true;
     }
     return cb_result;
   } catch (const std::exception& e) {

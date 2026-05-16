@@ -337,6 +337,9 @@ class ClientBase {
   }
 
   virtual void Interrupt() { m_interrupt.store(true); }
+  inline size_t GetCompactionThreshold() {
+    return m_compaction_threshold.load();
+  }
   inline bool IsInterrupted() const { return m_interrupt.load(); }
 
   const FunctionTable& GetFunctionTable() const { return m_function_table; }
@@ -507,6 +510,7 @@ class ClientBase {
       m_model_capabilities;
   std::atomic_bool m_interrupt{false};
   std::atomic_bool m_stream{true};
+  std::atomic_size_t m_compaction_threshold{kDefaultCompactionThreshold};
   Locker<std::string> m_keep_alive{"5m"};
   OnToolInvokeCallback m_on_invoke_tool_cb{nullptr};
   Locker<std::optional<Pricing>> m_cost;

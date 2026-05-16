@@ -225,6 +225,7 @@ class message : public json {
     (*this)["content"] = content;
   }
   message() : json() {}
+  message(json j) : json(j) {}
   ~message() {}
 
   std::string as_json_string() const { return this->dump(); }
