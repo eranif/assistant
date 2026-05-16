@@ -234,6 +234,9 @@ void HandlePrompt(std::shared_ptr<assistant::ClientBase> cli,
 
           saved_thinking_state = thinking;
           switch (reason) {
+            case assistant::Reason::kServerCompaction:
+              std::cout << Gray(output) << std::endl;
+              break;
             case assistant::Reason::kDone:
               std::cout << std::endl;
               OLOG_INFO() << "Completed!";

@@ -118,6 +118,9 @@ bool OpenAIClient::HandleResponse(const std::string& resp,
         m_history.ClearAll();
         assistant::message msg{output};
         AddMessage(std::move(msg));
+        req->callback_(
+            "History has been updated with server-side history compaction.",
+            Reason::kServerCompaction, false);
       } else {
         if (token.IsError()) {
           cb_result =

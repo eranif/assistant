@@ -208,12 +208,6 @@ ParseResult ConfigBuilder::FromContent(const std::string& content,
           endpoint->active_ = endpoint_json["active"].get<bool>();
         }
 
-        if (endpoint_json.contains("compaction_threshold") &&
-            endpoint_json["compaction_threshold"].is_number_unsigned()) {
-          endpoint->compaction_threshold_ =
-              endpoint_json["compaction_threshold"].get<size_t>();
-        }
-
         static const std::array<std::string, 3> max_token_field_name{
             "max_tokens", "max_output_tokens", "max_completion_tokens"};
         for (const auto& field_name : max_token_field_name) {
@@ -228,7 +222,20 @@ ParseResult ConfigBuilder::FromContent(const std::string& content,
         if (endpoint_json.contains("context_size") &&
             endpoint_json["context_size"].is_number_unsigned()) {
           endpoint->context_size_ = endpoint_json["context_size"].get<size_t>();
+          if (*endpoint->context_size_ == 0) {
+            endpoint->context_size_.reset();
+          }
         }
+
+        if (endpoint_json.contains("compaction_threshold") &&
+            endpoint_json["compaction_threshold"].is_number_unsigned()) {
+          endpoint->compaction_threshold_ =
+              endpoint_json["compaction_threshold"].get<size_t>();
+        } else if (endpoint->context_size_.has_value()) {
+          // Set the compaction threshold to proper default, we default to 1/2
+          // of the context_size
+          endpoint->compaction_threshold_ = endpoint->context_size_.value() / 2;
+        }  // else use the default value of 100,000
 
         if (!endpoint_json.contains("model") ||
             !endpoint_json["model"].is_string()) {

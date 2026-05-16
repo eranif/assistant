@@ -85,6 +85,8 @@ enum class Reason {
   kToolAllowed,
   /// Max tokens limit reached
   kMaxTokensReached,
+  /// Server Compaction
+  kServerCompaction,
 };
 
 enum class ModelCapabilities {
