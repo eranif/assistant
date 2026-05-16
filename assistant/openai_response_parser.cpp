@@ -61,12 +61,22 @@ void OpenAIResponseParser::ParseLine(const std::string& line,
 
   try {
     auto json_obj = json::parse(data_content);
+    // Determine the type
     std::string event_type;
     if (json_obj.contains("type") && json_obj["type"].is_string()) {
       event_type = json_obj["type"].get<std::string>();
     } else if (!m_current_event.empty()) {
       event_type = m_current_event;
     } else {
+      return;
+    }
+
+    if (event_type == "error") {
+      auto reason = ExtractError(json_obj);
+      ParseResult result{.is_done = true,
+                         .is_error = true,
+                         .error_message = reason.value_or("")};
+      cb(result);
       return;
     }
 

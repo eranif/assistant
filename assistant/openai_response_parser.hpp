@@ -26,9 +26,9 @@ class OpenAIResponseParser {
     bool is_done{false};
     bool need_more_data{false};
     bool is_error{false};
-    std::optional<std::string> error_message;
     std::optional<Usage> usage;
     std::optional<std::string> finish_reason;
+    std::string error_message;
     // Tool call fields
     std::string tool_name;
     std::string tool_call_id;
@@ -38,7 +38,7 @@ class OpenAIResponseParser {
     inline bool HasValue() const { return !content.empty(); }
     inline bool IsDone() const { return is_done; }
     inline bool NeedMoreData() const { return need_more_data; }
-    inline bool HasError() const { return error_message.has_value(); }
+    inline bool IsError() const { return is_error; }
     inline bool IsToolCall() const { return is_tool_call; }
     inline bool IsThinking() const { return false; }
     inline bool IsMaxTokensReached() const {
@@ -48,6 +48,7 @@ class OpenAIResponseParser {
     inline const std::string& GeToolCallId() const { return tool_call_id; }
     inline json GetToolJson() const { return tool_args; }
     inline std::optional<Usage> GetUsage() const { return usage; }
+    inline std::string GetErrorMessage() const { return error_message; }
     inline Reason GetReason() const {
       if (IsMaxTokensReached()) return Reason::kMaxTokensReached;
       if (is_error) return Reason::kFatalError;  // implies "is_done == true"

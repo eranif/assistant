@@ -31,7 +31,7 @@ TEST(OpenAIResponseParserTest, BasicStreamingResponse) {
   ASSERT_EQ(tokens.size(), 1);
   EXPECT_EQ(tokens[0].content, "Hello");
   EXPECT_FALSE(tokens[0].is_done);
-  EXPECT_FALSE(tokens[0].HasError());
+  EXPECT_FALSE(tokens[0].IsError());
 }
 
 TEST(OpenAIResponseParserTest, StreamCompletedEvent) {
@@ -101,8 +101,8 @@ TEST(OpenAIResponseParserTest, UsageInformation) {
 TEST(OpenAIResponseParserTest, ErrorResponse) {
   OpenAIResponseParser parser;
   std::string message =
-      "event: response.failed\n"
-      "data: {\"type\":\"response.failed\",\"error\":{\"message\":\"Rate limit "
+      "event: error\n"
+      "data: {\"type\":\"error\",\"error\":{\"message\":\"Rate limit "
       "exceeded\","
       "\"type\":\"rate_limit_error\"}}\n";
 
@@ -112,8 +112,81 @@ TEST(OpenAIResponseParserTest, ErrorResponse) {
   });
 
   ASSERT_EQ(tokens.size(), 1);
-  EXPECT_TRUE(tokens[0].HasError());
-  EXPECT_EQ(tokens[0].error_message.value(), "Rate limit exceeded");
+  EXPECT_TRUE(tokens[0].IsError());
+  EXPECT_EQ(tokens[0].GetErrorMessage(), "Rate limit exceeded");
+  EXPECT_TRUE(tokens[0].is_done);
+}
+
+TEST(OpenAIResponseParserTest, ErrorResponseInReponseFailed) {
+  OpenAIResponseParser parser;
+  std::string event = "event: response.failed";
+  std::string payload =
+      R"#(data: {
+  "type": "response.failed",
+  "response": {
+    "id": "resp_04f9868dfa36013f006a0848139b2c8195b8cf8e1129416dad",
+    "object": "response",
+    "created_at": 1778927635,
+    "status": "failed",
+    "background": false,
+    "completed_at": null,
+    "error": {
+      "code": "rate_limit_exceeded",
+      "message": "Rate limit reached for gpt-5.4-mini in organization org-3gD10Y83VnT5wNvdBtn8ZcGD on tokens per min (TPM): Limit 200000, Used 169705, Requested 36831. Please try again in 1.96s. Visit https://platform.openai.com/account/rate-limits to learn more."
+    },
+    "frequency_penalty": 0,
+    "incomplete_details": null,
+    "instructions": null,
+    "max_output_tokens": 64000,
+    "max_tool_calls": null,
+    "model": "gpt-5.4-mini-2026-03-17",
+    "moderation": null,
+    "output": [],
+    "parallel_tool_calls": true,
+    "presence_penalty": 0,
+    "previous_response_id": null,
+    "prompt_cache_key": null,
+    "prompt_cache_retention": "in_memory",
+    "reasoning": {
+      "effort": "none",
+      "summary": null
+    },
+    "safety_identifier": null,
+    "service_tier": "auto",
+    "store": true,
+    "temperature": 1,
+    "text": {
+      "format": {
+        "type": "text"
+      },
+      "verbosity": "medium"
+    },
+    "tool_choice": "auto",
+    "top_logprobs": 0,
+    "top_p": 0.98,
+    "truncation": "disabled",
+    "usage": null,
+    "user": null,
+    "metadata": {}
+  },
+  "sequence_number": 3
+})#";
+
+  payload.erase(std::remove(payload.begin(), payload.end(), '\n'),
+                payload.end());
+  payload.erase(std::remove(payload.begin(), payload.end(), '\r'),
+                payload.end());
+  std::string message = event + "\n" + payload + "\n";
+
+  std::vector<OpenAIResponseParser::ParseResult> tokens;
+  parser.Parse(message, [&tokens](OpenAIResponseParser::ParseResult result) {
+    tokens.push_back(std::move(result));
+  });
+
+  ASSERT_EQ(tokens.size(), 1);
+  EXPECT_TRUE(tokens[0].IsError());
+  EXPECT_TRUE(tokens[0].GetErrorMessage().starts_with(
+      "Rate limit reached for gpt-5.4-mini"));
   EXPECT_TRUE(tokens[0].is_done);
 }
 
@@ -152,7 +225,7 @@ TEST(OpenAIResponseParserTest, MalformedJSON) {
   });
 
   ASSERT_EQ(tokens.size(), 1);
-  EXPECT_TRUE(tokens[0].HasError());
+  EXPECT_TRUE(tokens[0].IsError());
   EXPECT_TRUE(tokens[0].is_done);
 }
 

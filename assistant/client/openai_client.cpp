@@ -104,8 +104,13 @@ bool OpenAIClient::HandleResponse(const std::string& resp,
             << "Got tool request: " << std::setw(2) << tool_invoke_msg;
         req->func_calls_.push_back({tool_invoke_msg, {std::move(fcall)}});
       } else {
-        cb_result = req->callback_(token.content, token.GetReason(),
-                                   token.IsThinking());
+        if (token.IsError()) {
+          cb_result =
+              req->callback_(token.GetErrorMessage(), token.GetReason(), false);
+        } else {
+          cb_result = req->callback_(token.content, token.GetReason(),
+                                     token.IsThinking());
+        }
         auto usage = token.GetUsage();
         auto cost = GetPricing();
         if (usage.has_value()) {
