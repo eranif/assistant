@@ -25,6 +25,10 @@ enum class ContentType {
   text,
   tool_use,
   thinking,
+  /// Server-side compaction summary block (beta `compact-2026-01-12`).
+  /// Streaming format: a single `content_block_delta` with type
+  /// `compaction_delta` carrying the entire summary in `content`.
+  compaction,
 };
 
 enum class DeltaType {
@@ -32,6 +36,8 @@ enum class DeltaType {
   text_delta,
   thinking_delta,
   signature_delta,
+  /// Single-shot delta carrying the full compaction summary in `content`.
+  compaction_delta,
 };
 
 enum ParserState {
@@ -39,6 +45,7 @@ enum ParserState {
   collect_text,
   collect_tool_use_json,
   collect_thinking,
+  collect_compaction,
 };
 
 enum class StopReason {
@@ -52,6 +59,9 @@ enum class StopReason {
   tool_use,
   /// we paused a long-running turn. You may provide the response
   pause_turn,
+  /// `pause_after_compaction` produced a compaction-only response. The
+  /// caller should append the compaction block to history and continue.
+  compaction,
   /// an error occured.
   error,
 };
@@ -173,14 +183,32 @@ struct ParseResult {
     return content_type.has_value() &&
            content_type.value() == ContentType::thinking;
   }
+
+  /// True when this token carries a server-side compaction summary.
+  inline bool IsCompaction() const {
+    return content_type.has_value() &&
+           content_type.value() == ContentType::compaction;
+  }
+
   inline Reason GetReason() const {
+    if (IsCompaction()) {
+      // Compaction summaries are surfaced to callers as informational
+      // partial-result style tokens (with reason kServerCompaction) so the
+      // turn can keep streaming the actual response.
+      return Reason::kServerCompaction;
+    }
     if (IsDone()) {
       // Check the real reason.
-      if (stop_reason.value_or(StopReason::end_turn) ==
-          StopReason::max_tokens) {
+      auto sr = stop_reason.value_or(StopReason::end_turn);
+      if (sr == StopReason::max_tokens) {
         OLOG(LogLevel::kWarning)
             << "We exceeded the requested max_tokens or the model's maximum";
         return Reason::kMaxTokensReached;
+      }
+      if (sr == StopReason::compaction) {
+        // pause_after_compaction=true: the response contains only a
+        // compaction block; the caller is expected to issue a continuation.
+        return Reason::kServerCompaction;
       }
       return Reason::kDone;
     } else {

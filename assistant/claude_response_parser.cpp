@@ -33,7 +33,8 @@ void ResponseParser::Parse(const std::string& text,
             auto stop_reason = GetStopReason(event_message);
             bool is_done{false};
             if (stop_reason.has_value() &&
-                stop_reason.value() == StopReason::max_tokens) {
+                (stop_reason.value() == StopReason::max_tokens ||
+                 stop_reason.value() == StopReason::compaction)) {
               is_done = true;
             }
             cb(std::move(ParseResult{
@@ -65,6 +66,9 @@ void ResponseParser::Parse(const std::string& text,
                 break;
               case ContentType::thinking:
                 m_state = ParserState::collect_thinking;
+                break;
+              case ContentType::compaction:
+                m_state = ParserState::collect_compaction;
                 break;
               case ContentType::tool_use: {
                 // get the toolname
@@ -161,6 +165,43 @@ void ResponseParser::Parse(const std::string& text,
               std::string text = GetContentBlockDeltaContent(event_message);
               cb(std::move(ParseResult{.content_type = ContentType::thinking,
                                        .content = text}));
+            } break;
+            case Event::content_block_stop:
+              m_state = ParserState::initial;
+              break;
+            case Event::message_stop:
+              cb(std::move(
+                  ParseResult{.is_done = true,
+                              .stop_reason = GetStopReason(event_message),
+                              .usage = GetUsage(event_message)}));
+              Reset();
+              return;
+            case Event::error:
+              cb(std::move(ParseResult{
+                  .is_done = true,
+                  .content = GetErrorMessage(event_message.data).value_or(""),
+                  .stop_reason = StopReason::error,
+              }));
+              Reset();
+              return;
+            case Event::ping:
+            case Event::content_block_start:
+            case Event::message_start:
+            case Event::message_delta:
+              break;
+          }
+          break;
+        case ParserState::collect_compaction:
+          // Streaming format for compaction is unique: a single
+          // `content_block_delta` with `delta.type == compaction_delta`
+          // carrying the full summary in `delta.content`. There are no
+          // intermediate streaming chunks.
+          switch (event_message.event) {
+            case Event::content_block_delta: {
+              std::string summary = GetContentBlockDeltaContent(event_message);
+              cb(std::move(
+                  ParseResult{.content_type = ContentType::compaction,
+                              .content = std::move(summary)}));
             } break;
             case Event::content_block_stop:
               m_state = ParserState::initial;
@@ -303,6 +344,13 @@ std::string ResponseParser::GetContentBlockDeltaContent(
       return j["delta"]["partial_json"].get<std::string>();
     case DeltaType::thinking_delta:
       return j["delta"]["thinking"].get<std::string>();
+    case DeltaType::compaction_delta:
+      // Compaction deltas carry the full summary in `delta.content`, which
+      // may legitimately be null/missing for a no-op repeat.
+      if (j["delta"].contains("content") && j["delta"]["content"].is_string()) {
+        return j["delta"]["content"].get<std::string>();
+      }
+      return "";
     case DeltaType::signature_delta:
       // we don't care (for now) about the signature.
       return "";

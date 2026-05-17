@@ -18,6 +18,11 @@ class ClaudeClient : public OllamaClient {
   std::optional<ModelCapabilities> GetModelCapabilities(
       const std::string& model) override;
 
+  /// Returns the configured HTTP headers, augmented with the
+  /// `anthropic-beta: compact-2026-01-12` header when server-side
+  /// compaction is enabled in the active endpoint.
+  std::unordered_map<std::string, std::string> GetHttpHeaders() const override;
+
   void CreateAndPushChatRequest(
       std::optional<assistant::message> msg, OnResponseCallback cb,
       std::string model, ChatOptions chat_options,

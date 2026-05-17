@@ -320,6 +320,106 @@ TEST(ConfigBuilderTest, FromContent_EndpointTransportType) {
   EXPECT_EQ(endpoints[0]->transport_, TransportType::httplib);
 }
 
+// Anthropic server-side compaction (beta) — defaults
+TEST(ConfigBuilderTest, FromContent_ServerCompactionDefaults) {
+  // No server_compaction block at all => disabled, defaults populated.
+  std::string json_content = R"({
+    "endpoints": {
+      "https://api.anthropic.com": {
+        "model": "claude-opus-4-7",
+        "type": "anthropic"
+      }
+    }
+  })";
+
+  auto result = ConfigBuilder::FromContent(json_content);
+  ASSERT_TRUE(result.ok());
+  const auto& endpoints = result.config_->GetEndpoints();
+  ASSERT_EQ(endpoints.size(), 1);
+  const auto& sc = endpoints[0]->server_compaction_;
+  EXPECT_FALSE(sc.enabled);
+  EXPECT_EQ(sc.trigger_input_tokens, 150000u);
+  EXPECT_FALSE(sc.pause_after_compaction);
+  EXPECT_FALSE(sc.instructions.has_value());
+}
+
+// Anthropic server-side compaction (beta) — full config
+TEST(ConfigBuilderTest, FromContent_ServerCompactionFull) {
+  std::string json_content = R"({
+    "endpoints": {
+      "https://api.anthropic.com": {
+        "model": "claude-opus-4-7",
+        "type": "anthropic",
+        "server_compaction": {
+          "enabled": true,
+          "trigger_input_tokens": 100000,
+          "pause_after_compaction": true,
+          "instructions": "Preserve code blocks and function names."
+        }
+      }
+    }
+  })";
+
+  auto result = ConfigBuilder::FromContent(json_content);
+  ASSERT_TRUE(result.ok());
+  const auto& endpoints = result.config_->GetEndpoints();
+  ASSERT_EQ(endpoints.size(), 1);
+  const auto& sc = endpoints[0]->server_compaction_;
+  EXPECT_TRUE(sc.enabled);
+  EXPECT_EQ(sc.trigger_input_tokens, 100000u);
+  EXPECT_TRUE(sc.pause_after_compaction);
+  ASSERT_TRUE(sc.instructions.has_value());
+  EXPECT_EQ(sc.instructions.value(),
+            "Preserve code blocks and function names.");
+}
+
+// Anthropic server-side compaction (beta) — partial config
+TEST(ConfigBuilderTest, FromContent_ServerCompactionPartial) {
+  // enabled=true but no other knobs => uses defaults for the rest
+  std::string json_content = R"({
+    "endpoints": {
+      "https://api.anthropic.com": {
+        "model": "claude-opus-4-7",
+        "type": "anthropic",
+        "server_compaction": { "enabled": true }
+      }
+    }
+  })";
+
+  auto result = ConfigBuilder::FromContent(json_content);
+  ASSERT_TRUE(result.ok());
+  const auto& endpoints = result.config_->GetEndpoints();
+  ASSERT_EQ(endpoints.size(), 1);
+  const auto& sc = endpoints[0]->server_compaction_;
+  EXPECT_TRUE(sc.enabled);
+  EXPECT_EQ(sc.trigger_input_tokens, 150000u);
+  EXPECT_FALSE(sc.pause_after_compaction);
+  EXPECT_FALSE(sc.instructions.has_value());
+}
+
+// Empty `instructions` string is treated as "no instructions".
+TEST(ConfigBuilderTest, FromContent_ServerCompactionEmptyInstructions) {
+  std::string json_content = R"({
+    "endpoints": {
+      "https://api.anthropic.com": {
+        "model": "claude-opus-4-7",
+        "type": "anthropic",
+        "server_compaction": {
+          "enabled": true,
+          "instructions": ""
+        }
+      }
+    }
+  })";
+
+  auto result = ConfigBuilder::FromContent(json_content);
+  ASSERT_TRUE(result.ok());
+  const auto& endpoints = result.config_->GetEndpoints();
+  ASSERT_EQ(endpoints.size(), 1);
+  EXPECT_TRUE(endpoints[0]->server_compaction_.enabled);
+  EXPECT_FALSE(endpoints[0]->server_compaction_.instructions.has_value());
+}
+
 // Test endpoint with multiple models
 TEST(ConfigBuilderTest, FromContent_EndpointMultipleModels) {
   std::string json_content = R"({

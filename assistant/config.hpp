@@ -70,6 +70,34 @@ constexpr std::string_view kEndpointOpenAI = "https://api.openai.com";
 static std::unordered_map<std::string, std::string> kDefaultOllamaHeaders = {
     {"Host", "127.0.0.1"}};
 
+/// Anthropic server-side compaction (beta) configuration.
+///
+/// When enabled, the Claude client adds the `anthropic-beta:
+/// compact-2026-01-12` header and a `context_management.edits` entry to the
+/// chat request. This enables automatic server-side summarisation of long
+/// conversations once the trigger threshold is reached. The default trigger
+/// (150,000 input tokens) and minimum (50,000) match the Anthropic API.
+///
+/// Reference:
+/// https://docs.anthropic.com/en/docs/build-with-claude/compaction
+struct ServerCompaction {
+  /// Master switch. When false, the feature is completely disabled and no
+  /// `context_management` field is added to requests, nor is the beta header
+  /// sent.
+  bool enabled{false};
+  /// Trigger threshold (in input tokens). Anthropic enforces a minimum of
+  /// 50,000 server-side, but the value is forwarded verbatim — invalid
+  /// values surface as API errors.
+  size_t trigger_input_tokens{150000};
+  /// When true, the API stops after generating the compaction block so the
+  /// caller can decide how to continue. Surfaces as
+  /// `Reason::kServerCompaction`.
+  bool pause_after_compaction{false};
+  /// Optional custom summarisation prompt. When set, completely replaces the
+  /// default Anthropic summarisation prompt (it does NOT append).
+  std::optional<std::string> instructions;
+};
+
 struct Endpoint {
   std::string url_{kEndpointOllamaLocal};
   EndpointKind type_{EndpointKind::ollama};
@@ -82,6 +110,8 @@ struct Endpoint {
   bool verify_server_ssl_{true};
   TransportType transport_{TransportType::httplib};
   size_t compaction_threshold_{kDefaultCompactionThreshold};
+  /// Anthropic-only: server-side compaction settings. Disabled by default.
+  ServerCompaction server_compaction_;
 };
 
 struct AnthropicEndpoint : public Endpoint {

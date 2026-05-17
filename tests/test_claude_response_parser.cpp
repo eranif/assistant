@@ -437,4 +437,114 @@ data: {invalid json here
   EXPECT_EQ(tokens.size(), 1);
   EXPECT_TRUE(tokens[0].need_more_data);
 }
+
+// Server-side compaction (beta `compact-2026-01-12`) — streaming format.
+// Format: a single `content_block_delta` with `delta.type=compaction_delta`
+// carrying the entire summary in `delta.content`. Followed by either more
+// content blocks (text/tool_use) or `message_stop`.
+TEST(ResponseParserTest, CompactionBlockWithFollowingText) {
+  ResponseParser parser;
+  std::string message = R"(
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"compaction"}}
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"compaction_delta","content":"Summary: user wants a web scraper. Built initial Python prototype."}}
+event: content_block_stop
+data: {"type":"content_block_stop","index":0}
+event: content_block_start
+data: {"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"Continuing from compacted context..."}}
+event: content_block_stop
+data: {"type":"content_block_stop","index":1}
+event: message_stop
+data: {"type":"message_stop"}
+)";
+
+  std::vector<ParseResult> tokens;
+  parser.Parse(message, [&tokens](ParseResult result) {
+    tokens.push_back(std::move(result));
+  });
+
+  ASSERT_EQ(tokens.size(), 3);
+
+  // 1: compaction summary
+  EXPECT_TRUE(tokens[0].IsCompaction());
+  EXPECT_FALSE(tokens[0].IsDone());
+  ASSERT_TRUE(tokens[0].content_type.has_value());
+  EXPECT_EQ(tokens[0].content_type.value(), ContentType::compaction);
+  EXPECT_EQ(tokens[0].content,
+            "Summary: user wants a web scraper. Built initial Python "
+            "prototype.");
+  EXPECT_EQ(tokens[0].GetReason(), Reason::kServerCompaction);
+
+  // 2: continuation text
+  EXPECT_FALSE(tokens[1].IsCompaction());
+  EXPECT_TRUE(tokens[1].content_type.has_value());
+  EXPECT_EQ(tokens[1].content_type.value(), ContentType::text);
+  EXPECT_EQ(tokens[1].content, "Continuing from compacted context...");
+
+  // 3: message_stop
+  EXPECT_TRUE(tokens[2].IsDone());
+}
+
+// `pause_after_compaction=true` => API stops after the compaction block.
+TEST(ResponseParserTest, CompactionStopReasonPause) {
+  ResponseParser parser;
+  std::string message = R"(
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"compaction"}}
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"compaction_delta","content":"Compacted summary"}}
+event: content_block_stop
+data: {"type":"content_block_stop","index":0}
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"compaction"},"usage":{"output_tokens":42}}
+event: message_stop
+data: {"type":"message_stop"}
+)";
+
+  std::vector<ParseResult> tokens;
+  parser.Parse(message, [&tokens](ParseResult result) {
+    tokens.push_back(std::move(result));
+  });
+
+  // Expect: 1 compaction token, 1 message_delta (is_done because
+  // stop_reason=compaction), 1 message_stop.
+  ASSERT_EQ(tokens.size(), 3);
+
+  EXPECT_TRUE(tokens[0].IsCompaction());
+  EXPECT_EQ(tokens[0].content, "Compacted summary");
+  EXPECT_EQ(tokens[0].GetReason(), Reason::kServerCompaction);
+
+  EXPECT_TRUE(tokens[1].IsDone());
+  ASSERT_TRUE(tokens[1].stop_reason.has_value());
+  EXPECT_EQ(tokens[1].stop_reason.value(), StopReason::compaction);
+  EXPECT_EQ(tokens[1].GetReason(), Reason::kServerCompaction);
+
+  EXPECT_TRUE(tokens[2].IsDone());
+}
+
+// Compaction delta with missing/null `content` field => empty string.
+TEST(ResponseParserTest, CompactionEmptyContent) {
+  ResponseParser parser;
+  std::string message = R"(
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"compaction"}}
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"compaction_delta","content":null}}
+event: content_block_stop
+data: {"type":"content_block_stop","index":0}
+)";
+
+  std::vector<ParseResult> tokens;
+  parser.Parse(message, [&tokens](ParseResult result) {
+    tokens.push_back(std::move(result));
+  });
+
+  ASSERT_GE(tokens.size(), 1u);
+  EXPECT_TRUE(tokens[0].IsCompaction());
+  EXPECT_EQ(tokens[0].content, "");
+}
+
 }  // namespace assistant::claude

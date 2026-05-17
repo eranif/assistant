@@ -237,6 +237,36 @@ ParseResult ConfigBuilder::FromContent(const std::string& content,
           endpoint->compaction_threshold_ = endpoint->context_size_.value() / 2;
         }  // else use the default value of 100,000
 
+        // Anthropic server-side compaction (beta).
+        // Schema:
+        //   "server_compaction": {
+        //     "enabled": true,
+        //     "trigger_input_tokens": 150000,
+        //     "pause_after_compaction": false,
+        //     "instructions": "..."
+        //   }
+        if (endpoint_json.contains("server_compaction") &&
+            endpoint_json["server_compaction"].is_object()) {
+          const auto& sc_json = endpoint_json["server_compaction"];
+          ServerCompaction sc;
+          sc.enabled =
+              GetValueFromJson<bool>(sc_json, "enabled").value_or(false);
+          if (sc_json.contains("trigger_input_tokens") &&
+              sc_json["trigger_input_tokens"].is_number_unsigned()) {
+            sc.trigger_input_tokens =
+                sc_json["trigger_input_tokens"].get<size_t>();
+          }
+          sc.pause_after_compaction =
+              GetValueFromJson<bool>(sc_json, "pause_after_compaction")
+                  .value_or(false);
+          auto instructions =
+              GetValueFromJson<std::string>(sc_json, "instructions");
+          if (instructions.has_value() && !instructions->empty()) {
+            sc.instructions = std::move(instructions);
+          }
+          endpoint->server_compaction_ = std::move(sc);
+        }
+
         if (!endpoint_json.contains("model") ||
             !endpoint_json["model"].is_string()) {
           std::stringstream ss;

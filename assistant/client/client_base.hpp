@@ -54,6 +54,10 @@ struct ChatContext {
   std::string thinking_start_tag{"<think>"};
   std::string thinking_end_tag{"</think>"};
   std::string current_response;
+  /// Anthropic only: when the streamed response includes a server-side
+  /// `compaction` block, the summary text is captured here so the assistant
+  /// message persisted to history can include it. Cleared once consumed.
+  std::optional<std::string> compaction_summary;
 };
 
 struct ChatRequestQueue {
@@ -375,7 +379,9 @@ class ClientBase {
   }
 
   inline std::string GetUrl() const { return m_endpoint.get_value().url_; }
-  inline std::unordered_map<std::string, std::string> GetHttpHeaders() const {
+  /// HTTP headers sent on every request to the provider. Subclasses may
+  /// override to inject additional headers (e.g. Anthropic beta headers).
+  virtual std::unordered_map<std::string, std::string> GetHttpHeaders() const {
     return m_endpoint.get_value().headers_;
   }
   inline EndpointKind GetEndpointKind() const {

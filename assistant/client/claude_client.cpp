@@ -1,10 +1,68 @@
 #include "assistant/client/claude_client.hpp"
 
 namespace assistant {
+
+namespace {
+// Anthropic beta gate for server-side compaction. When this gate is
+// active, the request must include an `anthropic-beta` header carrying
+// this token AND a `context_management.edits` entry referencing
+// `kCompactionStrategyType`.
+//
+// Reference:
+// https://docs.anthropic.com/en/docs/build-with-claude/compaction
+constexpr std::string_view kCompactionBetaToken = "compact-2026-01-12";
+constexpr std::string_view kCompactionStrategyType = "compact_20260112";
+
+// Build the `context_management` JSON object for a Claude chat request,
+// reflecting the active endpoint's `ServerCompaction` settings. Returns an
+// empty json (no field) when compaction is disabled.
+json BuildCompactionEdit(const ServerCompaction& sc) {
+  json edit = json::object();
+  edit["type"] = std::string{kCompactionStrategyType};
+
+  // Anthropic enforces a minimum of 50,000 tokens. We forward whatever the
+  // user configured and let the server validate; this avoids surprising
+  // them with silent clamping.
+  edit["trigger"] = {{"type", "input_tokens"},
+                     {"value", sc.trigger_input_tokens}};
+  if (sc.pause_after_compaction) {
+    edit["pause_after_compaction"] = true;
+  }
+  if (sc.instructions.has_value() && !sc.instructions->empty()) {
+    edit["instructions"] = sc.instructions.value();
+  }
+  json out = json::object();
+  out["edits"] = json::array({std::move(edit)});
+  return out;
+}
+
+}  // namespace
+
 ClaudeClient::ClaudeClient(const Endpoint& endpoint)
     : OllamaClient(endpoint),
       m_responseParser(std::make_shared<claude::ResponseParser>()) {
   m_multi_tool_reply_as_array = true;
+}
+
+std::unordered_map<std::string, std::string> ClaudeClient::GetHttpHeaders()
+    const {
+  auto headers = m_endpoint.get_value().headers_;
+  if (m_endpoint.get_value().server_compaction_.enabled) {
+    // anthropic-beta is comma-separated; preserve any value the operator
+    // configured by appending rather than overwriting.
+    auto it = headers.find("anthropic-beta");
+    std::string beta_value{kCompactionBetaToken};
+    if (it != headers.end() && !it->second.empty()) {
+      // Avoid duplicating the token if already present.
+      if (it->second.find(kCompactionBetaToken) == std::string::npos) {
+        beta_value = it->second + "," + std::string{kCompactionBetaToken};
+      } else {
+        beta_value = it->second;
+      }
+    }
+    headers["anthropic-beta"] = std::move(beta_value);
+  }
+  return headers;
 }
 
 std::optional<json> ClaudeClient::GetModelInfo(
@@ -85,6 +143,17 @@ void ClaudeClient::CreateAndPushChatRequest(
     req["cache_control"] = {{"type", "ephemeral"}};
   }
 
+  // Server-side compaction (beta). When enabled in the active endpoint,
+  // attach a `context_management.edits` entry. The `anthropic-beta` header
+  // is added by GetHttpHeaders() when the underlying transport is
+  // constructed in OllamaClient::CreateClient().
+  {
+    const auto& sc = m_endpoint.get_value().server_compaction_;
+    if (sc.enabled) {
+      req["context_management"] = BuildCompactionEdit(sc);
+    }
+  }
+
   req["model"] = model;
   req["stream"] = m_stream.load();
   req["messages"] = history.to_json();
@@ -160,14 +229,36 @@ bool ClaudeClient::HandleResponse(const std::string& resp,
         is_done = token.IsDone();
       }
 
-      if (token.IsToolCall()) {
+      if (token.IsCompaction()) {
+        // Server-side compaction summary. Surface to the caller as an
+        // informational event and stash the summary so we can store it as
+        // a structured assistant content block when the turn completes.
+        chat_context->compaction_summary = token.content;
+        cb_result = req->callback_(token.content, Reason::kServerCompaction,
+                                   /*thinking=*/false);
+        OLOG(LogLevel::kInfo)
+            << "Server-side compaction triggered. Summary length: "
+            << token.content.size() << " bytes.";
+      } else if (token.IsToolCall()) {
         FunctionCall fcall{.name = token.GetToolName(),
                            .args = token.GetToolJson(),
                            .invocation_id = token.GetToolId()};
 
-        // Build the AI request message
+        // Build the AI request message. If we just observed a compaction
+        // block in this turn, prepend it (only on the first tool_use entry)
+        // so it persists in history and the API drops earlier messages on
+        // future turns.
         assistant::message tool_invoke_msg("assistant", "");
         json content_arr = json::array();
+        if (chat_context->compaction_summary.has_value() &&
+            req->func_calls_.empty()) {
+          json compaction_block = json::object();
+          compaction_block["type"] = "compaction";
+          compaction_block["content"] =
+              chat_context->compaction_summary.value();
+          content_arr.push_back(std::move(compaction_block));
+          chat_context->compaction_summary.reset();  // consumed
+        }
         json tool_use = json::object();
         tool_use["type"] = "tool_use";
         tool_use["id"] = token.GetToolId();
@@ -205,9 +296,29 @@ bool ClaudeClient::HandleResponse(const std::string& resp,
     }
 
     if (!cb_result || is_done) {
-      // Store the AI response, as a message in our history.
-      assistant::message msg{std::string{kAssistantRole},
-                             chat_context->current_response};
+      // Store the AI response as a message in our history. If a compaction
+      // summary was produced this turn (without a tool call), the assistant
+      // message must be a structured array containing the compaction block
+      // so subsequent requests can reuse the compacted prefix.
+      assistant::message msg;
+      msg["role"] = std::string{kAssistantRole};
+      if (chat_context->compaction_summary.has_value()) {
+        json content_arr = json::array();
+        json compaction_block = json::object();
+        compaction_block["type"] = "compaction";
+        compaction_block["content"] = chat_context->compaction_summary.value();
+        content_arr.push_back(std::move(compaction_block));
+        if (!chat_context->current_response.empty()) {
+          json text_block = json::object();
+          text_block["type"] = "text";
+          text_block["text"] = chat_context->current_response;
+          content_arr.push_back(std::move(text_block));
+        }
+        msg["content"] = std::move(content_arr);
+        chat_context->compaction_summary.reset();
+      } else {
+        msg["content"] = chat_context->current_response;
+      }
       if (!cb_result) {
         OLOG(LogLevel::kWarning)
             << "User cancelled response processing (callback returned false).";

@@ -1,1165 +1,642 @@
 # Assistant Library
 
-`assistant` is a C++20 library for building provider-neutral AI assistants and agent-style applications. It offers a unified interface over multiple model providers, streaming responses, tool/function calling, conversation history, and MCP-backed external tools.
+`assistant` is a C++20 library for building provider-neutral AI assistants and agent-style applications. It exposes a single `ClientBase` runtime API over multiple LLM providers, with first-class support for streaming, tool/function calling, conversation history, MCP-backed external tools, and **automatic server-side context compaction** for long-running conversations.
 
 ## Table of Contents
 
-1. [Overview](#overview)
-2. [Features](#features)
+1. [Highlights](#highlights)
+2. [Supported clients and feature matrix](#supported-clients-and-feature-matrix)
 3. [Architecture](#architecture)
-4. [Getting Started](#getting-started)
+4. [Quick start](#quick-start)
 5. [Configuration](#configuration)
-6. [Building](#building)
-7. [Project Layout](#project-layout)
-8. [Examples](#examples)
-9. [API Notes](#api-notes)
+6. [Server-side compaction](#server-side-compaction)
+7. [Tool / function calling](#tool--function-calling)
+8. [MCP integration](#mcp-integration)
+9. [Building and testing](#building-and-testing)
+10. [Project layout](#project-layout)
+11. [API surface](#api-surface)
+12. [Logging](#logging)
+13. [Thread safety](#thread-safety)
+14. [License and contributing](#license-and-contributing)
 
-## Overview
+## Highlights
 
-The library abstracts provider-specific API details so applications can switch between backends by changing configuration rather than rewriting client code. It is designed around a shared `ClientBase` interface and concrete clients for providers such as Ollama, Anthropic Claude, OpenAI, and OpenAI-compatible messages endpoints.
+- **One unified API over four providers**: Anthropic Claude, OpenAI (`/v1/responses`), OpenAI-compatible chat completions (e.g. Moonshot AI), and Ollama (local or cloud).
+- **Streaming responses** with structured callbacks (text, thinking, tool calls, cost, compaction notices, errors).
+- **Automatic server-side compaction** for both Claude (beta `compact-2026-01-12`) and OpenAI (`/v1/responses` `context_management`). Long conversations stay focused without manual history surgery.
+- **In-process and MCP tools** registered through the same `FunctionTable`. MCP servers can run locally (stdio), over SSE, or remotely via SSH-tunnelled stdio.
+- **Per-tool and client-wide human-in-the-loop** approval gates.
+- **Cost / usage tracking** with a built-in pricing table for current Claude and GPT-5 model families, plus `AddPricing(...)` for custom rates.
+- **Thread-safe** state with Clang `-Wthread-safety` annotations enforced repo-wide.
+- **Configuration-driven**, with `${VAR}` environment-variable expansion in every string.
+- **Two HTTP transports**: vendored `cpp-httplib` (default) or shelling out to the system `curl` binary for environments where TLS / proxy fidelity matters.
 
-### Supported Providers
+## Supported clients and feature matrix
 
-- **Anthropic Claude** - cloud API
-- **OpenAI** - responses API and messages-compatible endpoints
-- **Ollama** - Local model inference
+| Capability                              | `OllamaClient` (Ollama)        | `ClaudeClient` (Anthropic)            | `OpenAIClient` (`/v1/responses`)              | `OpenAIMessagesClient` (`/v1/chat/completions` — Moonshot AI etc.) |
+|----------------------------------------|--------------------------------|---------------------------------------|-----------------------------------------------|--------------------------------------------------------------------|
+| Wire-format / endpoint                 | `/api/chat`, `/api/show`, `/api/tags` | `/v1/messages`                  | `/v1/responses`                                | `/v1/chat/completions`                                             |
+| Streaming                              | Optional (config / model)      | Optional                              | **Forced on** (`IsStreaming() == true`)        | **Forced on** (`IsStreaming() == true`)                            |
+| Tool / function calling                | Per-model capability           | Yes                                   | Yes (strict mode, all params required)         | Yes (Ollama-shaped tool schema)                                    |
+| Extended thinking                      | Per-model (`<think>` tags)     | Yes (signed thinking blocks)          | Reported as text                               | Per-model                                                          |
+| Vision                                 | Per-model                      | No (this lib)                         | No (this lib)                                  | No (this lib)                                                      |
+| `CachePolicy::kStatic` (prompt cache)  | n/a                            | `cache_control: {type: ephemeral}` on last tool / system | n/a                            | n/a                                                                |
+| **Server-side compaction**             | n/a                            | **Beta (`compact-2026-01-12`), opt-in via `server_compaction.enabled`** | **Always on** (`context_management.compaction`, `compact_threshold`) | n/a                                                                |
+| `pause_after_compaction` (single-turn pause) | n/a                       | Yes (surfaces `Reason::kServerCompaction`) | n/a                                       | n/a                                                                |
+| Custom compaction summarisation prompt | n/a                            | Yes (`server_compaction.instructions`)  | No                                            | n/a                                                                |
+| `Interrupt()` mid-stream               | Yes                            | Yes                                   | Yes                                            | Yes                                                                |
+| Cost / usage tracking                  | Yes (when pricing is set)      | Yes (`Usage::FromClaudeJson`)         | Yes                                            | Yes                                                                |
+| Human-in-the-loop tool approval        | Yes                            | Yes                                   | Yes                                            | Yes                                                                |
+| MCP-backed external tools              | Yes                            | Yes                                   | Yes                                            | Yes                                                                |
+| `httplib` transport                    | Default                        | Default                               | Default                                        | Default                                                            |
+| `curl` transport                       | Yes                            | Yes                                   | Yes                                            | Yes                                                                |
 
-### Design Philosophy
+`MakeClient(...)` selects the concrete client by `Endpoint::type_`:
 
-- **Unified interface**: one API for all supported providers
-- **Configuration-driven selection**: switch providers through config
-- **Type-safe C++20**: modern standard library features and strong typing
-- **Thread-safe state**: history and queues are guarded for concurrent use
-- **Extensible tool system**: local functions and MCP-backed tools share a common abstraction
-
-## Features
-
-### Multi-provider support
-Work with different AI models and providers interchangeably without changing application code. Simply update the configuration.
-
-### Function and tool calling
-- Native support for AI-called tools/functions
-- Automatic tool invocation and result handling
-- Tool registry management
-- Support for both local and remote tools via MCP (Model Context Protocol)
-
-### Streaming responses
-- Real-time response streaming as generated
-- Extended thinking/reasoning display
-- Progress callbacks with detailed status information
-- Low-latency response delivery
-
-### Conversation management
-- Automatic conversation history tracking
-- Configurable history window size
-- Conversation state management
-- System message support for agent behavior guidance
-
-### Caching support
-- Static content caching (supported by Claude)
-- Automatic caching management
-- Cache policy configuration
-- Token usage optimization
-
-### Cost tracking
-- Per-request cost calculation
-- Aggregated usage tracking
-- Token usage monitoring
-- Built-in pricing tables for major providers
-
-### MCP integration
-- Native Model Context Protocol support
-- Both STDIO and SSE transport mechanisms
-- Remote MCP server support via SSH
-- Dynamic tool registration from MCP servers
-
-### Thread safety
-- Atomic operations for state management
-- Mutex-protected shared resources
-- Thread-safe request queuing
-- Safe concurrent access patterns
-
-### Human-in-the-loop approval
-- Optional approval callbacks before tool execution
-- Fine-grained control over agent actions
-- User override capabilities
-
-### Extended reasoning
-- Support for extended thinking models
-- Thinking state tracking
-- Separate thinking/output display
+| `EndpointKind`        | Constructed client          |
+|-----------------------|------------------------------|
+| `ollama`              | `OllamaClient`               |
+| `anthropic`           | `ClaudeClient`               |
+| `openai`              | `OpenAIClient`               |
+| `moonshotai`          | `OpenAIMessagesClient`       |
 
 ## Architecture
 
-### Core Design Pattern
-
 ```mermaid
-flowchart TD
-  App[Application Code] --> Base[ClientBase Interface\nChat / Stream / Tools / Config / History]
+flowchart TB
+  App[Application code] --> Factory[MakeClient]
+  Factory --> Base[ClientBase shared_ptr]
+
   Base --> Ollama[OllamaClient]
-  Base --> Claude[ClaudeClient]
-  Base --> OpenAI[OpenAIClient]
-  Base --> OpenAIMsg[OpenAIMessagesClient]
+  Ollama --> Claude[ClaudeClient]
+  Ollama --> OpenAI[OpenAIClient]
+  Ollama --> OpenAIMsg[OpenAIMessagesClient]
 
-  Ollama --> Local[Local model transport]
-  Claude --> HTTP1[HTTP / REST transport]
-  OpenAI --> HTTP2[HTTP / REST transport]
-  OpenAIMsg --> HTTP3[API-compatible messages transport]
+  Base --> FT[FunctionTable]
+  Base --> Hist[History]
+  Base --> Q[ChatRequestQueue]
 
-  Base --> Tools[FunctionTable / Tool system]
-  Tools --> InProc[In-process functions]
-  Tools --> MCP[MCP-backed external tools]
+  FT --> InProc[InProcessFunction]
+  FT --> External[ExternalFunction]
+  External --> MCP[MCPClient]
+  MCP --> Stdio[stdio child]
+  MCP --> SSE[SSE]
+  MCP --> SSH[ssh-tunnelled stdio]
+
+  Ollama --> Transport["ITransport: httplib | curl"]
 ```
 
-### Key Components
+`OllamaClient` is the neutral baseline; the OpenAI and Claude clients inherit from it and override only the parts of the request / response lifecycle that differ (system message handling, tool result encoding, streaming framing, compaction semantics).
 
-#### 1. **ClientBase**
-Abstract base class defining the unified runtime interface:
-- chat management
-- model interaction
-- function table management
-- history management
-- configuration application
+## Quick start
 
-#### 2. **Specific Clients**
-Provider-specific implementations:
-- `OllamaClient` - local model inference
-- `ClaudeClient` - Anthropic Claude API
-- `OpenAIClient` - OpenAI responses API
-- `OpenAIMessagesClient` - OpenAI-compatible messages endpoints
-
-#### 3. **FunctionTable**
-Registry for available tools:
-- thread-safe function management
-- dynamic function registration
-- provider-specific tool conversion
-- function lookup and invocation
-
-#### 4. **ChatRequest**
-Represents an in-flight chat request:
-- request metadata
-- callback handling
-- tool invocation tracking
-- finalization logic
-
-#### 5. **Configuration System**
-JSON-based configuration:
-- endpoint specification
-- MCP server registration
-- timeout settings
-- logging configuration
-- history window size
-
-## Getting Started
-
-### Minimal Example
+### Minimal example
 
 ```cpp
 #include "assistant/assistant.hpp"
 #include <iostream>
 
-using namespace assistant;
-
 int main() {
-    auto conf_result = ConfigBuilder::FromFile("config.json");
-    if (!conf_result.ok()) {
-        std::cerr << "Failed to parse configuration: "
-                  << conf_result.errmsg_ << std::endl;
-        return 1;
-    }
+  auto parsed = assistant::ConfigBuilder::FromFile("config.json");
+  if (!parsed.ok()) {
+    std::cerr << "config: " << parsed.errmsg_ << "\n";
+    return 1;
+  }
 
-    auto cli_opt = MakeClient(conf_result.config_.value());
-    if (!cli_opt.has_value()) {
-        std::cerr << "Failed to create client" << std::endl;
-        return 1;
-    }
+  auto cli_opt = assistant::MakeClient(parsed.config_.value());
+  if (!cli_opt) {
+    std::cerr << "failed to create client\n";
+    return 1;
+  }
+  auto cli = cli_opt.value();
 
-    auto client = cli_opt.value();
-    client->SetToolInvokeCallback([](const std::string& tool_name) {
-        std::cout << "Tool requested: " << tool_name << std::endl;
+  cli->AddSystemMessage("You are a precise C++ assistant.");
+
+  cli->Chat(
+      "Summarise the SOLID principles in two sentences.",
+      [](const std::string& text, assistant::Reason reason, bool thinking) {
+        switch (reason) {
+          case assistant::Reason::kPartialResult:
+            std::cout << text << std::flush;
+            break;
+          case assistant::Reason::kServerCompaction:
+            std::cerr << "\n[compaction] " << text << "\n";
+            break;
+          case assistant::Reason::kRequestCost:
+            std::cerr << "\n[cost] " << text << "\n";
+            break;
+          case assistant::Reason::kDone:
+            std::cout << "\n";
+            break;
+          case assistant::Reason::kFatalError:
+            std::cerr << "[error] " << text << "\n";
+            return false;
+          default:
+            break;
+        }
         return true;
-    });
-
-    client->Chat(
-        "Hello, what is 2+2?",
-        [](const std::string& text, assistant::Reason reason,
-           bool thinking) -> bool {
-            switch (reason) {
-                case assistant::Reason::kPartialResult:
-                    std::cout << text;
-                    std::cout.flush();
-                    break;
-                case assistant::Reason::kDone:
-                    std::cout << std::endl;
-                    break;
-                case assistant::Reason::kFatalError:
-                    std::cerr << "Error: " << text << std::endl;
-                    break;
-                default:
-                    break;
-            }
-            return true;
-        },
-        assistant::ChatOptions::kDefault
-    );
-
-    return 0;
+      },
+      assistant::ChatOptions::kDefault);
 }
 ```
 
-### Configuration File
+### Minimal configuration
 
 ```json
 {
-  "endpoint": {
-    "type": "anthropic",
-    "url": "https://api.anthropic.com",
-    "model": "claude-3-5-sonnet-20241022",
-    "headers": {
-      "x-api-key": "${ANTHROPIC_API_KEY}"
-    },
-    "max_tokens": 4096,
-    "verify_server_ssl": true,
-    "context_size": 32768
+  "endpoints": {
+    "https://api.anthropic.com": {
+      "type": "anthropic",
+      "model": "claude-sonnet-4-6",
+      "active": true,
+      "http_headers": { "x-api-key": "${ANTHROPIC_API_KEY}" },
+      "max_tokens": 8192,
+      "context_size": 200000
+    }
   },
-  "log_level": "error",
+  "log_level": "info",
   "stream": true,
   "keep_alive": "5m"
 }
 ```
 
-## Building
-
-Typical CMake workflow:
-
-```bash
-mkdir -p .build
-cd .build
-cmake .. -DCMAKE_BUILD_TYPE=Debug -DASSISTANTLIB_BUILD_TESTS=ON
-cmake --build .
-```
-
-Useful options:
-
-- `ASSISTANTLIB_WITH_OPENSSL` - enable TLS support when available
-- `ASSISTANTLIB_BUILD_EXAMPLE` - build the CLI example
-- `ASSISTANTLIB_BUILD_TESTS` - build unit tests
-
-## Project Layout
-
-- `assistant/` - core library implementation and public headers
-- `assistant/client/` - provider clients and shared client base
-- `assistant/cpp-mcp/` - MCP protocol integration
-- `cli/` - interactive demo / entry point
-- `tests/` - GoogleTest-based unit tests
-- `examples/` - sample configuration and usage artifacts
-- `submodules/googletest/` - vendored test dependency
-
-## Examples
-
-The CLI example in `cli/main.cpp` shows how to:
-
-- load configuration
-- create a client with `MakeClient(...)`
-- register local functions and MCP tools
-- approve or deny tool execution
-- stream assistant responses
-- maintain and customize chat history
-
-## API Notes
-
-Primary entry points include:
-
-- `assistant::MakeClient(std::optional<Config>)`
-- `assistant::MakeClient(const std::string& config_content)`
-- `assistant::MakeClient(const std::filesystem::path& path)`
-
-`ClientBase` exposes the main runtime operations, including chat, history, tool registration, model information, and configuration application. The exact provider behavior differs by backend, so consult the implementation files when changing request/response handling.
-
-## Core Components
-
-### 1. ClientBase - The Agent Interface
-
-The foundation of the library. All agents inherit from or use `ClientBase`.
-
-#### Primary Methods
-
-```cpp
-virtual void Chat(std::string msg,
-                  OnResponseCallback cb,
-                  ChatOptions chat_options) = 0;
-
-virtual bool IsRunning() = 0;
-
-virtual std::vector<std::string> List() = 0;
-
-virtual std::optional<json> GetModelInfo(const std::string& model) = 0;
-virtual std::optional<ModelCapabilities> GetModelCapabilities(
-    const std::string& model) = 0;
-```
-
-#### Callback Definition
-
-```cpp
-using OnResponseCallback = std::function<bool(
-    const std::string& text,
-    Reason call_reason,
-    bool thinking
-)>;
-```
-
-#### Response Reasons
-
-- `kPartialResult` - streaming chunk of response
-- `kDone` - request completed successfully
-- `kFatalError` - unrecoverable error
-- `kCancelled` - user cancelled the request
-- `kLogNotice` - informational log message
-- `kLogDebug` - debug-level log message
-- `kRequestCost` - cost/usage information
-
-### 2. Function/Tool System
-
-#### Registering Functions
-
-```cpp
-using FunctionBuilder = assistant::FunctionBuilder;
-
-// Create and register a function
-client->GetFunctionTable().Add(
-    FunctionBuilder("GetWeather")
-        .SetDescription("Get the weather for a location")
-        .AddRequiredParam("location", "City name", "string")
-        .AddOptionalParam("unit", "Temperature unit (C/F)", "string")
-        .SetCallback([](const json& args) -> FunctionResult {
-            // Extract arguments
-            auto location = assistant::GetFunctionArg<std::string>(
-                args, "location");
-            if (!location.has_value()) {
-                return FunctionResult{
-                    .isError = true,
-                    .text = "Missing location parameter"
-                };
-            }
-
-            // Implement logic
-            std::string result = "Weather for " + location.value();
-
-            return FunctionResult{
-                .isError = false,
-                .text = result
-            };
-        })
-        .Build()
-);
-```
-
-#### Function Result Structure
-
-```cpp
-struct FunctionResult {
-    bool isError{false};          // true if error occurred
-    std::string text;              // Result or error message
-};
-```
-
-#### Macro Helper for Safe Argument Extraction
-
-```cpp
-#define ASSIGN_FUNC_ARG_OR_RETURN(var, expr)                    \
-  if (!expr.has_value()) {                                      \
-    return assistant::FunctionResult{                           \
-        .isError = true,                                        \
-        .text = "Missing mandatory argument"                    \
-    };                                                          \
-  }                                                             \
-  var = expr.value();
-```
-
-### 3. Configuration System
-
-#### Config Builder
-
-```cpp
-// Load from file
-auto result = ConfigBuilder::FromFile("config.json");
-if (!result.ok()) {
-    std::cerr << "Config error: " << result.errmsg_ << std::endl;
-}
-auto config = result.config_.value();
-
-// Load from string
-auto result = ConfigBuilder::FromContent(json_string);
-```
-
-#### Configuration Options
-
-```json
-{
-  "endpoint": {
-    "type": "anthropic",  // or "ollama", "openai"
-    "url": "https://api.anthropic.com",
-    "model": "claude-3-5-sonnet-20241022",
-    "headers": {
-      "x-api-key": "${ANTHROPIC_API_KEY}"
-    },
-    "max_tokens": 4096,
-    "verify_server_ssl": true,
-    "context_size": 32768
-  },
-  "log_level": "error",  // debug, info, warning, error
-  "window_size": 50,     // Conversation history size
-  "keep_alive": "5m",
-  "stream": true,
-  "timeout": {
-    "connect_ms": 100,
-    "read_ms": 10000,
-    "write_ms": 10000
-  },
-  "mcp_servers": [
-    {
-      "name": "my_tools",
-      "enabled": true,
-      "stdio": {
-        "command": ["/usr/bin/my-tool"],
-        "env": {
-          "API_KEY": "${API_KEY}"
-        }
-      }
-    }
-  ]
-}
-```
-
-### 4. Chat Options
-
-Control chat behavior with flags:
-
-```cpp
-enum class ChatOptions {
-    kDefault = 0,           // All features enabled
-    kNoTools = (1 << 0),   // Disable tool calls
-    kNoHistory = (1 << 1), // Don't use conversation history
-};
-
-// Combine flags
-auto options = ChatOptions::kNoTools | ChatOptions::kNoHistory;
-
-client->Chat(prompt, callback, options);
-```
-
-### 5. History Management
-
-```cpp
-// Add system messages (always included)
-client->AddSystemMessage("You are an expert C++ developer");
-client->AddSystemMessage("Always be concise");
-
-// Control history size
-client->SetHistorySize(100);  // Keep last 100 messages
-
-// Clear history
-client->ClearHistoryMessages();
-
-// Get current history
-auto messages = client->GetHistory();
-for (const auto& msg : messages) {
-    std::cout << "[" << msg.role << "] " << msg.text << std::endl;
-}
-
-// Replace history
-std::vector<Message> custom_history = { /* ... */ };
-client->SetHistory(custom_history);
-```
-
-### 6. Model Capabilities
-
-```cpp
-enum class ModelCapabilities {
-    kNone = 0,
-    kThinking = (1 << 0),   // Extended reasoning
-    kTools = (1 << 1),      // Function calling
-    kCompletion = (1 << 2), // Text completion
-    kInsert = (1 << 3),     // Text insertion
-    kVision = (1 << 4),     // Image processing
-};
-
-// Check model capabilities
-auto caps = client->GetModelCapabilities("claude-3-5-sonnet");
-if (caps.has_value()) {
-    bool can_think = IsFlagSet(caps.value(),
-                               ModelCapabilities::kThinking);
-}
-```
-
-### 7. Caching Policies
-
-```cpp
-enum class CachePolicy {
-    kNone,    // No caching
-    kAuto,    // Service decides
-    kStatic,  // Cache static content
-};
-
-// Set caching policy
-client->SetCachingPolicy(CachePolicy::kStatic);
-```
-
-### 8. Cost Tracking
-
-```cpp
-// Set pricing information
-assistant::Pricing pricing{
-    .input_tokens = 0.000003,
-    .output_tokens = 0.000015,
-    // ... other fields
-};
-client->SetPricing(pricing);
-
-// After each request
-auto usage = client->GetLastRequestUsage();
-auto cost = client->GetLastRequestCost();
-auto total = client->GetTotalCost();
-
-// Reset cost tracking
-client->ResetCost();
-```
-
-## API Reference
-
-### ClientBase Public Interface
-
-#### Chat & Interaction
-
-```cpp
-// Primary chat interface
-virtual void Chat(std::string msg, OnResponseCallback cb,
-                  ChatOptions chat_options) = 0;
-
-// Check server availability
-virtual bool IsRunning() = 0;
-
-// List available models
-virtual std::vector<std::string> List() = 0;
-virtual json ListJSON() = 0;
-
-// Get model information
-virtual std::optional<json> GetModelInfo(const std::string& model) = 0;
-virtual std::optional<ModelCapabilities> GetModelCapabilities(
-    const std::string& model) = 0;
-```
-
-#### Lifecycle Management
-
-```cpp
-// Initialize client
-virtual void Startup() { m_interrupt.store(false); }
-
-// Cleanup and shutdown
-virtual void Shutdown() {
-    Interrupt();
-    ClearMessageQueue();
-    ClearSystemMessages();
-    ClearHistoryMessages();
-    ClearFunctionTable();
-}
-
-// Stop current operation
-virtual void Interrupt() { m_interrupt.store(true); }
-bool IsInterrupted() const;
-```
-
-#### Message Management
-
-```cpp
-// Add system instructions
-void AddSystemMessage(const std::string& msg);
-void ClearSystemMessages();
-
-// History control
-void SetHistorySize(size_t count);
-size_t GetHistorySize() const;
-void ClearHistoryMessages();
-std::vector<Message> GetHistory() const;
-void SetHistory(const std::vector<Message>& history);
-
-// Message queue
-void ClearMessageQueue();
-```
-
-#### Function/Tool Management
-
-```cpp
-FunctionTable& GetFunctionTable();
-const FunctionTable& GetFunctionTable() const;
-void ClearFunctionTable();
-
-// Tool invocation callback
-void SetToolInvokeCallback(OnToolInvokeCallback cb);
-```
-
-#### Configuration & Settings
-
-```cpp
-// Apply configuration
-virtual void ApplyConfig(const assistant::Config* conf);
-
-// Endpoint configuration
-std::string GetUrl() const;
-std::string GetModel() const;
-EndpointKind GetEndpointKind() const;
-std::unordered_map<std::string, std::string> GetHttpHeaders() const;
-
-// Token limits
-size_t GetMaxTokens() const;
-void SetMaxTokens(size_t count);
-size_t GetContextSize() const;
-
-// Timeouts
-ServerTimeout GetServerTimeoutSettings() const;
-
-// Caching
-CachePolicy GetCachingPolicy() const;
-void SetCachingPolicy(CachePolicy policy);
-
-// Transport
-TransportType GetTransportType() const;
-void SetTransportType(TransportType type);
-```
-
-#### Cost & Usage Tracking
-
-```cpp
-// Pricing information
-std::optional<Pricing> GetPricing() const;
-void SetPricing(const Pricing& cost);
-
-// Cost tracking
-double GetLastRequestCost() const;
-double GetTotalCost() const;
-void ResetCost();
-
-// Usage tracking
-std::optional<Usage> GetLastRequestUsage() const;
-Usage GetAggregatedUsage() const;
-```
-
-### FunctionTable Interface
-
-```cpp
-// Register a function
-void Add(std::shared_ptr<FunctionBase> f);
-
-// Register MCP server
-void AddMCPServer(std::shared_ptr<MCPClient> client);
-
-// Call a function
-FunctionResult Call(const FunctionCall& func_call) const;
-
-// Function control
-void EnableAll(bool b);
-bool EnableFunction(const std::string& name, bool b);
-
-// Utility
-size_t GetFunctionsCount() const;
-bool IsEmpty() const;
-json ToJSON(EndpointKind kind, CachePolicy cache_policy) const;
-void Clear();
-```
-
-### FunctionBuilder Fluent API
-
-```cpp
-FunctionBuilder("tool_name")
-    .SetDescription("What this tool does")
-    .AddRequiredParam("param1", "description", "type")
-    .AddOptionalParam("param2", "description", "type")
-    .SetCallback(implementation_function)
-    .Build()
-```
-
-## Advanced Topics
-
-### 1. Custom Tool Implementation
-
-```cpp
-assistant::FunctionResult MyCustomTool(const assistant::json& args) {
-    // 1. Validate arguments
-    if (args.size() != 2) {
-        return FunctionResult{
-            .isError = true,
-            .text = "Expected 2 arguments"
-        };
-    }
-
-    // 2. Extract with safe macro
-    ASSIGN_FUNC_ARG_OR_RETURN(
-        std::string input,
-        assistant::GetFunctionArg<std::string>(args, "input"));
-
-    // 3. Implement logic
-    std::string result = ProcessInput(input);
-
-    // 4. Return result
-    return FunctionResult{
-        .isError = false,
-        .text = result
-    };
-}
-
-// Register it
-cli->GetFunctionTable().Add(
-    FunctionBuilder("MyTool")
-        .SetDescription("My custom tool")
-        .AddRequiredParam("input", "input data", "string")
-        .SetCallback(MyCustomTool)
-        .Build()
-);
-```
-
-### 2. Human-in-the-Loop Approval
-
-```cpp
-// Set approval callback
-client->SetToolInvokeCallback([](const std::string& tool_name) -> bool {
-    std::cout << "Allow tool execution: " << tool_name << "? [y/n] ";
-    std::string answer;
-    std::getline(std::cin, answer);
-    return answer == "y" || answer == "yes";
-});
-
-// Now when the model calls a tool, user approval is requested first
-```
-
-### 3. Extended Thinking
-
-For models that support extended reasoning:
-
-```cpp
-// Callback receives thinking flag
-client->Chat(prompt,
-    [](const std::string& text, Reason reason, bool thinking) -> bool {
-        if (thinking) {
-            // Display in different color/format
-            std::cout << "[THINKING] " << text;
-        } else {
-            std::cout << text;
-        }
-        return true;
-    },
-    ChatOptions::kDefault);
-```
-
-### 4. MCP Server Integration
-
-Configure MCP servers in JSON:
-
-```json
-{
-  "mcp_servers": [
-    {
-      "name": "file_tools",
-      "enabled": true,
-      "stdio": {
-        "command": ["/opt/mcp-file-tools"],
-        "env": {
-          "ALLOWED_PATHS": "/home/user/files"
-        }
-      }
-    },
-    {
-      "name": "remote_tools",
-      "enabled": true,
-      "stdio": {
-        "command": ["/opt/ssh-mcp-client"],
-        "ssh_login": {
-          "host": "example.com",
-          "port": 22,
-          "username": "user"
-        }
-      }
-    }
-  ]
-}
-```
-
-### 5. Streaming Response Handling
-
-```cpp
-bool StreamingHandler(const std::string& chunk,
-                      Reason reason,
-                      bool thinking) -> bool {
-    switch (reason) {
-        case Reason::kPartialResult:
-            // Display chunk immediately
-            std::cout << chunk;
-            std::cout.flush();  // Force display
-            break;
-
-        case Reason::kDone:
-            std::cout << std::endl;
-            break;
-
-        case Reason::kRequestCost:
-            // Display cost in gray or separate section
-            std::cout << "[COST] " << chunk << std::endl;
-            break;
-
-        case Reason::kFatalError:
-            std::cerr << "[ERROR] " << chunk << std::endl;
-            return false;  // Stop processing
-
-        default:
-            break;
-    }
-    return true;  // Continue processing
-}
-
-client->Chat(prompt, StreamingHandler, ChatOptions::kDefault);
-```
-
-### 6. Thread Safety & Concurrency
-
-The library is thread-safe for:
-- Multiple Chat requests (queued internally)
-- Function table modifications
-- History access
-- Configuration changes
-
-```cpp
-// Safe to call from multiple threads
-std::thread t1([&client] {
-    client->Chat("Query 1", callback, ChatOptions::kDefault);
-});
-
-std::thread t2([&client] {
-    client->Chat("Query 2", callback, ChatOptions::kDefault);
-});
-
-t1.join();
-t2.join();
-```
-
-### 7. History Window Management
-
-The library automatically maintains a conversation window:
-
-```cpp
-// Set window size (e.g., keep last 50 messages)
-client->SetHistorySize(50);
-
-// History automatically shrinks when exceeding limit
-// Oldest messages are removed first (FIFO)
-
-// Messages are added after each chat request:
-// 1. User message is added to history
-// 2. Assistant response is added to history
-// 3. Tool results are added to history
-// 4. Messages are trimmed to fit window size
-```
+`MakeClient` always calls `ApplyConfig(...)` on the constructed client, so MCP servers, log level, timeouts, and compaction thresholds are wired up before the caller receives the pointer.
 
 ## Configuration
 
-### Environment Variable Expansion
+Configuration is JSON, parsed by `assistant::ConfigBuilder::FromFile(path, env_map?)` or `FromContent(json_str, env_map?)`. Every string is processed by the `EnvExpander` first — `${VAR}` and `$VAR` references are resolved against the optional `EnvMap` overlay, then the process environment.
 
-Configuration supports environment variable expansion:
+### Top-level fields
+
+| Field                | Type    | Default    | Notes                                                                 |
+|----------------------|---------|------------|-----------------------------------------------------------------------|
+| `endpoints`          | object  | required   | Object keyed by URL; each value is an endpoint config (see below)     |
+| `mcp_servers`        | object  | `{}`       | Object keyed by server name; each value declares an MCP server        |
+| `log_level`          | string  | `"info"`   | One of `trace`/`debug`/`info`/`warn`/`error`                          |
+| `stream`             | bool    | `true`     | Default streaming behaviour (OpenAI clients always stream regardless) |
+| `keep_alive`         | string  | `"5m"`     | Forwarded to Ollama; ignored elsewhere                                |
+| `server_timeout`     | object  | see below  | `connect_msecs` / `read_msecs` / `write_msecs`                        |
+
+### Endpoint fields
+
+| Field                  | Type   | Default     | Notes                                                                                                                              |
+|------------------------|--------|-------------|------------------------------------------------------------------------------------------------------------------------------------|
+| `type`                 | string | required    | One of `ollama`, `anthropic`, `openai`, `moonshotai`                                                                               |
+| `model`                | string | required    | Default model id used for `Chat(...)`                                                                                              |
+| `models`               | array  | —           | Optional list of acceptable models for the endpoint                                                                                |
+| `active`               | bool   | `false`     | Exactly one endpoint should be `true`; otherwise the first one wins                                                                |
+| `http_headers`         | object | `{}`        | Additional HTTP headers (`x-api-key`, `Authorization`, etc.)                                                                       |
+| `max_tokens`           | int    | `64000`     | Upper bound on generated tokens (also accepts `max_output_tokens`, `max_completion_tokens` aliases)                                |
+| `context_size`         | int    | `32 * 1024` | Total context window for usage / budget reporting                                                                                  |
+| `verify_server_ssl`    | bool   | `true`      | Disable to skip server certificate validation (only when built with OpenSSL)                                                       |
+| `transport`            | string | `httplib`   | `httplib` or `curl`                                                                                                                |
+| `compaction_threshold` | int    | `context_size / 2` | OpenAI `/v1/responses` automatic compaction threshold (input tokens). Falls back to `kDefaultCompactionThreshold = 10000`. |
+| `server_compaction`    | object | disabled    | **Anthropic-only**. See [Server-side compaction](#server-side-compaction) below.                                                   |
+
+### Example: full Anthropic endpoint with server-side compaction
 
 ```json
 {
-  "endpoint": {
-    "headers": {
-      "x-api-key": "${ANTHROPIC_API_KEY}",
-      "authorization": "Bearer ${TOKEN}"
-    }
-  },
-  "mcp_servers": [
-    {
-      "stdio": {
-        "env": {
-          "API_KEY": "${MY_API_KEY}",
-          "DEBUG": "${DEBUG_MODE}"
-        }
+  "endpoints": {
+    "https://api.anthropic.com": {
+      "type": "anthropic",
+      "model": "claude-opus-4-7",
+      "active": true,
+      "http_headers": { "x-api-key": "${ANTHROPIC_API_KEY}" },
+      "max_tokens": 8192,
+      "context_size": 200000,
+      "server_compaction": {
+        "enabled": true,
+        "trigger_input_tokens": 100000,
+        "pause_after_compaction": false,
+        "instructions": "Preserve code blocks, function names, and TODOs."
       }
     }
-  ]
+  },
+  "log_level": "info",
+  "stream": true
 }
 ```
 
-### Endpoint Types
+### Example: OpenAI `/v1/responses` (compaction is built-in)
 
-#### Ollama (Local)
 ```json
 {
-  "endpoint": {
-    "type": "ollama",
-    "url": "http://localhost:11434",
-    "model": "llama3.2"
-  }
+  "endpoints": {
+    "https://api.openai.com": {
+      "type": "openai",
+      "model": "gpt-5-codex",
+      "active": true,
+      "http_headers": { "Authorization": "Bearer ${OPENAI_API_KEY}" },
+      "context_size": 32768,
+      "compaction_threshold": 16000
+    }
+  },
+  "stream": true
 }
 ```
 
-#### Anthropic Claude
+### Example: MCP servers
+
 ```json
 {
-  "endpoint": {
-    "type": "anthropic",
-    "url": "https://api.anthropic.com",
-    "model": "claude-3-5-sonnet-20241022",
-    "headers": {
-      "x-api-key": "${ANTHROPIC_API_KEY}"
+  "mcp_servers": {
+    "filesystem": {
+      "type": "stdio",
+      "enabled": true,
+      "command": ["npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
     },
-    "max_tokens": 4096
-  }
-}
-```
-
-#### OpenAI
-```json
-{
-  "endpoint": {
-    "type": "openai",
-    "url": "https://api.openai.com",
-    "model": "gpt-4",
-    "headers": {
-      "Authorization": "Bearer ${OPENAI_API_KEY}"
+    "internal-api": {
+      "type": "sse",
+      "enabled": true,
+      "baseurl": "https://mcp.internal/api",
+      "endpoint": "/sse",
+      "auth_token": "${MCP_TOKEN}"
+    },
+    "remote-tools": {
+      "type": "stdio",
+      "enabled": true,
+      "command": ["python3", "/opt/mcp/server.py"],
+      "ssh": {
+        "hostname": "build-host.example.com",
+        "user": "${SSH_USER}",
+        "port": 22,
+        "key": "/home/me/.ssh/id_ed25519"
+      }
     }
   }
 }
 ```
 
-## Building
+## Server-side compaction
 
-### Prerequisites
+Long conversations and agentic tool loops blow past the context window quickly. Both Claude and OpenAI now offer **server-side compaction**: instead of you manually trimming history, the provider summarises older content in-place once a token threshold is reached and the model continues from the summary. This library exposes both behaviours through the same `Reason::kServerCompaction` callback so applications can stay agnostic.
 
-- C++20 or later
-- CMake 3.10+
-- OpenSSL (optional, for TLS)
-- libcurl (for HTTP requests)
+### Side-by-side overview
 
-### Build Instructions
+| Aspect                          | `ClaudeClient`                                                       | `OpenAIClient` (`/v1/responses`)                              |
+|---------------------------------|-----------------------------------------------------------------------|----------------------------------------------------------------|
+| Status                          | Anthropic beta — gated by `anthropic-beta: compact-2026-01-12`        | Generally available on `/v1/responses`                         |
+| Opt-in                          | `endpoints[*].server_compaction.enabled = true`                       | Always-on; tune `endpoints[*].compaction_threshold` only       |
+| Wire format                     | `context_management.edits = [{ "type": "compact_20260112", ... }]`    | `context_management = [{ "type": "compaction", "compact_threshold": N }]` |
+| Trigger threshold               | `trigger_input_tokens` (default 150,000; min 50,000 server-side)      | `compact_threshold` (defaults to `context_size / 2`, fallback 10,000) |
+| Custom summarisation prompt     | `instructions` (replaces the Anthropic default; do not append)        | Not configurable                                               |
+| Streaming surface               | New `compaction` content block + `compaction_delta`; optional `stop_reason: "compaction"` when `pause_after_compaction` is true | `response.compaction` SSE event with the new compacted history |
+| Local history effect            | A structured `compaction` block is appended to the assistant message; future requests benefit because Anthropic drops everything before the most recent compaction block | Local history is **replaced** with the server's compacted output |
+| Callback delivery               | `OnResponseCallback(summary, Reason::kServerCompaction, false)`        | `OnResponseCallback("History has been updated...", Reason::kServerCompaction, false)` |
+| Max-token continuation pattern  | Reuse the existing `Reason::kMaxTokensReached` recipe; for `pause_after_compaction=true` re-issue the chat after appending the block | n/a (handled fully server-side)                                |
 
-#### Debug Build
-```bash
-mkdir -p .build-debug
-cd .build-debug
-cmake .. -DCMAKE_BUILD_TYPE=Debug -DENABLE_TESTS=ON
-make -j10
+### Claude (Anthropic)
+
+When `server_compaction.enabled` is `true` on the active Anthropic endpoint, `ClaudeClient`:
+
+1. Adds the beta header `anthropic-beta: compact-2026-01-12` to every `/v1/messages` request. If the operator already configured an `anthropic-beta` value (for other betas), the token is appended comma-separated and de-duplicated.
+2. Adds `context_management.edits = [{ "type": "compact_20260112", "trigger": { "type": "input_tokens", "value": <N> }, "pause_after_compaction": <bool>, "instructions": "..." }]` to the request body. Fields that aren't set are omitted.
+3. Parses the new `compaction` content block (a single-shot `content_block_delta` with `delta.type: "compaction_delta"` carrying the full summary in `delta.content`) and surfaces it via `Reason::kServerCompaction`.
+4. Persists the compaction block as a structured array in the assistant message — `[{ "type": "compaction", "content": "..." }, { "type": "text", "text": "..." }]` — so subsequent requests automatically benefit (the API drops everything before the most recent compaction block on its side).
+
+`pause_after_compaction: true` produces a response that contains *only* the compaction block, with `stop_reason: "compaction"`. The client surfaces this through `Reason::kServerCompaction` with `is_done == true` (mirroring the existing `kMaxTokensReached` continuation pattern); the application decides whether to re-issue the next prompt.
+
+> Note: `usage.iterations` (separate billing for the compaction step itself) is not yet aggregated — the library tracks the top-level `input_tokens` / `output_tokens` only, which match the non-compaction iteration.
+
+### OpenAI (`/v1/responses`)
+
+OpenAI's `context_management.compaction` is **always enabled** on `OpenAIClient` — the request body unconditionally carries:
+
+```json
+"context_management": [
+  { "type": "compaction", "compact_threshold": <compaction_threshold> }
+]
 ```
 
-#### Release Build
-```bash
-mkdir -p .build-release
-cd .build-release
-cmake .. -DCMAKE_BUILD_TYPE=Release
-make -j10
-```
+When the server emits a `response.compaction` SSE event, the client:
 
-### CMake Options
+1. Replaces the local `History` with the compacted output (`m_history.ClearAll()` + a single message containing the new structured content).
+2. Notifies the application via `Reason::kServerCompaction` with the message *"History has been updated with server-side history compaction."*.
 
-```bash
-# Enable TLS support (default: ON)
-cmake .. -DASSISTANTLIB_WITH_OPENSSL=ON
+Tune the threshold via the endpoint's `compaction_threshold` (default `context_size / 2`, falling back to `kDefaultCompactionThreshold = 10000`).
 
-# Build example (default: ON)
-cmake .. -DASSISTANTLIB_BUILD_EXAMPLE=ON
+### Application handling
 
-# Build tests (default: OFF)
-cmake .. -DASSISTANTLIB_BUILD_TESTS=ON
-```
-
-### Running Tests
-
-```bash
-# Debug
-.build-debug/tests/test_name
-
-# Release
-.build-release/tests/test_name
-```
-
-## Examples
-
-See the `cli/main.cpp` example for a complete, production-ready interactive chat application demonstrating:
-
-- Client creation and configuration
-- Function registration and tool calling
-- History management
-- Cost tracking
-- User approval for tool execution
-- Streaming response handling
-- Special command processing
-
-### Key Patterns from Example
+Both clients deliver the same callback contract, so the application code is uniform:
 
 ```cpp
-// 1. Load configuration
-auto result = assistant::ConfigBuilder::FromFile(config_file);
-if (!result.ok()) {
-    std::cerr << "Config error: " << result.errmsg_ << std::endl;
-    return 1;
-}
+client->Chat(prompt,
+  [](const std::string& text, assistant::Reason reason, bool thinking) {
+    if (reason == assistant::Reason::kServerCompaction) {
+      // Inform the operator. Optionally persist `text` (the summary) to logs.
+      std::cerr << "[compaction] " << text << "\n";
+      return true;  // keep streaming the rest of the turn
+    }
+    // ... handle kPartialResult / kDone / kRequestCost / kMaxTokensReached / ...
+    return true;
+  },
+  assistant::ChatOptions::kDefault);
+```
 
-// 2. Create client
-auto cli_opt = assistant::MakeClient(result.config_.value());
-if (!cli_opt.has_value()) {
-    std::cerr << "Failed to create client" << std::endl;
-    return 1;
-}
+## Tool / function calling
 
-// 3. Configure client
-auto client = cli_opt.value();
-client->SetHistorySize(50);
-client->AddSystemMessage("You are an expert assistant");
+Tools are registered on `client->GetFunctionTable()`. The same `FunctionTable` accepts both in-process C++ callbacks and `ExternalFunction`s wrapped around MCP tools.
 
-// 4. Register tools
+```cpp
+using assistant::FunctionBuilder;
+using assistant::FunctionResult;
+using assistant::json;
+
 client->GetFunctionTable().Add(
-    FunctionBuilder("MyTool")
-        .SetDescription("Tool description")
-        .AddRequiredParam("param", "description", "string")
-        .SetCallback(ToolImplementation)
-        .Build()
-);
-
-// 5. Set approval callback
-client->SetToolInvokeCallback(CanRunTool);
-
-// 6. Wait for server
-while (!client->IsRunning()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-}
-
-// 7. Chat
-client->Chat(
-    prompt,
-    [](const std::string& text, Reason reason, bool thinking) -> bool {
-        // Handle response
-        return true;
-    },
-    ChatOptions::kDefault
-);
+    FunctionBuilder("Read_file_content_from_a_given_path")
+        .SetDescription("Read up to N lines of a file starting at line L.")
+        .AddRequiredParam("filepath", "absolute file path", "string")
+        .AddRequiredParam("start_line", "1-based start line", "number")
+        .AddRequiredParam("count",      "number of lines to read", "number")
+        .AddMinMaxValidation("count", 1, 5)
+        .SetCallback([](const json& args) -> FunctionResult {
+            // ... implement read ...
+            return FunctionResult{.text = "<file contents>"};
+        })
+        .SetHumanInTheLoopCallback(
+            [](const std::string& tool_name, json args) {
+                return assistant::CanInvokeToolResult{ .can_invoke = true };
+            })
+        .Build());
 ```
 
-## Error Handling
+Per-endpoint serialisation:
 
-The library uses `std::optional` for fallible operations:
+| Endpoint   | Wire shape                                                                                         |
+|------------|----------------------------------------------------------------------------------------------------|
+| Ollama     | `{"type":"function","function":{"name":...,"parameters":{...}}}` with explicit `required` array    |
+| Moonshot   | Same as Ollama                                                                                     |
+| OpenAI     | Flat `{"type":"function","name":...,"strict":true,"parameters":{...,"additionalProperties":false}}` — strict mode requires every param in `required` and widens optional types to `["<type>","null"]` |
+| Anthropic  | `{"name":...,"input_schema":{...}}`; under `CachePolicy::kStatic` the **last** tool gets `cache_control: {type: "ephemeral"}` |
 
-```cpp
-// Configuration loading
-auto result = ConfigBuilder::FromFile("config.json");
-if (!result.ok()) {
-    std::cerr << "Error: " << result.errmsg_ << std::endl;
-}
+Approval gates have two levels:
 
-// Client creation
-auto client = MakeClient(result.config_);
-if (!client.has_value()) {
-    std::cerr << "Failed to create client" << std::endl;
-}
-
-// Model information
-auto info = client->GetModelInfo("model-name");
-if (!info.has_value()) {
-    std::cerr << "Model not found" << std::endl;
-}
-
-// Function arguments
-auto arg = GetFunctionArg<std::string>(args, "param");
-if (!arg.has_value()) {
-    return FunctionResult{.isError = true, .text = "Missing param"};
-}
-```
-
-## Pricing Integration
-
-Built-in pricing tables for major models:
+- **Per-tool**: `FunctionBuilder::SetHumanInTheLoopCallback(...)` overrides the client-wide one for that specific tool.
+- **Client-wide**: `client->SetToolInvokeCallback(OnToolInvokeCallback)` — falls through when a tool has no per-tool callback.
 
 ```cpp
-// Automatically find pricing
-auto pricing = assistant::FindPricing("claude-3-5-sonnet-20241022");
-if (pricing.has_value()) {
-    client->SetPricing(pricing.value());
-}
+using OnToolInvokeCallback =
+    std::function<assistant::CanInvokeToolResult(const std::string& tool_name,
+                                                 assistant::json args)>;
 
-// Or add custom pricing
-assistant::AddPricing("my-custom-model", {
-    .input_tokens = 0.001,
-    .output_tokens = 0.002
+client->SetToolInvokeCallback([](const std::string& name, assistant::json args) {
+  std::cout << "Allow " << name << " (" << args.dump() << ")? [y/n] ";
+  std::string answer; std::getline(std::cin, answer);
+  return assistant::CanInvokeToolResult{
+      .can_invoke = answer == "y",
+      .reason = answer == "y" ? "" : "denied by operator"
+  };
 });
 ```
 
-## Thread Safety Patterns
+## MCP integration
 
-### Safe Concurrent Access
+MCP servers declared in `mcp_servers` are instantiated automatically by `ApplyConfig(...)`. For programmatic use:
 
 ```cpp
-// Locker<T> provides thread-safe access
-Locker<Messages> history;
+#include "assistant/mcp.hpp"
 
-// Read access
-history.with([](const Messages& msgs) {
-    for (const auto& msg : msgs) {
-        std::cout << msg << std::endl;
-    }
-});
+// Local stdio
+auto mcp = std::make_shared<assistant::MCPClient>(
+    std::vector<std::string>{
+        "npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp"});
 
-// Write access
-history.with_mut([](Messages& msgs) {
-    msgs.push_back(new_message);
-});
+// SSE
+auto mcp_sse = std::make_shared<assistant::MCPClient>(
+    "https://mcp.internal/api", "/sse", /*auth_token=*/"...",
+    std::vector<std::pair<std::string, std::string>>{{"X-Tenant", "team-a"}});
 
-// Get copy
-auto copy = history.get_value();
+// Remote stdio over SSH
+assistant::SSHLogin login{
+    .ssh_program = "ssh", .user = "ci", .hostname = "build.example.com",
+    .port = 22, .ssh_key = "/home/me/.ssh/id_ed25519"};
+auto mcp_remote = std::make_shared<assistant::MCPClient>(
+    login, std::vector<std::string>{"python3", "/opt/mcp/server.py"});
+
+client->GetFunctionTable().AddMCPServer(mcp);
+```
+
+## Building and testing
+
+The project ships two build directories by convention: `.build-debug/` and `.build-release/`.
+
+### Release (matches CI)
+
+```bash
+mkdir -p .build-release && cd .build-release
+cmake .. -DCMAKE_BUILD_TYPE=Release -DENABLE_TESTS=ON
+cmake --build . --parallel
+ctest --output-on-failure
+```
+
+### Debug
+
+```bash
+mkdir -p .build-debug && cd .build-debug
+cmake .. -DCMAKE_BUILD_TYPE=Debug -DENABLE_TESTS=ON
+cmake --build . --parallel
+```
+
+### CMake options
+
+| Option                      | Default | Effect                                                                                          |
+|-----------------------------|---------|-------------------------------------------------------------------------------------------------|
+| `ASSISTANTLIB_BUILD_EXAMPLE`| `ON`    | Build the `code-assist` CLI demo from `cli/`                                                    |
+| `ASSISTANTLIB_WITH_OPENSSL` | `ON`    | `find_package(OpenSSL)`; defines `CPPHTTPLIB_OPENSSL_SUPPORT=1`; links SSL/Crypto (`Crypt32` on Win) |
+| `ASSISTANTLIB_BUILD_TESTS`  | `OFF`   | Build the GoogleTest binaries in `tests/` (also enabled by `ENABLE_TESTS=ON`)                   |
+| `ENABLE_TLS`                | unset   | Alias for `ASSISTANTLIB_WITH_OPENSSL=ON`                                                        |
+| `ENABLE_TESTS`              | unset   | Alias for `ASSISTANTLIB_BUILD_TESTS=ON`                                                         |
+
+CI runs the full matrix on macOS, Ubuntu, and Windows (MSYS2 `clang64`), with and without OpenSSL.
+
+### Test binaries
+
+`gtest_discover_tests` registers each test individually; you can also run the binaries directly:
+
+```text
+test_config            test_config_file
+test_env_expander      test_history
+test_process           test_claude_response_parser
+test_openai_response_parser   test_openai_response_format
+test_openai_client     test_openai_messages_client
+```
+
+```bash
+.build-release/tests/test_claude_response_parser
+ctest --test-dir .build-release -R test_config --output-on-failure
+```
+
+## Project layout
+
+```
+assistant/                core library and public headers
+  client/                 ClientBase + Ollama/Claude/OpenAI clients
+  cpp-mcp/                MCP protocol implementation (built as `mcp-cpp` static lib)
+  common/                 vendored single-header deps (json, httplib, base64, magic_enum)
+  *.hpp / *.cpp           assistantlib.hpp, config.hpp, function.hpp, mcp.hpp,
+                          claude_response_parser.*, openai_response_parser.*,
+                          chat_completions_response_parser.*, EnvExpander.*,
+                          Curl.*, Process.*, logger.hpp, ...
+
+cli/                      `code-assist` interactive demo (entry point, slash commands)
+tests/                    GoogleTest binaries (10 of them)
+submodules/googletest/    test framework (git submodule)
+.github/workflows/        macos.yml, ubuntu.yml, windows.yml (msys2 clang64)
+.agents/summary/          generated knowledge base for AI assistants
+```
+
+The library currently installs no headers and produces no CMake export package. Integrate by `add_subdirectory(assistant)` and `target_link_libraries(... PRIVATE assistantlib)`.
+
+## API surface
+
+### Top-level factory
+
+```cpp
+#include "assistant/assistant.hpp"
+namespace assistant {
+  std::optional<std::shared_ptr<ClientBase>> MakeClient(std::optional<Config>);
+  std::optional<std::shared_ptr<ClientBase>> MakeClient(const std::string& json_content);
+  std::optional<std::shared_ptr<ClientBase>> MakeClient(const std::filesystem::path&);
+}
+```
+
+### `ClientBase` (selected methods)
+
+```cpp
+// Chat lifecycle
+virtual void Chat(std::string msg, OnResponseCallback cb, ChatOptions opts) = 0;
+virtual void Interrupt();
+virtual void Shutdown();
+bool IsInterrupted() const;
+
+// Models
+virtual bool IsRunning() = 0;
+virtual std::vector<std::string> List() = 0;
+virtual std::optional<json> GetModelInfo(const std::string& model) = 0;
+virtual std::optional<ModelCapabilities> GetModelCapabilities(const std::string& model) = 0;
+
+// State
+void AddSystemMessage(const std::string& msg);
+void ClearSystemMessages();
+void ClearHistoryMessages();
+assistant::messages GetHistory() const;
+void SetHistory(const assistant::messages& msgs);
+
+// Tools
+FunctionTable& GetFunctionTable();
+void SetToolInvokeCallback(OnToolInvokeCallback cb);
+
+// Endpoint / transport
+std::string GetUrl() const;
+EndpointKind GetEndpointKind() const;
+size_t GetMaxTokens() const;
+size_t GetContextSize() const;
+size_t GetCompactionThreshold();         // OpenAI compaction threshold
+TransportType GetTransportType() const;
+void SetTransportType(TransportType);
+
+// Caching
+CachePolicy GetCachingPolicy() const;
+void SetCachingPolicy(CachePolicy);
+
+// Streaming
+virtual bool IsStreaming() const;        // OpenAI clients return true unconditionally
+
+// Cost / usage
+std::optional<Pricing> GetPricing() const;
+void SetPricing(const Pricing&);
+double GetLastRequestCost() const;
+double GetTotalCost() const;
+std::optional<Usage> GetLastRequestUsage() const;
+Usage GetAggregatedUsage() const;
+std::optional<TokenUsageStats> GetTokenUsageStats() const;
+TokenUsageStats GetAggregatedTokenUsageStats() const;
+bool IsNearContextLimit(double threshold_percentage = 80.0) const;
+```
+
+### Streaming callback contract
+
+```cpp
+using OnResponseCallback = std::function<bool(
+    const std::string& text, assistant::Reason call_reason, bool thinking)>;
+```
+
+| `Reason`              | When delivered                                                                              |
+|-----------------------|---------------------------------------------------------------------------------------------|
+| `kPartialResult`      | Streaming text or thinking chunk                                                            |
+| `kDone`               | Turn complete                                                                               |
+| `kFatalError`         | Non-recoverable error (transport, parse, auth, quota, ...)                                  |
+| `kCancelled`          | `Interrupt()` was called mid-stream                                                         |
+| `kLogNotice` / `kLogDebug` | Informational messages emitted by the client (tool inputs, etc.)                       |
+| `kRequestCost`        | Per-request cost / usage summary string                                                     |
+| `kToolDenied` / `kToolAllowed` | Result of a human-in-the-loop tool gate                                            |
+| `kMaxTokensReached`   | Hit `max_tokens`; caller may continue with `"continue from where you left off"` etc.        |
+| `kServerCompaction`   | Server-side compaction notice (Anthropic summary block, or OpenAI history-replaced notice)  |
+
+Returning `false` from the callback signals "stop processing further chunks for this request"; the CLI demo always returns `true`.
+
+### Chat options and model capabilities
+
+```cpp
+enum class ChatOptions { kDefault = 0, kNoTools = 1<<0, kNoHistory = 1<<1 };
+enum class ModelCapabilities {
+  kNone = 0, kThinking = 1<<0, kTools = 1<<1,
+  kCompletion = 1<<2, kInsert = 1<<3, kVision = 1<<4
+};
+enum class CachePolicy { kNone, kAuto, kStatic };
+```
+
+Use `assistant::IsFlagSet(flags, flag)` and `assistant::AddFlagSet(flags, flag)` to manipulate bitflag enums.
+
+### Pricing
+
+```cpp
+auto pricing = assistant::FindPricing("claude-sonnet-4-6");
+if (pricing) client->SetPricing(*pricing);
+
+// Or register custom rates (USD per token)
+assistant::AddPricing("my-model",
+                     {.input_tokens = 0.000003,
+                      .cache_creation_input_tokens = 0.00000375,
+                      .cache_read_input_tokens     = 0.0000003,
+                      .output_tokens               = 0.000015});
 ```
 
 ## Logging
 
-Configure logging via:
-
 ```cpp
-// Log level
-assistant::SetLogLevel(assistant::LogLevel::kDebug);
-
-// Log file
-assistant::SetLogFile("agent.log");
+#include "assistant/logger.hpp"
+assistant::SetLogLevel(assistant::LogLevel::kInfo);
+assistant::SetLogFile("/tmp/assistant.log");
+assistant::SetLogSink([](assistant::LogLevel, std::string line) {
+  // forward to your application log
+});
+OLOG_INFO()  << "structured " << "stream " << 42;
+OLOG_DEBUG() << "...";
+OLOG_ERROR() << "...";
 ```
 
-Available levels: `kDebug`, `kInfo`, `kWarning`, `kError`
+`Logger::FromString("trace"|"debug"|"info"|"warn"|"error")` parses a config string; unknown values default to `kInfo`.
 
-## Performance Considerations
+## Thread safety
 
-1. **Streaming**: Responses are streamed to minimize perceived latency
-2. **Caching**: Static content caching reduces redundant API calls
-3. **History Window**: Limited history window prevents memory bloat
-4. **Async Operations**: Request queuing enables non-blocking usage
-5. **Thread Safety**: Lock-free atomic operations where possible
+All shared client state is guarded:
 
-## Use Cases
+- `Locker<T>` (`assistant/common.hpp`) wraps mutable fields and only exposes `with`/`with_mut`/`get_value`/`set_value`.
+- `History`, `ChatRequestQueue`, and `FunctionTable` use internal mutexes; `GUARDED_BY(...)` annotations from `assistant/attributes.hpp` are enforced repo-wide via Clang `-Wthread-safety`.
+- `m_interrupt` is a plain `std::atomic_bool`; calling `Interrupt()` from another thread is safe and aborts the in-flight transport.
+- `History::SwapToTempHistory()` / `SwapToMainHistory()` is the supported way to issue a one-off chat turn (`ChatOptions::kNoHistory`) without disturbing the main log.
 
-1. **Code Analysis Agent** - Analyze and explain code
-2. **Document Generation** - Automated document creation
-3. **Technical Support Bot** - AI-powered customer service
-4. **Data Analysis Assistant** - Process and analyze data
-5. **Writing Assistant** - Content generation and editing
-6. **Research Agent** - Literature search and summarization
-7. **DevOps Assistant** - Infrastructure and deployment help
-8. **Educational Tutor** - Interactive learning system
+A typical embedding pattern: one application thread drives `Chat(...)`, while a worker thread handles streaming callbacks; both can safely interact with the client.
 
-## License
+## License and contributing
 
-See LICENSE file for details.
+See [LICENSE](LICENSE) for license terms.
 
-## Contributing
+Contributions are welcome. To keep the bar high:
 
-Contributions are welcome! Please ensure:
-- Code follows existing style (C++20)
-- All tests pass
-- Documentation is updated
-- Changes are well-tested
-
-## Support
-
-For issues, feature requests, or questions:
-1. Check existing documentation
-2. Review example code in `cli/main.cpp`
-3. Check unit tests in `tests/` directory
-4. Open an issue with detailed information
+- Match the existing style — `.clang-format` is `Google` with 2-space indent and 80-col wrap; the project ships a `.cmake-format` too.
+- Build clean on macOS, Ubuntu, and Windows MSYS2 `clang64` (CI matrix).
+- Add or extend GoogleTest binaries for new behaviours, especially in the response parsers and config loader.
+- Update `.agents/summary/` (or open an issue) when behaviour drifts from those docs.
