@@ -234,8 +234,10 @@ bool ClaudeClient::HandleResponse(const std::string& resp,
         // informational event and stash the summary so we can store it as
         // a structured assistant content block when the turn completes.
         chat_context->compaction_summary = token.content;
-        cb_result = req->callback_(token.content, Reason::kServerCompaction,
-                                   /*thinking=*/false);
+        cb_result = req->callback_(
+            "History has been updated with server-side history compaction.",
+            Reason::kServerCompaction,
+            /*thinking=*/false);
         OLOG(LogLevel::kInfo)
             << "Server-side compaction triggered. Summary length: "
             << token.content.size() << " bytes.";
