@@ -440,6 +440,175 @@ TEST(ProcessTest, RunProcessAsync_ShellWithPipe) {
   EXPECT_TRUE(out_str.find("async") != std::string::npos);
 }
 
+///===-------------------------------------------
+/// Interactive (bidirectional) process tests
+///===-------------------------------------------
+
+TEST(ProcessTest, Interactive_StartAndWrite) {
+#ifdef _WIN32
+  GTEST_SKIP() << "cat not available on Windows without shell";
+#endif
+  std::mutex mtx;
+  std::string captured;
+
+  auto proc = Process::StartInteractive(
+      {"cat"},
+      [&mtx, &captured](const std::string& out, const std::string& err) {
+        std::lock_guard<std::mutex> lk(mtx);
+        captured += out;
+        return true;
+      });
+  ASSERT_NE(proc, nullptr);
+  EXPECT_TRUE(proc->IsRunning());
+
+  // Write to the process and expect it echoed back
+  EXPECT_TRUE(proc->WriteLine("hello world"));
+
+  // Give cat time to echo back
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+  {
+    std::lock_guard<std::mutex> lk(mtx);
+    EXPECT_TRUE(captured.find("hello world") != std::string::npos);
+  }
+
+  int exit_code = proc->Stop();
+  EXPECT_FALSE(proc->IsRunning());
+  // cat exits 0 when stdin is closed
+  EXPECT_EQ(exit_code, 0);
+}
+
+TEST(ProcessTest, Interactive_MultipleWrites) {
+#ifdef _WIN32
+  GTEST_SKIP() << "cat not available on Windows without shell";
+#endif
+  std::mutex mtx;
+  std::string captured;
+
+  auto proc = Process::StartInteractive(
+      {"cat"},
+      [&mtx, &captured](const std::string& out, const std::string& err) {
+        std::lock_guard<std::mutex> lk(mtx);
+        captured += out;
+        return true;
+      });
+  ASSERT_NE(proc, nullptr);
+
+  proc->WriteLine("line1");
+  proc->WriteLine("line2");
+  proc->WriteLine("line3");
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+  {
+    std::lock_guard<std::mutex> lk(mtx);
+    EXPECT_TRUE(captured.find("line1") != std::string::npos);
+    EXPECT_TRUE(captured.find("line2") != std::string::npos);
+    EXPECT_TRUE(captured.find("line3") != std::string::npos);
+  }
+
+  proc->Stop();
+}
+
+TEST(ProcessTest, Interactive_ProcessExitsOnItsOwn) {
+#ifdef _WIN32
+  GTEST_SKIP() << "sh not available on Windows";
+#endif
+  std::mutex mtx;
+  std::string captured;
+
+  auto proc = Process::StartInteractive(
+      {"sh", "-c", "echo done && exit 0"},
+      [&mtx, &captured](const std::string& out, const std::string& err) {
+        std::lock_guard<std::mutex> lk(mtx);
+        captured += out;
+        return true;
+      });
+  ASSERT_NE(proc, nullptr);
+
+  // Wait for the short-lived process to complete
+  for (int i = 0; i < 50 && proc->IsRunning(); ++i) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  }
+
+  EXPECT_FALSE(proc->IsRunning());
+  {
+    std::lock_guard<std::mutex> lk(mtx);
+    EXPECT_TRUE(captured.find("done") != std::string::npos);
+  }
+}
+
+TEST(ProcessTest, Interactive_GetPid) {
+#ifdef _WIN32
+  GTEST_SKIP() << "cat not available on Windows without shell";
+#endif
+  auto proc = Process::StartInteractive(
+      {"cat"}, [](const std::string&, const std::string&) { return true; });
+  ASSERT_NE(proc, nullptr);
+
+  int pid = proc->GetPid();
+  EXPECT_GT(pid, 0);
+  EXPECT_TRUE(Process::IsAlive(pid));
+
+  proc->Stop();
+  EXPECT_EQ(proc->GetPid(), -1);
+}
+
+TEST(ProcessTest, Interactive_SendInterrupt) {
+#ifdef _WIN32
+  GTEST_SKIP() << "SIGINT not available on Windows";
+#endif
+  auto proc = Process::StartInteractive(
+      {"cat"}, [](const std::string&, const std::string&) { return true; });
+  ASSERT_NE(proc, nullptr);
+  EXPECT_TRUE(proc->IsRunning());
+
+  proc->SendInterrupt();
+
+  // Wait for the process to handle the signal and exit
+  for (int i = 0; i < 50 && proc->IsRunning(); ++i) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  }
+  EXPECT_FALSE(proc->IsRunning());
+}
+
+TEST(ProcessTest, Interactive_WriteAfterStop) {
+#ifdef _WIN32
+  GTEST_SKIP() << "cat not available on Windows without shell";
+#endif
+  auto proc = Process::StartInteractive(
+      {"cat"}, [](const std::string&, const std::string&) { return true; });
+  ASSERT_NE(proc, nullptr);
+
+  proc->Stop();
+  EXPECT_FALSE(proc->Write("should fail"));
+  EXPECT_FALSE(proc->WriteLine("should also fail"));
+}
+
+TEST(ProcessTest, Interactive_DestructorStopsProcess) {
+#ifdef _WIN32
+  GTEST_SKIP() << "cat not available on Windows without shell";
+#endif
+  int pid = -1;
+  {
+    auto proc = Process::StartInteractive(
+        {"cat"}, [](const std::string&, const std::string&) { return true; });
+    ASSERT_NE(proc, nullptr);
+    pid = proc->GetPid();
+    EXPECT_TRUE(Process::IsAlive(pid));
+  }  // shared_ptr released here, destructor called
+
+  // Give it time to be reaped
+  std::this_thread::sleep_for(std::chrono::milliseconds(500));
+  EXPECT_FALSE(Process::IsAlive(pid));
+}
+
+TEST(ProcessTest, Interactive_NullOnBadCommand) {
+  auto proc = Process::StartInteractive(
+      {}, [](const std::string&, const std::string&) { return true; });
+  EXPECT_EQ(proc, nullptr);
+}
+
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

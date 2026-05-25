@@ -651,4 +651,451 @@ bool Process::IsAlive(int process_id) {
 
 #endif
 
+///===-------------------------------------------
+/// Interactive (bidirectional) process API
+///===-------------------------------------------
+
+Process::~Process() { Stop(); }
+
+bool Process::IsRunning() const {
+  if (!m_running.load()) {
+    return false;
+  }
+  int pid = m_child_pid.load();
+  if (pid <= 0) {
+    return false;
+  }
+  return Process::IsAlive(pid);
+}
+
+int Process::GetPid() const { return m_child_pid.load(); }
+
+#ifdef _WIN32
+
+std::shared_ptr<Process> Process::StartInteractive(
+    const std::vector<std::string>& argv, on_output_callback output_cb,
+    bool use_shell) {
+  if (argv.empty()) {
+    return nullptr;
+  }
+
+  if (use_shell) {
+    std::vector<std::string> shell_argv = {"cmd.exe", "/c"};
+    shell_argv.insert(shell_argv.end(), argv.begin(), argv.end());
+    return StartInteractive(shell_argv, output_cb, false);
+  }
+
+  SECURITY_ATTRIBUTES sa;
+  sa.nLength = sizeof(SECURITY_ATTRIBUTES);
+  sa.bInheritHandle = TRUE;
+  sa.lpSecurityDescriptor = nullptr;
+
+  HANDLE hStdinRead = nullptr, hStdinWrite = nullptr;
+  HANDLE hStdoutRead = nullptr, hStdoutWrite = nullptr;
+  HANDLE hStderrRead = nullptr, hStderrWrite = nullptr;
+
+  if (!CreatePipe(&hStdinRead, &hStdinWrite, &sa, 0) ||
+      !SetHandleInformation(hStdinWrite, HANDLE_FLAG_INHERIT, 0)) {
+    return nullptr;
+  }
+  if (!CreatePipe(&hStdoutRead, &hStdoutWrite, &sa, 0) ||
+      !SetHandleInformation(hStdoutRead, HANDLE_FLAG_INHERIT, 0)) {
+    CloseHandle(hStdinRead);
+    CloseHandle(hStdinWrite);
+    return nullptr;
+  }
+  if (!CreatePipe(&hStderrRead, &hStderrWrite, &sa, 0) ||
+      !SetHandleInformation(hStderrRead, HANDLE_FLAG_INHERIT, 0)) {
+    CloseHandle(hStdinRead);
+    CloseHandle(hStdinWrite);
+    CloseHandle(hStdoutRead);
+    CloseHandle(hStdoutWrite);
+    return nullptr;
+  }
+
+  STARTUPINFOA si;
+  ZeroMemory(&si, sizeof(si));
+  si.cb = sizeof(si);
+  si.hStdError = hStderrWrite;
+  si.hStdOutput = hStdoutWrite;
+  si.hStdInput = hStdinRead;
+  si.dwFlags |= STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
+  si.wShowWindow = SW_HIDE;
+
+  PROCESS_INFORMATION pi;
+  ZeroMemory(&pi, sizeof(pi));
+
+  std::string cmdline = BuildCommandLine(argv);
+  std::vector<char> cmdlineBuf(cmdline.begin(), cmdline.end());
+  cmdlineBuf.push_back('\0');
+
+  BOOL success = CreateProcessA(nullptr, cmdlineBuf.data(), nullptr, nullptr,
+                                TRUE, 0, nullptr, nullptr, &si, &pi);
+
+  // Close child-side pipe ends
+  CloseHandle(hStdinRead);
+  CloseHandle(hStdoutWrite);
+  CloseHandle(hStderrWrite);
+
+  if (!success) {
+    CloseHandle(hStdinWrite);
+    CloseHandle(hStdoutRead);
+    CloseHandle(hStderrRead);
+    return nullptr;
+  }
+
+  CloseHandle(pi.hThread);
+
+  // Use shared_ptr with custom access to private constructor
+  auto proc = std::shared_ptr<Process>(new Process());
+  proc->m_stdin_write = hStdinWrite;
+  proc->m_stdout_read = hStdoutRead;
+  proc->m_stderr_read = hStderrRead;
+  proc->m_process_handle = pi.hProcess;
+  proc->m_child_pid.store(static_cast<int>(pi.dwProcessId));
+  proc->m_running.store(true);
+
+  // Start a reader thread that feeds output_cb.
+  // Captures weak_ptr so the Process can be destroyed when the caller drops it.
+  std::weak_ptr<Process> weak_proc = proc;
+  std::thread([weak_proc, output_cb]() {
+    while (true) {
+      auto proc = weak_proc.lock();
+      if (!proc || !proc->m_running.load()) {
+        break;
+      }
+
+      std::string out =
+          ReadAvailableFromPipe(static_cast<HANDLE>(proc->m_stdout_read));
+      std::string err =
+          ReadAvailableFromPipe(static_cast<HANDLE>(proc->m_stderr_read));
+
+      if (!out.empty() || !err.empty()) {
+        if (output_cb) {
+          output_cb(out, err);
+        }
+      }
+
+      // Check if process has exited
+      DWORD wait_result =
+          WaitForSingleObject(static_cast<HANDLE>(proc->m_process_handle), 5);
+      if (wait_result == WAIT_OBJECT_0) {
+        // Read remaining data
+        std::string final_out =
+            ReadAllFromPipe(static_cast<HANDLE>(proc->m_stdout_read));
+        std::string final_err =
+            ReadAllFromPipe(static_cast<HANDLE>(proc->m_stderr_read));
+        if (output_cb && (!final_out.empty() || !final_err.empty())) {
+          output_cb(final_out, final_err);
+        }
+        proc->m_running.store(false);
+        break;
+      }
+    }
+  }).detach();
+
+  return proc;
+}
+
+bool Process::Write(const std::string& data) {
+  std::scoped_lock lk{m_write_mutex};
+  if (!m_running.load() || m_stdin_write == nullptr) {
+    return false;
+  }
+  DWORD written = 0;
+  BOOL ok = WriteFile(static_cast<HANDLE>(m_stdin_write), data.data(),
+                      static_cast<DWORD>(data.size()), &written, nullptr);
+  return ok && written == static_cast<DWORD>(data.size());
+}
+
+bool Process::WriteLine(const std::string& data) {
+  return Write(data + "\n");
+}
+
+void Process::SendInterrupt() {
+  int pid = m_child_pid.load();
+  if (pid > 0 && m_running.load()) {
+    GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, static_cast<DWORD>(pid));
+  }
+}
+
+int Process::Stop() {
+  if (!m_running.load()) {
+    return -1;
+  }
+  m_running.store(false);
+
+  int pid = m_child_pid.load();
+  if (pid > 0) {
+    TerminateProcess(pid);
+  }
+
+  // Close our pipe handles
+  if (m_stdin_write) {
+    CloseHandle(static_cast<HANDLE>(m_stdin_write));
+    m_stdin_write = nullptr;
+  }
+  if (m_stdout_read) {
+    CloseHandle(static_cast<HANDLE>(m_stdout_read));
+    m_stdout_read = nullptr;
+  }
+  if (m_stderr_read) {
+    CloseHandle(static_cast<HANDLE>(m_stderr_read));
+    m_stderr_read = nullptr;
+  }
+
+  DWORD exitCode = 0;
+  if (m_process_handle) {
+    WaitForSingleObject(static_cast<HANDLE>(m_process_handle), 3000);
+    GetExitCodeProcess(static_cast<HANDLE>(m_process_handle), &exitCode);
+    CloseHandle(static_cast<HANDLE>(m_process_handle));
+    m_process_handle = nullptr;
+  }
+
+  m_child_pid.store(-1);
+  return static_cast<int>(exitCode);
+}
+
+#else  // Unix/macOS
+
+std::shared_ptr<Process> Process::StartInteractive(
+    const std::vector<std::string>& argv, on_output_callback output_cb,
+    bool use_shell) {
+  if (argv.empty()) {
+    return nullptr;
+  }
+
+  if (use_shell) {
+    std::vector<std::string> shell_argv = {"/bin/bash", "-c"};
+    shell_argv.push_back(JoinArguments(argv));
+    return StartInteractive(shell_argv, output_cb, false);
+  }
+
+  int stdin_pipe[2];
+  int stdout_pipe[2];
+  int stderr_pipe[2];
+
+  if (::pipe(stdin_pipe) != 0) {
+    return nullptr;
+  }
+  if (::pipe(stdout_pipe) != 0) {
+    ::close(stdin_pipe[0]);
+    ::close(stdin_pipe[1]);
+    return nullptr;
+  }
+  if (::pipe(stderr_pipe) != 0) {
+    ::close(stdin_pipe[0]);
+    ::close(stdin_pipe[1]);
+    ::close(stdout_pipe[0]);
+    ::close(stdout_pipe[1]);
+    return nullptr;
+  }
+
+  Argv exec_argv{argv};
+  pid_t pid = fork();
+
+  if (pid < 0) {
+    ::close(stdin_pipe[0]);
+    ::close(stdin_pipe[1]);
+    ::close(stdout_pipe[0]);
+    ::close(stdout_pipe[1]);
+    ::close(stderr_pipe[0]);
+    ::close(stderr_pipe[1]);
+    return nullptr;
+  }
+
+  if (pid == 0) {
+    // Child process
+    ::close(stdin_pipe[1]);   // close write end of stdin
+    ::close(stdout_pipe[0]);  // close read end of stdout
+    ::close(stderr_pipe[0]);  // close read end of stderr
+
+    ::dup2(stdin_pipe[0], STDIN_FILENO);
+    ::dup2(stdout_pipe[1], STDOUT_FILENO);
+    ::dup2(stderr_pipe[1], STDERR_FILENO);
+
+    ::close(stdin_pipe[0]);
+    ::close(stdout_pipe[1]);
+    ::close(stderr_pipe[1]);
+
+    ::execvp(exec_argv.get()[0], exec_argv.get());
+    ::_exit(127);
+  }
+
+  // Parent process
+  ::close(stdin_pipe[0]);   // close read end of stdin
+  ::close(stdout_pipe[1]);  // close write end of stdout
+  ::close(stderr_pipe[1]);  // close write end of stderr
+
+  auto proc = std::shared_ptr<Process>(new Process());
+  proc->m_stdin_write_fd = stdin_pipe[1];
+  proc->m_stdout_read_fd = stdout_pipe[0];
+  proc->m_stderr_read_fd = stderr_pipe[0];
+  proc->m_child_pid.store(static_cast<int>(pid));
+  proc->m_running.store(true);
+
+  // Start a reader thread that feeds output_cb.
+  // Captures weak_ptr so the Process can be destroyed when the caller drops it.
+  std::weak_ptr<Process> weak_proc = proc;
+  std::thread([weak_proc, output_cb]() {
+    bool stdout_open = true;
+    bool stderr_open = true;
+
+    while (stdout_open || stderr_open) {
+      auto proc = weak_proc.lock();
+      if (!proc || !proc->m_running.load()) {
+        break;
+      }
+
+      fd_set read_set;
+      FD_ZERO(&read_set);
+
+      int max_fd = -1;
+      if (stdout_open && proc->m_stdout_read_fd >= 0) {
+        FD_SET(proc->m_stdout_read_fd, &read_set);
+        max_fd = std::max(max_fd, proc->m_stdout_read_fd);
+      }
+      if (stderr_open && proc->m_stderr_read_fd >= 0) {
+        FD_SET(proc->m_stderr_read_fd, &read_set);
+        max_fd = std::max(max_fd, proc->m_stderr_read_fd);
+      }
+
+      if (max_fd == -1) {
+        break;
+      }
+
+      timeval tv;
+      tv.tv_sec = 0;
+      tv.tv_usec = 10000;  // 10ms poll
+
+      int rc = ::select(max_fd + 1, &read_set, nullptr, nullptr, &tv);
+      if (rc > 0) {
+        std::string new_out;
+        std::string new_err;
+
+        if (stdout_open && FD_ISSET(proc->m_stdout_read_fd, &read_set)) {
+          char buffer[4096];
+          ssize_t n = ::read(proc->m_stdout_read_fd, buffer, sizeof(buffer));
+          if (n > 0) {
+            new_out.append(buffer, n);
+          } else {
+            stdout_open = false;
+          }
+        }
+
+        if (stderr_open && FD_ISSET(proc->m_stderr_read_fd, &read_set)) {
+          char buffer[4096];
+          ssize_t n = ::read(proc->m_stderr_read_fd, buffer, sizeof(buffer));
+          if (n > 0) {
+            new_err.append(buffer, n);
+          } else {
+            stderr_open = false;
+          }
+        }
+
+        if (output_cb && (!new_out.empty() || !new_err.empty())) {
+          output_cb(new_out, new_err);
+        }
+      }
+    }
+
+    if (auto proc = weak_proc.lock()) {
+      proc->m_running.store(false);
+    }
+  }).detach();
+
+  return proc;
+}
+
+bool Process::Write(const std::string& data) {
+  std::scoped_lock lk{m_write_mutex};
+  if (!m_running.load() || m_stdin_write_fd < 0) {
+    return false;
+  }
+
+  const char* ptr = data.data();
+  size_t remaining = data.size();
+  while (remaining > 0) {
+    ssize_t written = ::write(m_stdin_write_fd, ptr, remaining);
+    if (written < 0) {
+      if (errno == EINTR) {
+        continue;
+      }
+      return false;
+    }
+    ptr += written;
+    remaining -= static_cast<size_t>(written);
+  }
+  return true;
+}
+
+bool Process::WriteLine(const std::string& data) { return Write(data + "\n"); }
+
+void Process::SendInterrupt() {
+  int pid = m_child_pid.load();
+  if (pid > 0 && m_running.load()) {
+    ::kill(static_cast<pid_t>(pid), SIGINT);
+  }
+}
+
+int Process::Stop() {
+  if (!m_running.load()) {
+    return -1;
+  }
+  m_running.store(false);
+
+  int pid = m_child_pid.load();
+  if (pid <= 0) {
+    return -1;
+  }
+
+  // Close stdin first — signals EOF to the child
+  if (m_stdin_write_fd >= 0) {
+    ::close(m_stdin_write_fd);
+    m_stdin_write_fd = -1;
+  }
+
+  // Give the child a chance to exit gracefully
+  ::kill(static_cast<pid_t>(pid), SIGTERM);
+
+  int status = 0;
+  int wait_result = 0;
+
+  // Wait up to 3 seconds
+  for (int i = 0; i < 30; ++i) {
+    wait_result = ::waitpid(static_cast<pid_t>(pid), &status, WNOHANG);
+    if (wait_result != 0) {
+      break;
+    }
+    usleep(100000);  // 100ms
+  }
+
+  if (wait_result == 0) {
+    // Still alive, force kill
+    ::kill(static_cast<pid_t>(pid), SIGKILL);
+    ::waitpid(static_cast<pid_t>(pid), &status, 0);
+  }
+
+  // Close remaining pipe fds
+  if (m_stdout_read_fd >= 0) {
+    ::close(m_stdout_read_fd);
+    m_stdout_read_fd = -1;
+  }
+  if (m_stderr_read_fd >= 0) {
+    ::close(m_stderr_read_fd);
+    m_stderr_read_fd = -1;
+  }
+
+  m_child_pid.store(-1);
+
+  if (WIFEXITED(status)) {
+    return WEXITSTATUS(status);
+  } else if (WIFSIGNALED(status)) {
+    return 128 + WTERMSIG(status);
+  }
+  return -1;
+}
+
+#endif
+
 }  // namespace assistant

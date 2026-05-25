@@ -1,6 +1,9 @@
 #pragma once
 
+#include <atomic>
 #include <functional>
+#include <memory>
+#include <mutex>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -23,6 +26,18 @@ using on_process_end_callback = std::function<void(int exit_code)>;
 
 class Process {
  public:
+  ~Process();
+
+  // Non-copyable, non-movable (due to mutex and atomics)
+  Process(const Process&) = delete;
+  Process& operator=(const Process&) = delete;
+  Process(Process&&) = delete;
+  Process& operator=(Process&&) = delete;
+
+  ///===-------------------------------------------
+  /// Static one-shot process API (unchanged)
+  ///===-------------------------------------------
+
   /**
    * @brief Run process and wait for completion with output callback.
    *
@@ -120,6 +135,80 @@ class Process {
 
   static void EnableExecLog(bool b);
   static bool IsExecLogEnabled();
+
+  ///===-------------------------------------------
+  /// Static factory for interactive (bidirectional) processes
+  ///===-------------------------------------------
+
+  /**
+   * @brief Start a long-lived child process with stdin kept open for writing.
+   *
+   * The child's stdout/stderr are read via the output callback on a background
+   * thread. The process remains alive until explicitly stopped, the child
+   * exits, or the returned object is destroyed.
+   *
+   * @param argv Command and arguments. argv[0] is the executable.
+   * @param output_cb Callback invoked with stdout/stderr chunks.
+   * @param use_shell If true, wrap with shell.
+   * @return A shared_ptr to the interactive Process, or nullptr on failure.
+   */
+  static std::shared_ptr<Process> StartInteractive(
+      const std::vector<std::string>& argv, on_output_callback output_cb,
+      bool use_shell = false);
+
+  /**
+   * @brief Write data to the child process's stdin.
+   *
+   * @param data The bytes to write.
+   * @return true if all bytes were written, false on error or if process is
+   *         not running.
+   */
+  bool Write(const std::string& data);
+
+  /**
+   * @brief Write data followed by a newline to the child's stdin.
+   */
+  bool WriteLine(const std::string& data);
+
+  /**
+   * @brief Check if the interactive process is still alive.
+   */
+  bool IsRunning() const;
+
+  /**
+   * @brief Get the PID of the interactive process.
+   * @return The PID, or -1 if not running.
+   */
+  int GetPid() const;
+
+  /**
+   * @brief Send SIGINT (or equivalent) to the child process.
+   */
+  void SendInterrupt();
+
+  /**
+   * @brief Stop the interactive process. Sends SIGTERM, then SIGKILL after
+   *        a brief grace period if still alive.
+   * @return The exit code, or -1 if the process was not running.
+   */
+  int Stop();
+
+ private:
+  Process() = default;
+
+#ifdef _WIN32
+  void* m_stdin_write{nullptr};    // HANDLE
+  void* m_stdout_read{nullptr};    // HANDLE
+  void* m_stderr_read{nullptr};    // HANDLE
+  void* m_process_handle{nullptr}; // HANDLE
+#else
+  int m_stdin_write_fd{-1};
+  int m_stdout_read_fd{-1};
+  int m_stderr_read_fd{-1};
+#endif
+  std::atomic<int> m_child_pid{-1};
+  std::atomic_bool m_running{false};
+  mutable std::mutex m_write_mutex;
 };
 
 }  // namespace assistant
