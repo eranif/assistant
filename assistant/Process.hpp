@@ -197,10 +197,10 @@ class Process {
   Process() = default;
 
 #ifdef _WIN32
-  void* m_stdin_write{nullptr};    // HANDLE
-  void* m_stdout_read{nullptr};    // HANDLE
-  void* m_stderr_read{nullptr};    // HANDLE
-  void* m_process_handle{nullptr}; // HANDLE
+  void* m_stdin_write{nullptr};     // HANDLE
+  void* m_stdout_read{nullptr};     // HANDLE
+  void* m_stderr_read{nullptr};     // HANDLE
+  void* m_process_handle{nullptr};  // HANDLE
 #else
   int m_stdin_write_fd{-1};
   int m_stdout_read_fd{-1};
