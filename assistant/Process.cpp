@@ -110,9 +110,10 @@ struct SpawnedProcess {
 };
 
 /// Spawn a child process with stdin/stdout/stderr pipes.
+/// When interactive is false, stdin is closed immediately (child gets EOF).
 /// Returns nullopt on failure. On success the caller owns all handles.
-std::optional<SpawnedProcess> SpawnProcess(
-    const std::vector<std::string>& argv) {
+std::optional<SpawnedProcess> SpawnProcess(const std::vector<std::string>& argv,
+                                           bool interactive) {
   SECURITY_ATTRIBUTES sa;
   sa.nLength = sizeof(SECURITY_ATTRIBUTES);
   sa.bInheritHandle = TRUE;
@@ -182,6 +183,11 @@ std::optional<SpawnedProcess> SpawnProcess(
 
   CloseHandle(pi.hThread);
 
+  if (!interactive) {
+    CloseHandle(hStdinWrite);
+    hStdinWrite = nullptr;
+  }
+
   return SpawnedProcess{
       .stdin_write = hStdinWrite,
       .stdout_read = hStdoutRead,
@@ -205,14 +211,10 @@ int Process::RunProcessAndWait(const std::vector<std::string>& argv,
     return -1;
   }
 
-  auto spawned = SpawnProcess(argv);
+  auto spawned = SpawnProcess(argv, false);
   if (!spawned.has_value()) {
     return -1;
   }
-
-  // One-shot mode: close stdin immediately so child gets EOF
-  CloseHandle(spawned->stdin_write);
-  spawned->stdin_write = nullptr;
 
   // Poll for output while process is running
   while (true) {
@@ -356,9 +358,10 @@ struct SpawnedProcess {
 };
 
 /// Spawn a child process with stdin/stdout/stderr pipes.
+/// When interactive is false, stdin is closed immediately (child gets EOF).
 /// Returns nullopt on failure. On success the caller owns all fds.
-std::optional<SpawnedProcess> SpawnProcess(
-    const std::vector<std::string>& argv) {
+std::optional<SpawnedProcess> SpawnProcess(const std::vector<std::string>& argv,
+                                           bool interactive) {
   int stdin_pipe[2];
   int stdout_pipe[2];
   int stderr_pipe[2];
@@ -415,8 +418,14 @@ std::optional<SpawnedProcess> SpawnProcess(
   ::close(stdout_pipe[1]);
   ::close(stderr_pipe[1]);
 
+  int stdin_fd = stdin_pipe[1];
+  if (!interactive) {
+    ::close(stdin_fd);
+    stdin_fd = -1;
+  }
+
   return SpawnedProcess{
-      .stdin_write_fd = stdin_pipe[1],
+      .stdin_write_fd = stdin_fd,
       .stdout_read_fd = stdout_pipe[0],
       .stderr_read_fd = stderr_pipe[0],
       .pid = pid,
@@ -453,14 +462,10 @@ int Process::RunProcessAndWait(const std::vector<std::string>& argv,
     return -1;
   }
 
-  auto spawned = SpawnProcess(argv);
+  auto spawned = SpawnProcess(argv, false);
   if (!spawned.has_value()) {
     return -1;
   }
-
-  // One-shot mode: close stdin immediately so child gets EOF
-  ::close(spawned->stdin_write_fd);
-  spawned->stdin_write_fd = -1;
 
   int process_out_fd = spawned->stdout_read_fd;
   int process_err_fd = spawned->stderr_read_fd;
@@ -629,7 +634,7 @@ std::shared_ptr<Process> Process::StartInteractive(
     return StartInteractive(shell_argv, output_cb, false);
   }
 
-  auto spawned = SpawnProcess(argv);
+  auto spawned = SpawnProcess(argv, true);
   if (!spawned.has_value()) {
     return nullptr;
   }
@@ -691,9 +696,7 @@ bool Process::Write(const std::string& data) {
   return ok && written == static_cast<DWORD>(data.size());
 }
 
-bool Process::WriteLine(const std::string& data) {
-  return Write(data + "\n");
-}
+bool Process::WriteLine(const std::string& data) { return Write(data + "\n"); }
 
 void Process::SendInterrupt() {
   int pid = m_child_pid.load();
@@ -753,7 +756,7 @@ std::shared_ptr<Process> Process::StartInteractive(
     return StartInteractive(shell_argv, output_cb, false);
   }
 
-  auto spawned = SpawnProcess(argv);
+  auto spawned = SpawnProcess(argv, true);
   if (!spawned.has_value()) {
     return nullptr;
   }
