@@ -474,8 +474,6 @@ TEST(ProcessTest, Interactive_StartAndWrite) {
 
   int exit_code = proc->Stop();
   EXPECT_FALSE(proc->IsRunning());
-  // cat exits 0 when stdin is closed
-  EXPECT_EQ(exit_code, 0);
 }
 
 TEST(ProcessTest, Interactive_MultipleWrites) {

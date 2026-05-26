@@ -100,12 +100,101 @@ std::string BuildCommandLine(const std::vector<std::string>& argv) {
   return cmdline;
 }
 
+/// Holds the handles returned after spawning a child process on Windows.
+struct SpawnedProcess {
+  HANDLE stdin_write{nullptr};
+  HANDLE stdout_read{nullptr};
+  HANDLE stderr_read{nullptr};
+  HANDLE process_handle{nullptr};
+  int pid{-1};
+};
+
+/// Spawn a child process with stdin/stdout/stderr pipes.
+/// Returns nullopt on failure. On success the caller owns all handles.
+std::optional<SpawnedProcess> SpawnProcess(
+    const std::vector<std::string>& argv) {
+  SECURITY_ATTRIBUTES sa;
+  sa.nLength = sizeof(SECURITY_ATTRIBUTES);
+  sa.bInheritHandle = TRUE;
+  sa.lpSecurityDescriptor = nullptr;
+
+  HANDLE hStdinRead = nullptr, hStdinWrite = nullptr;
+  HANDLE hStdoutRead = nullptr, hStdoutWrite = nullptr;
+  HANDLE hStderrRead = nullptr, hStderrWrite = nullptr;
+
+  if (!CreatePipe(&hStdinRead, &hStdinWrite, &sa, 0) ||
+      !SetHandleInformation(hStdinWrite, HANDLE_FLAG_INHERIT, 0)) {
+    return std::nullopt;
+  }
+  if (!CreatePipe(&hStdoutRead, &hStdoutWrite, &sa, 0) ||
+      !SetHandleInformation(hStdoutRead, HANDLE_FLAG_INHERIT, 0)) {
+    CloseHandle(hStdinRead);
+    CloseHandle(hStdinWrite);
+    return std::nullopt;
+  }
+  if (!CreatePipe(&hStderrRead, &hStderrWrite, &sa, 0) ||
+      !SetHandleInformation(hStderrRead, HANDLE_FLAG_INHERIT, 0)) {
+    CloseHandle(hStdinRead);
+    CloseHandle(hStdinWrite);
+    CloseHandle(hStdoutRead);
+    CloseHandle(hStdoutWrite);
+    return std::nullopt;
+  }
+
+  DWORD mode = PIPE_READMODE_BYTE;
+  SetNamedPipeHandleState(hStdoutWrite, &mode, NULL, NULL);
+  SetNamedPipeHandleState(hStderrRead, &mode, NULL, NULL);
+
+  STARTUPINFOA si;
+  ZeroMemory(&si, sizeof(si));
+  si.cb = sizeof(si);
+  si.hStdError = hStderrWrite;
+  si.hStdOutput = hStdoutWrite;
+  si.hStdInput = hStdinRead;
+  si.dwFlags |= STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
+  si.wShowWindow = SW_HIDE;
+
+  PROCESS_INFORMATION pi;
+  ZeroMemory(&pi, sizeof(pi));
+
+  std::string cmdline = BuildCommandLine(argv);
+  std::vector<char> cmdlineBuf(cmdline.begin(), cmdline.end());
+  cmdlineBuf.push_back('\0');
+
+  if (Process::IsExecLogEnabled()) {
+    std::cout << "\n" << cmdlineBuf.data() << std::endl;
+  }
+
+  BOOL success = CreateProcessA(nullptr, cmdlineBuf.data(), nullptr, nullptr,
+                                TRUE, 0, nullptr, nullptr, &si, &pi);
+
+  // Close child-side pipe ends
+  CloseHandle(hStdinRead);
+  CloseHandle(hStdoutWrite);
+  CloseHandle(hStderrWrite);
+
+  if (!success) {
+    CloseHandle(hStdinWrite);
+    CloseHandle(hStdoutRead);
+    CloseHandle(hStderrRead);
+    return std::nullopt;
+  }
+
+  CloseHandle(pi.hThread);
+
+  return SpawnedProcess{
+      .stdin_write = hStdinWrite,
+      .stdout_read = hStdoutRead,
+      .stderr_read = hStderrRead,
+      .process_handle = pi.hProcess,
+      .pid = static_cast<int>(pi.dwProcessId),
+  };
+}
+
 }  // namespace
 
 int Process::RunProcessAndWait(const std::vector<std::string>& argv,
                                on_output_callback output_cb, bool use_shell) {
-  // If use_shell is true, prepend the shell command and call again with
-  // use_shell = false
   if (use_shell) {
     std::vector<std::string> shell_argv = {"cmd.exe", "/c"};
     shell_argv.insert(shell_argv.end(), argv.begin(), argv.end());
@@ -116,146 +205,50 @@ int Process::RunProcessAndWait(const std::vector<std::string>& argv,
     return -1;
   }
 
-  // Create pipes for stdin, stdout and stderr
-  HANDLE hStdinRead = nullptr, hStdinWrite = nullptr;
-  HANDLE hStdoutRead = nullptr, hStdoutWrite = nullptr;
-  HANDLE hStderrRead = nullptr, hStderrWrite = nullptr;
-
-  SECURITY_ATTRIBUTES sa;
-  sa.nLength = sizeof(SECURITY_ATTRIBUTES);
-  sa.bInheritHandle = TRUE;
-  sa.lpSecurityDescriptor = nullptr;
-
-  if (!CreatePipe(&hStdinRead, &hStdinWrite, &sa, 0) ||
-      !SetHandleInformation(hStdinWrite, HANDLE_FLAG_INHERIT, 0)) {
-    return -1;
-  }
-  if (!CreatePipe(&hStdoutRead, &hStdoutWrite, &sa, 0) ||
-      !SetHandleInformation(hStdoutRead, HANDLE_FLAG_INHERIT, 0)) {
-    CloseHandle(hStdinRead);
-    CloseHandle(hStdinWrite);
-    return -1;
-  }
-  if (!CreatePipe(&hStderrRead, &hStderrWrite, &sa, 0) ||
-      !SetHandleInformation(hStderrRead, HANDLE_FLAG_INHERIT, 0)) {
-    CloseHandle(hStdinRead);
-    CloseHandle(hStdinWrite);
-    CloseHandle(hStdoutRead);
-    CloseHandle(hStdoutWrite);
+  auto spawned = SpawnProcess(argv);
+  if (!spawned.has_value()) {
     return -1;
   }
 
-  // Set pipe to byte mode
-  DWORD mode = PIPE_READMODE_BYTE;
-  SetNamedPipeHandleState(hStdoutWrite, &mode, NULL, NULL);
-  SetNamedPipeHandleState(hStderrRead, &mode, NULL, NULL);
-
-  // Setup process startup info
-  STARTUPINFOA si;
-  ZeroMemory(&si, sizeof(si));
-  si.cb = sizeof(si);
-  si.hStdError = hStderrWrite;
-  si.hStdOutput = hStdoutWrite;
-  si.hStdInput = hStdinRead;
-  si.dwFlags |= STARTF_USESTDHANDLES;
-
-  if (!use_shell) {
-    // Hide terminal if not needed.
-    si.dwFlags |= STARTF_USESHOWWINDOW;
-    si.wShowWindow = SW_HIDE;
-  }
-
-  PROCESS_INFORMATION pi;
-  ZeroMemory(&pi, sizeof(pi));
-
-  std::string cmdline = BuildCommandLine(argv);
-
-  // CreateProcess modifies the command line, so we need a mutable buffer
-  std::vector<char> cmdlineBuf(cmdline.begin(), cmdline.end());
-  cmdlineBuf.push_back('\0');
-
-  if (Process::IsExecLogEnabled()) {
-    std::cout << "\n" << cmdlineBuf.data() << std::endl;
-  }
-
-  BOOL success = CreateProcessA(nullptr,            // Application name
-                                cmdlineBuf.data(),  // Command line
-                                nullptr,  // Process security attributes
-                                nullptr,  // Thread security attributes
-                                TRUE,     // Inherit handles
-                                0,        // Creation flags
-                                nullptr,  // Environment
-                                nullptr,  // Current directory
-                                &si,      // Startup info
-                                &pi       // Process information
-  );
-
-  // Close the pipe ends that belong to the child process
-  CloseHandle(hStdinRead);
-  CloseHandle(hStdoutWrite);
-  CloseHandle(hStderrWrite);
-
-  if (!success) {
-    // Clean up remaining handles on failure
-    CloseHandle(hStdinWrite);
-    CloseHandle(hStdoutRead);
-    CloseHandle(hStderrRead);
-    return -1;
-  }
-
-  int process_id = static_cast<int>(pi.dwProcessId);
-  bool should_continue = true;
-
-  // Close stdin write end immediately - child will get EOF if it tries to read
-  // This prevents the child from blocking on stdin
-  CloseHandle(hStdinWrite);
+  // One-shot mode: close stdin immediately so child gets EOF
+  CloseHandle(spawned->stdin_write);
+  spawned->stdin_write = nullptr;
 
   // Poll for output while process is running
   while (true) {
-    // Read available output
-    std::string new_out = ReadAvailableFromPipe(hStdoutRead);
-    std::string new_err = ReadAvailableFromPipe(hStderrRead);
+    std::string new_out = ReadAvailableFromPipe(spawned->stdout_read);
+    std::string new_err = ReadAvailableFromPipe(spawned->stderr_read);
 
     if (!new_out.empty() || !new_err.empty()) {
       if (output_cb && !output_cb(new_out, new_err)) {
-        TerminateProcess(process_id);
+        TerminateProcess(spawned->pid);
         break;
       }
-    }
-
-    if (!new_out.empty() || !new_err.empty()) {
       continue;
     }
 
-    DWORD wait_result = WaitForSingleObject(pi.hProcess, 5);
+    DWORD wait_result = WaitForSingleObject(spawned->process_handle, 5);
     if (wait_result == WAIT_OBJECT_0) {
-      // Process has exited, read any remaining output
-      std::string final_out = ReadAllFromPipe(hStdoutRead);
-      std::string final_err = ReadAllFromPipe(hStderrRead);
-
-      if (!final_out.empty() || !final_err.empty()) {
-        if (output_cb) {
-          output_cb(final_out, final_err);
-        }
+      std::string final_out = ReadAllFromPipe(spawned->stdout_read);
+      std::string final_err = ReadAllFromPipe(spawned->stderr_read);
+      if (output_cb && (!final_out.empty() || !final_err.empty())) {
+        output_cb(final_out, final_err);
       }
       break;
     } else {
-      // Let the user a chance to terminate the process
       if (output_cb && !output_cb("", "")) {
-        TerminateProcess(process_id);
+        TerminateProcess(spawned->pid);
         break;
       }
     }
   }
 
   DWORD exitCode = 0;
-  GetExitCodeProcess(pi.hProcess, &exitCode);
+  GetExitCodeProcess(spawned->process_handle, &exitCode);
 
-  // Clean up
-  CloseHandle(hStdoutRead);
-  CloseHandle(hStderrRead);
-  CloseHandle(pi.hProcess);
-  CloseHandle(pi.hThread);
+  CloseHandle(spawned->stdout_read);
+  CloseHandle(spawned->stderr_read);
+  CloseHandle(spawned->process_handle);
 
   return static_cast<int>(exitCode);
 }
@@ -264,13 +257,9 @@ bool Process::RunProcessAsync(const std::vector<std::string>& argv,
                               on_output_callback output_cb,
                               on_process_end_callback completion_cb,
                               bool use_shell) {
-  // If use_shell is true, wrap the command with cmd.exe
   if (use_shell) {
     std::vector<std::string> shell_argv = {"cmd.exe", "/c"};
-
-    // Reuse the existing synchronous implementation from a worker thread.
     shell_argv.push_back(BuildCommandLine(argv));
-
     return RunProcessAsync(shell_argv, output_cb, completion_cb, false);
   }
 
@@ -319,67 +308,6 @@ bool Process::IsAlive(int process_id) {
 
 namespace {
 
-// Helper to set a file descriptor to non-blocking mode
-void SetNonBlocking(int fd) {
-  int flags = fcntl(fd, F_GETFL, 0);
-  if (flags != -1) {
-    fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-  }
-}
-
-enum class WaitResult {
-  kTimeout,
-  kError,
-  kDataAvailable,
-};
-
-WaitResult WaitOnFd(int fd) {
-  fd_set fds;
-  FD_ZERO(&fds);
-  FD_SET(fd, &fds);
-  struct timeval tv;
-  tv.tv_sec = 0;
-  tv.tv_usec = 5000;
-  int rc = ::select(fd + 1, &fds, nullptr, nullptr, &tv);
-  if (rc > 0 && FD_ISSET(fd, &fds)) {
-    return WaitResult::kDataAvailable;
-  }
-
-  if (rc == 0) {
-    return WaitResult::kTimeout;
-  }
-  return WaitResult::kError;
-}
-
-// Helper to read available data from a file descriptor (non-blocking)
-std::string ReadAvailableFromFd(int fd) {
-  std::string result;
-  char buffer[kBufferSize];
-  ssize_t bytesRead = 0;
-
-  while ((bytesRead = read(fd, buffer, kBufferSize)) > 0) {
-    result.append(buffer, bytesRead);
-    if (result.size() > kMaxChunkSize) {
-      break;
-    }
-  }
-
-  return result;
-}
-
-// Helper to read from a file descriptor until EOF
-std::string ReadFromFdUntilEOF(int fd) {
-  std::string result;
-  char buffer[kBufferSize];
-  ssize_t bytesRead = 0;
-
-  SetNonBlocking(fd);
-  while ((bytesRead = read(fd, buffer, kBufferSize)) > 0) {
-    result.append(buffer, bytesRead);
-  }
-  return result;
-}
-
 std::string JoinArguments(const std::vector<std::string>& argv) {
   std::string command;
   for (size_t i = 0; i < argv.size(); ++i) {
@@ -417,31 +345,107 @@ class Argv {
   }
 
   char** get() { return argv_.get(); }
-  int argc() const { return static_cast<int>(size_); }
-
-  std::string to_string() const {
-    std::string result;
-    for (size_t i = 0; i < size_; ++i) {
-      if (i > 0) result += ' ';
-      std::string arg = argv_.get()[i];
-      result += arg;
-    }
-    return result;
-  }
 };
 
-bool IsProcessAlive(pid_t pid) { return kill(pid, 0) == 0; }
+/// Holds the file descriptors returned after spawning a child process on Unix.
+struct SpawnedProcess {
+  int stdin_write_fd{-1};
+  int stdout_read_fd{-1};
+  int stderr_read_fd{-1};
+  pid_t pid{-1};
+};
+
+/// Spawn a child process with stdin/stdout/stderr pipes.
+/// Returns nullopt on failure. On success the caller owns all fds.
+std::optional<SpawnedProcess> SpawnProcess(
+    const std::vector<std::string>& argv) {
+  int stdin_pipe[2];
+  int stdout_pipe[2];
+  int stderr_pipe[2];
+
+  if (::pipe(stdin_pipe) != 0) {
+    return std::nullopt;
+  }
+  if (::pipe(stdout_pipe) != 0) {
+    ::close(stdin_pipe[0]);
+    ::close(stdin_pipe[1]);
+    return std::nullopt;
+  }
+  if (::pipe(stderr_pipe) != 0) {
+    ::close(stdin_pipe[0]);
+    ::close(stdin_pipe[1]);
+    ::close(stdout_pipe[0]);
+    ::close(stdout_pipe[1]);
+    return std::nullopt;
+  }
+
+  Argv exec_argv{argv};
+  pid_t pid = fork();
+
+  if (pid < 0) {
+    ::close(stdin_pipe[0]);
+    ::close(stdin_pipe[1]);
+    ::close(stdout_pipe[0]);
+    ::close(stdout_pipe[1]);
+    ::close(stderr_pipe[0]);
+    ::close(stderr_pipe[1]);
+    return std::nullopt;
+  }
+
+  if (pid == 0) {
+    // Child process
+    ::close(stdin_pipe[1]);
+    ::close(stdout_pipe[0]);
+    ::close(stderr_pipe[0]);
+
+    ::dup2(stdin_pipe[0], STDIN_FILENO);
+    ::dup2(stdout_pipe[1], STDOUT_FILENO);
+    ::dup2(stderr_pipe[1], STDERR_FILENO);
+
+    ::close(stdin_pipe[0]);
+    ::close(stdout_pipe[1]);
+    ::close(stderr_pipe[1]);
+
+    ::execvp(exec_argv.get()[0], exec_argv.get());
+    ::_exit(127);
+  }
+
+  // Parent process
+  ::close(stdin_pipe[0]);
+  ::close(stdout_pipe[1]);
+  ::close(stderr_pipe[1]);
+
+  return SpawnedProcess{
+      .stdin_write_fd = stdin_pipe[1],
+      .stdout_read_fd = stdout_pipe[0],
+      .stderr_read_fd = stderr_pipe[0],
+      .pid = pid,
+  };
+}
+
+// Helper to read from a file descriptor until EOF
+std::string ReadFromFdUntilEOF(int fd) {
+  std::string result;
+  char buffer[kBufferSize];
+  ssize_t bytesRead = 0;
+
+  int flags = fcntl(fd, F_GETFL, 0);
+  if (flags != -1) {
+    fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+  }
+  while ((bytesRead = read(fd, buffer, kBufferSize)) > 0) {
+    result.append(buffer, bytesRead);
+  }
+  return result;
+}
 
 }  // namespace
 
 int Process::RunProcessAndWait(const std::vector<std::string>& argv,
                                on_output_callback output_cb, bool use_shell) {
-  // If use_shell is true, wrap the command with /bin/bash
   if (use_shell) {
     std::vector<std::string> shell_argv = {"/bin/bash", "-c"};
-
     shell_argv.push_back(JoinArguments(argv));
-
     return RunProcessAndWait(shell_argv, output_cb, false);
   }
 
@@ -449,65 +453,17 @@ int Process::RunProcessAndWait(const std::vector<std::string>& argv,
     return -1;
   }
 
-  // Create pipes for stdout and stderr
-  int stdout_pipe[2];
-  int stderr_pipe[2];
-
-  if (::pipe(stdout_pipe) != 0) {
+  auto spawned = SpawnProcess(argv);
+  if (!spawned.has_value()) {
     return -1;
   }
 
-  if (pipe(stderr_pipe) != 0) {
-    ::close(stdout_pipe[0]);
-    ::close(stdout_pipe[1]);
-    return -1;
-  }
+  // One-shot mode: close stdin immediately so child gets EOF
+  ::close(spawned->stdin_write_fd);
+  spawned->stdin_write_fd = -1;
 
-  // Prepare arguments for execvp
-  Argv exec_argv{argv};
-  pid_t pid = fork();
-
-  if (pid < 0) {
-    // Fork failed
-    ::close(stdout_pipe[0]);
-    ::close(stdout_pipe[1]);
-    ::close(stderr_pipe[0]);
-    ::close(stderr_pipe[1]);
-    return -1;
-  }
-
-  if (pid == 0) {
-    // Child process
-    // Close read ends
-    ::close(stdout_pipe[0]);
-    ::close(stderr_pipe[0]);
-
-    // Redirect stdout and stderr
-    ::dup2(stdout_pipe[1], STDOUT_FILENO);
-    ::dup2(stderr_pipe[1], STDERR_FILENO);
-
-    // Close write ends after duplication
-    ::close(stdout_pipe[1]);
-    ::close(stderr_pipe[1]);
-
-    ::execvp(exec_argv.get()[0], exec_argv.get());
-
-    // If execvp returns, it failed
-    ::_exit(127);
-  }
-
-  // Parent process
-  int process_id = static_cast<int>(pid);
-
-  // Close write ends
-  ::close(stdout_pipe[1]);
-  ::close(stderr_pipe[1]);
-
-  bool should_continue = true;
-
-  // Poll for output while process is running
-  int process_out_fd = stdout_pipe[0];
-  int process_err_fd = stderr_pipe[0];
+  int process_out_fd = spawned->stdout_read_fd;
+  int process_err_fd = spawned->stderr_read_fd;
   bool stdout_open = true;
   bool stderr_open = true;
 
@@ -544,7 +500,7 @@ int Process::RunProcessAndWait(const std::vector<std::string>& argv,
         if (n > 0) {
           new_out.append(buffer, n);
         } else {
-          stdout_open = false;  // EOF or error
+          stdout_open = false;
         }
       }
 
@@ -554,7 +510,7 @@ int Process::RunProcessAndWait(const std::vector<std::string>& argv,
         if (n > 0) {
           new_err.append(buffer, n);
         } else {
-          stderr_open = false;  // EOF or error
+          stderr_open = false;
         }
       }
 
@@ -562,29 +518,25 @@ int Process::RunProcessAndWait(const std::vector<std::string>& argv,
         break;
       }
     } else if (rc == 0) {
-      // Let the caller a chance to terminate the process.
       if (output_cb && !output_cb("", "")) {
         break;
       }
-    }  // Error will be handled by
+    }
   }
 
   if (stderr_open || stdout_open) {
-    // Terminate it
-    ::kill(pid, SIGKILL);
+    ::kill(spawned->pid, SIGKILL);
   }
 
   std::string out;
   if (stdout_open) {
     out = ReadFromFdUntilEOF(process_out_fd);
   }
-
   std::string err;
   if (stderr_open) {
     err = ReadFromFdUntilEOF(process_err_fd);
   }
 
-  // Close read ends
   ::close(process_out_fd);
   ::close(process_err_fd);
 
@@ -592,31 +544,24 @@ int Process::RunProcessAndWait(const std::vector<std::string>& argv,
     output_cb(out, err);
   }
 
-  // Wait for process to actually terminate (we get here when SIGKILL is fired).
   int status = 0;
-  ::waitpid(pid, &status, 0);
+  ::waitpid(spawned->pid, &status, 0);
 
-  int exit_code{0};
   if (WIFEXITED(status)) {
-    exit_code = WEXITSTATUS(status);
+    return WEXITSTATUS(status);
   } else if (WIFSIGNALED(status)) {
-    exit_code = 128 + WTERMSIG(status);
-  } else {
-    exit_code = -1;
+    return 128 + WTERMSIG(status);
   }
-  return exit_code;
+  return -1;
 }
 
 bool Process::RunProcessAsync(const std::vector<std::string>& argv,
                               on_output_callback output_cb,
                               on_process_end_callback completion_cb,
                               bool use_shell) {
-  // If use_shell is true, wrap the command with /bin/bash
   if (use_shell) {
     std::vector<std::string> shell_argv = {"/bin/bash", "-c"};
-
     shell_argv.push_back(JoinArguments(argv));
-
     return RunProcessAsync(shell_argv, output_cb, completion_cb, false);
   }
 
@@ -644,7 +589,6 @@ bool Process::IsAlive(int process_id) {
     return false;
   }
 
-  // Sending signal 0 checks if the process exists without killing it
   int result = kill(static_cast<pid_t>(process_id), 0);
   return result == 0;
 }
@@ -685,78 +629,19 @@ std::shared_ptr<Process> Process::StartInteractive(
     return StartInteractive(shell_argv, output_cb, false);
   }
 
-  SECURITY_ATTRIBUTES sa;
-  sa.nLength = sizeof(SECURITY_ATTRIBUTES);
-  sa.bInheritHandle = TRUE;
-  sa.lpSecurityDescriptor = nullptr;
-
-  HANDLE hStdinRead = nullptr, hStdinWrite = nullptr;
-  HANDLE hStdoutRead = nullptr, hStdoutWrite = nullptr;
-  HANDLE hStderrRead = nullptr, hStderrWrite = nullptr;
-
-  if (!CreatePipe(&hStdinRead, &hStdinWrite, &sa, 0) ||
-      !SetHandleInformation(hStdinWrite, HANDLE_FLAG_INHERIT, 0)) {
-    return nullptr;
-  }
-  if (!CreatePipe(&hStdoutRead, &hStdoutWrite, &sa, 0) ||
-      !SetHandleInformation(hStdoutRead, HANDLE_FLAG_INHERIT, 0)) {
-    CloseHandle(hStdinRead);
-    CloseHandle(hStdinWrite);
-    return nullptr;
-  }
-  if (!CreatePipe(&hStderrRead, &hStderrWrite, &sa, 0) ||
-      !SetHandleInformation(hStderrRead, HANDLE_FLAG_INHERIT, 0)) {
-    CloseHandle(hStdinRead);
-    CloseHandle(hStdinWrite);
-    CloseHandle(hStdoutRead);
-    CloseHandle(hStdoutWrite);
+  auto spawned = SpawnProcess(argv);
+  if (!spawned.has_value()) {
     return nullptr;
   }
 
-  STARTUPINFOA si;
-  ZeroMemory(&si, sizeof(si));
-  si.cb = sizeof(si);
-  si.hStdError = hStderrWrite;
-  si.hStdOutput = hStdoutWrite;
-  si.hStdInput = hStdinRead;
-  si.dwFlags |= STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
-  si.wShowWindow = SW_HIDE;
-
-  PROCESS_INFORMATION pi;
-  ZeroMemory(&pi, sizeof(pi));
-
-  std::string cmdline = BuildCommandLine(argv);
-  std::vector<char> cmdlineBuf(cmdline.begin(), cmdline.end());
-  cmdlineBuf.push_back('\0');
-
-  BOOL success = CreateProcessA(nullptr, cmdlineBuf.data(), nullptr, nullptr,
-                                TRUE, 0, nullptr, nullptr, &si, &pi);
-
-  // Close child-side pipe ends
-  CloseHandle(hStdinRead);
-  CloseHandle(hStdoutWrite);
-  CloseHandle(hStderrWrite);
-
-  if (!success) {
-    CloseHandle(hStdinWrite);
-    CloseHandle(hStdoutRead);
-    CloseHandle(hStderrRead);
-    return nullptr;
-  }
-
-  CloseHandle(pi.hThread);
-
-  // Use shared_ptr with custom access to private constructor
   auto proc = std::shared_ptr<Process>(new Process());
-  proc->m_stdin_write = hStdinWrite;
-  proc->m_stdout_read = hStdoutRead;
-  proc->m_stderr_read = hStderrRead;
-  proc->m_process_handle = pi.hProcess;
-  proc->m_child_pid.store(static_cast<int>(pi.dwProcessId));
+  proc->m_stdin_write = spawned->stdin_write;
+  proc->m_stdout_read = spawned->stdout_read;
+  proc->m_stderr_read = spawned->stderr_read;
+  proc->m_process_handle = spawned->process_handle;
+  proc->m_child_pid.store(spawned->pid);
   proc->m_running.store(true);
 
-  // Start a reader thread that feeds output_cb.
-  // Captures weak_ptr so the Process can be destroyed when the caller drops it.
   std::weak_ptr<Process> weak_proc = proc;
   std::thread([weak_proc, output_cb]() {
     while (true) {
@@ -776,11 +661,9 @@ std::shared_ptr<Process> Process::StartInteractive(
         }
       }
 
-      // Check if process has exited
       DWORD wait_result =
           WaitForSingleObject(static_cast<HANDLE>(proc->m_process_handle), 5);
       if (wait_result == WAIT_OBJECT_0) {
-        // Read remaining data
         std::string final_out =
             ReadAllFromPipe(static_cast<HANDLE>(proc->m_stdout_read));
         std::string final_err =
@@ -830,7 +713,6 @@ int Process::Stop() {
     TerminateProcess(pid);
   }
 
-  // Close our pipe handles
   if (m_stdin_write) {
     CloseHandle(static_cast<HANDLE>(m_stdin_write));
     m_stdin_write = nullptr;
@@ -871,71 +753,18 @@ std::shared_ptr<Process> Process::StartInteractive(
     return StartInteractive(shell_argv, output_cb, false);
   }
 
-  int stdin_pipe[2];
-  int stdout_pipe[2];
-  int stderr_pipe[2];
-
-  if (::pipe(stdin_pipe) != 0) {
+  auto spawned = SpawnProcess(argv);
+  if (!spawned.has_value()) {
     return nullptr;
   }
-  if (::pipe(stdout_pipe) != 0) {
-    ::close(stdin_pipe[0]);
-    ::close(stdin_pipe[1]);
-    return nullptr;
-  }
-  if (::pipe(stderr_pipe) != 0) {
-    ::close(stdin_pipe[0]);
-    ::close(stdin_pipe[1]);
-    ::close(stdout_pipe[0]);
-    ::close(stdout_pipe[1]);
-    return nullptr;
-  }
-
-  Argv exec_argv{argv};
-  pid_t pid = fork();
-
-  if (pid < 0) {
-    ::close(stdin_pipe[0]);
-    ::close(stdin_pipe[1]);
-    ::close(stdout_pipe[0]);
-    ::close(stdout_pipe[1]);
-    ::close(stderr_pipe[0]);
-    ::close(stderr_pipe[1]);
-    return nullptr;
-  }
-
-  if (pid == 0) {
-    // Child process
-    ::close(stdin_pipe[1]);   // close write end of stdin
-    ::close(stdout_pipe[0]);  // close read end of stdout
-    ::close(stderr_pipe[0]);  // close read end of stderr
-
-    ::dup2(stdin_pipe[0], STDIN_FILENO);
-    ::dup2(stdout_pipe[1], STDOUT_FILENO);
-    ::dup2(stderr_pipe[1], STDERR_FILENO);
-
-    ::close(stdin_pipe[0]);
-    ::close(stdout_pipe[1]);
-    ::close(stderr_pipe[1]);
-
-    ::execvp(exec_argv.get()[0], exec_argv.get());
-    ::_exit(127);
-  }
-
-  // Parent process
-  ::close(stdin_pipe[0]);   // close read end of stdin
-  ::close(stdout_pipe[1]);  // close write end of stdout
-  ::close(stderr_pipe[1]);  // close write end of stderr
 
   auto proc = std::shared_ptr<Process>(new Process());
-  proc->m_stdin_write_fd = stdin_pipe[1];
-  proc->m_stdout_read_fd = stdout_pipe[0];
-  proc->m_stderr_read_fd = stderr_pipe[0];
-  proc->m_child_pid.store(static_cast<int>(pid));
+  proc->m_stdin_write_fd = spawned->stdin_write_fd;
+  proc->m_stdout_read_fd = spawned->stdout_read_fd;
+  proc->m_stderr_read_fd = spawned->stderr_read_fd;
+  proc->m_child_pid.store(static_cast<int>(spawned->pid));
   proc->m_running.store(true);
 
-  // Start a reader thread that feeds output_cb.
-  // Captures weak_ptr so the Process can be destroyed when the caller drops it.
   std::weak_ptr<Process> weak_proc = proc;
   std::thread([weak_proc, output_cb]() {
     bool stdout_open = true;
@@ -966,7 +795,7 @@ std::shared_ptr<Process> Process::StartInteractive(
 
       timeval tv;
       tv.tv_sec = 0;
-      tv.tv_usec = 10000;  // 10ms poll
+      tv.tv_usec = 10000;
 
       int rc = ::select(max_fd + 1, &read_set, nullptr, nullptr, &tv);
       if (rc > 0) {
@@ -1049,34 +878,29 @@ int Process::Stop() {
     return -1;
   }
 
-  // Close stdin first — signals EOF to the child
   if (m_stdin_write_fd >= 0) {
     ::close(m_stdin_write_fd);
     m_stdin_write_fd = -1;
   }
 
-  // Give the child a chance to exit gracefully
   ::kill(static_cast<pid_t>(pid), SIGTERM);
 
   int status = 0;
   int wait_result = 0;
 
-  // Wait up to 3 seconds
   for (int i = 0; i < 30; ++i) {
     wait_result = ::waitpid(static_cast<pid_t>(pid), &status, WNOHANG);
     if (wait_result != 0) {
       break;
     }
-    usleep(100000);  // 100ms
+    usleep(100000);
   }
 
   if (wait_result == 0) {
-    // Still alive, force kill
     ::kill(static_cast<pid_t>(pid), SIGKILL);
     ::waitpid(static_cast<pid_t>(pid), &status, 0);
   }
 
-  // Close remaining pipe fds
   if (m_stdout_read_fd >= 0) {
     ::close(m_stdout_read_fd);
     m_stdout_read_fd = -1;
