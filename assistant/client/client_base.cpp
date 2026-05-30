@@ -3,9 +3,6 @@
 #include "assistant/logger.hpp"
 #include "assistant/tool.hpp"
 
-#define LLM_COST_IMPLEMENTATION
-#include "assistant/common/llm-cost.hpp"
-
 namespace assistant {
 
 bool ClientBase::HandleResponse(const assistant::response& resp,
@@ -262,9 +259,5 @@ bool ClientBase::IsNearContextLimit(double threshold_percentage) const {
   // Use aggregated usage to check overall context consumption
   TokenUsageStats stats = GetAggregatedTokenUsageStats();
   return stats.IsNearContextLimit(threshold_percentage);
-}
-
-size_t ClientBase::CountTokens(const std::string& text) const {
-  return llm::count(text, llm::models::CLAUDE_SONNET).tokens;
 }
 }  // namespace assistant

@@ -1,5 +1,6 @@
 #include "assistant/client/openai_client.hpp"
 
+#include "assistant/common/tokens.hpp"
 #include "assistant/openai_response_parser.hpp"
 
 namespace assistant {
@@ -193,12 +194,19 @@ void OpenAIClient::AddToolsResult(
   }
 }
 
-void OpenAIClient::Compact(size_t responses_to_keep) {
-  m_history.Compact(
-      [](assistant::message& msg) {
+size_t OpenAIClient::Compact(size_t responses_to_keep) {
+  return m_history.Compact(
+      [this](assistant::message& msg) {
+        size_t tokens_trimmed{0};
         if (msg.contains("output") && msg["output"].is_string()) {
-          msg["output"] = kTrimMessage;
+          size_t count =
+              assistant::CountTokens(msg["output"].get<std::string>());
+          if (count > kTrimMessageTokensCount) {
+            msg["output"] = kTrimMessage;
+            tokens_trimmed += (count - kTrimMessageTokensCount);
+          }
         }
+        return tokens_trimmed;
       },
       responses_to_keep);
 }

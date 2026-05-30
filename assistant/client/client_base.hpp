@@ -9,6 +9,7 @@
 
 #include "assistant/attributes.hpp"
 #include "assistant/common.hpp"
+#include "assistant/common/tokens.hpp"
 #include "assistant/config.hpp"
 
 namespace assistant {
@@ -127,7 +128,8 @@ struct Messages {
 
 inline constexpr const char kTrimMessage[] =
     "[TOOL RESPONSE CONTENT TRUNCATED BY SYSTEM TO SAVE MEMORY]";
-
+inline static size_t kTrimMessageTokensCount =
+    assistant::CountTokens(kTrimMessage);
 struct History {
   /**
    * @brief Constructs a History object with the active history pointing to the
@@ -257,18 +259,20 @@ struct History {
    * @param responses_to_keep size_t Number of most recent tool response
    * messages to leave unmodified. Defaults to 3.
    *
-   * @return void This function does not return a value.
+   * @return size_t The total number of tokens trimmed.
    */
-  void Compact(std::function<void(assistant::message&)> msg_trim_func,
-               size_t responses_to_keep = 3) {
+
+  size_t Compact(std::function<size_t(assistant::message&)> msg_trim_func,
+                 size_t responses_to_keep = 3) {
     std::scoped_lock lock{mutex_};
     // we don't compact on temp history
     if (active_history_ == &temp_messages_ || active_history_->empty()) {
-      return;
+      return 0;
     }
 
     // Remove tool responses. Note that we keep the last 3 tool responses
     size_t responses_found{0};
+    size_t tokens_trimmed{0};
     for (int i = static_cast<int>(active_history_->size()) - 1; i >= 0; --i) {
       auto msg_type = active_history_->message_type_[i];
       if (msg_type != MessageType::kToolResponse) {
@@ -281,8 +285,9 @@ struct History {
       }
 
       auto& msg = active_history_->messages_[i];
-      msg_trim_func(msg);
+      tokens_trimmed += msg_trim_func(msg);
     }
+    return tokens_trimmed;
   }
 
   /**
@@ -414,7 +419,7 @@ class ClientBase {
   virtual void AddToolsResult(
       std::vector<std::pair<FunctionCall, FunctionResult>> result) = 0;
 
-  virtual void Compact(size_t response_to_keep = 3) = 0;
+  virtual size_t Compact(size_t response_to_keep = 3) = 0;
   ///===---------------------------
   /// Client API - END
   ///===---------------------------
@@ -594,11 +599,6 @@ class ClientBase {
   }
 
   virtual inline bool IsStreaming() const { return m_stream.load(); }
-
-  /** @brief Counts the number of tokens in a text string. This is a rough
-   * estimation using heuristics.
-   */
-  size_t CountTokens(const std::string& str) const;
 
  protected:
   static bool OnResponse(const assistant::response& resp, void* user_data);

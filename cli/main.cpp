@@ -1,6 +1,7 @@
 /// A demo program for using the "assistant" library.
 
 #include "assistant/logger.hpp"
+#include "assistant/tool.hpp"
 #ifdef __WIN32
 #include <winsock2.h>
 #endif

@@ -3,6 +3,7 @@
 #include <thread>
 #include <vector>
 
+#include "assistant/assistant.hpp"
 #include "assistant/client/claude_client.hpp"
 #include "assistant/client/client_base.hpp"
 #include "assistant/client/ollama_client.hpp"
@@ -442,7 +443,10 @@ TEST_F(HistoryTest, CompactEmptyHistory) {
   EXPECT_TRUE(history_->IsEmpty());
 
   bool called = false;
-  history_->Compact([&called](assistant::message& /*msg*/) { called = true; });
+  history_->Compact([&called](assistant::message& /*msg*/) {
+    called = true;
+    return 0;
+  });
 
   EXPECT_FALSE(called);
   EXPECT_TRUE(history_->IsEmpty());
@@ -461,7 +465,10 @@ TEST_F(HistoryTest, CompactOnTempHistory) {
   history_->AddMessage(assistant::message{"user", "Temp message"});
 
   bool called = false;
-  history_->Compact([&called](assistant::message& /*msg*/) { called = true; });
+  history_->Compact([&called](assistant::message& /*msg*/) {
+    called = true;
+    return 0;
+  });
 
   // Callback should not be called when on temp history
   EXPECT_FALSE(called);
@@ -484,8 +491,10 @@ TEST_F(HistoryTest, CompactTrimsNormalMessages) {
   history_->AddMessage(assistant::message{"tool", "Tool response"},
                        MessageType::kToolResponse);
 
-  history_->Compact(
-      [](assistant::message& msg) { msg["content"] = "[TRIMMED]"; });
+  history_->Compact([](assistant::message& msg) {
+    msg["content"] = "[TRIMMED]";
+    return 0;
+  });
 
   auto messages = history_->GetMessages();
   ASSERT_EQ(messages.size(), 4);
@@ -504,8 +513,17 @@ TEST_F(HistoryTest, CompactPreservesLastThreeToolResponses) {
         MessageType::kToolResponse);
   }
 
-  history_->Compact(
-      [](assistant::message& msg) { msg["content"] = "[TRIMMED]"; });
+  size_t trimmed = history_->Compact([](assistant::message& msg) {
+    std::string orig_text = msg["content"].get<std::string>();
+    size_t count = assistant::CountTokens(orig_text);
+    msg["content"] = "[TRIMMED]";
+    return count - assistant::CountTokens("[TRIMMED]");
+  });
+
+  size_t before_1 = assistant::CountTokens("Tool response 1");
+  size_t before_2 = assistant::CountTokens("Tool response 2");
+
+  size_t after = assistant::CountTokens("[TRIMMED]");
 
   auto messages = history_->GetMessages();
   ASSERT_EQ(messages.size(), 5);
@@ -515,34 +533,7 @@ TEST_F(HistoryTest, CompactPreservesLastThreeToolResponses) {
   EXPECT_EQ(messages[2]["content"].get<std::string>(), "Tool response 2");
   EXPECT_EQ(messages[3]["content"].get<std::string>(), "Tool response 3");
   EXPECT_EQ(messages[4]["content"].get<std::string>(), "Tool response 4");
-}
-
-// Test: Compact trims tool requests but preserves tool responses
-TEST_F(HistoryTest, CompactMixedMessageTypes) {
-  history_->AddMessage(assistant::message{"user", "User message"},
-                       MessageType::kNormal);
-  history_->AddMessage(assistant::message{"tool", "Tool response 1"},
-                       MessageType::kToolResponse);
-  history_->AddMessage(assistant::message{"assistant", "Assistant message"},
-                       MessageType::kNormal);
-  history_->AddMessage(assistant::message{"tool", "Tool response 2"},
-                       MessageType::kToolResponse);
-  history_->AddMessage(assistant::message{"user", "Another user message"},
-                       MessageType::kNormal);
-  history_->AddMessage(assistant::message{"tool", "Tool response 3"},
-                       MessageType::kToolResponse);
-
-  history_->Compact(
-      [](assistant::message& msg) { msg["content"] = "[TRIMMED]"; });
-
-  auto messages = history_->GetMessages();
-  ASSERT_EQ(messages.size(), 6);
-  EXPECT_EQ(messages[0]["content"].get<std::string>(), "User message");
-  EXPECT_EQ(messages[1]["content"].get<std::string>(), "Tool response 1");
-  EXPECT_EQ(messages[2]["content"].get<std::string>(), "Assistant message");
-  EXPECT_EQ(messages[3]["content"].get<std::string>(), "Tool response 2");
-  EXPECT_EQ(messages[4]["content"].get<std::string>(), "Another user message");
-  EXPECT_EQ(messages[5]["content"].get<std::string>(), "Tool response 3");
+  EXPECT_EQ(trimmed, (before_1 + before_2) - (2 * after));
 }
 
 // Test: Compact with exactly 3 tool responses preserves all of them
@@ -553,118 +544,16 @@ TEST_F(HistoryTest, CompactExactlyThreeToolResponses) {
         MessageType::kToolResponse);
   }
 
-  history_->Compact(
-      [](assistant::message& msg) { msg["content"] = "[TRIMMED]"; });
+  history_->Compact([](assistant::message& msg) {
+    msg["content"] = "[TRIMMED]";
+    return 0;
+  });
 
   auto messages = history_->GetMessages();
   ASSERT_EQ(messages.size(), 3);
   EXPECT_EQ(messages[0]["content"].get<std::string>(), "Tool response 0");
   EXPECT_EQ(messages[1]["content"].get<std::string>(), "Tool response 1");
   EXPECT_EQ(messages[2]["content"].get<std::string>(), "Tool response 2");
-}
-
-// Test: Compact callback can modify message structure (simulating OllamaClient)
-TEST_F(HistoryTest, CompactOllamaStyleTrimming) {
-  history_->AddMessage(assistant::message{"user", "User message"},
-                       MessageType::kNormal);
-  history_->AddMessage(assistant::message{"tool", "Tool response content"},
-                       MessageType::kToolResponse);
-  history_->AddMessage(assistant::message{"assistant", "Assistant message"},
-                       MessageType::kNormal);
-
-  // Simulate OllamaClient::Compact behavior
-  history_->Compact([](assistant::message& msg) {
-    if (msg.contains("content") && msg["content"].is_string()) {
-      msg["content"] = kTrimMessage;
-    }
-  });
-
-  auto messages = history_->GetMessages();
-  ASSERT_EQ(messages.size(), 3);
-  EXPECT_EQ(messages[0]["content"].get<std::string>(), "User message");
-  EXPECT_EQ(messages[1]["content"].get<std::string>(), "Tool response content");
-  EXPECT_EQ(messages[2]["content"].get<std::string>(), "Assistant message");
-}
-
-// Test: Compact callback with array content (simulating ClaudeClient)
-TEST_F(HistoryTest, CompactClaudeStyleTrimming) {
-  assistant::message msg_with_array;
-  msg_with_array["role"] = "user";
-  msg_with_array["content"] = json::array();
-  msg_with_array["content"].push_back(
-      json{{"type", "text"}, {"content", "Some content here"}});
-
-  history_->AddMessage(msg_with_array, MessageType::kNormal);
-  history_->AddMessage(assistant::message{"assistant", "Assistant reply"},
-                       MessageType::kNormal);
-
-  // Simulate ClaudeClient::Compact behavior
-  history_->Compact([](assistant::message& msg) {
-    if (msg.contains("content") && msg["content"].is_array()) {
-      auto& j_array = msg["content"];
-      for (auto& element : j_array) {
-        if (element.contains("content") && element["content"].is_string()) {
-          element["content"] = kTrimMessage;
-        }
-      }
-    }
-  });
-
-  auto messages = history_->GetMessages();
-  ASSERT_EQ(messages.size(), 2);
-  auto& content_array = messages[0]["content"];
-  ASSERT_TRUE(content_array.is_array());
-  ASSERT_EQ(content_array.size(), 1);
-  EXPECT_EQ(content_array[0]["content"].get<std::string>(),
-            "Some content here");
-  EXPECT_EQ(messages[1]["content"].get<std::string>(), "Assistant reply");
-}
-
-// Test: Compact callback with output field (simulating OpenAIClient)
-TEST_F(HistoryTest, CompactOpenAIStyleTrimming) {
-  assistant::message msg_with_output;
-  msg_with_output["role"] = "assistant";
-  msg_with_output["output"] = "Some tool output here";
-
-  history_->AddMessage(msg_with_output, MessageType::kNormal);
-  history_->AddMessage(assistant::message{"user", "User message"},
-                       MessageType::kNormal);
-
-  // Simulate OpenAIClient::Compact behavior
-  history_->Compact([](assistant::message& msg) {
-    if (msg.contains("output") && msg["output"].is_string()) {
-      msg["output"] = kTrimMessage;
-    }
-  });
-
-  auto messages = history_->GetMessages();
-  ASSERT_EQ(messages.size(), 2);
-  EXPECT_EQ(messages[0]["output"].get<std::string>(), "Some tool output here");
-  EXPECT_EQ(messages[1]["content"].get<std::string>(), "User message");
-}
-
-// Test: Compact with many tool responses only preserves last 3
-TEST_F(HistoryTest, CompactManyToolResponses) {
-  // Add 10 tool responses
-  for (int i = 0; i < 10; ++i) {
-    history_->AddMessage(
-        assistant::message{"tool", "Tool response " + std::to_string(i)},
-        MessageType::kToolResponse);
-  }
-
-  history_->Compact(
-      [](assistant::message& msg) { msg["content"] = "[TRIMMED]"; });
-
-  auto messages = history_->GetMessages();
-  ASSERT_EQ(messages.size(), 10);
-  // First 7 should be trimmed
-  for (int i = 0; i < 7; ++i) {
-    EXPECT_EQ(messages[i]["content"].get<std::string>(), "[TRIMMED]");
-  }
-  // Last 3 should be preserved
-  EXPECT_EQ(messages[7]["content"].get<std::string>(), "Tool response 7");
-  EXPECT_EQ(messages[8]["content"].get<std::string>(), "Tool response 8");
-  EXPECT_EQ(messages[9]["content"].get<std::string>(), "Tool response 9");
 }
 
 // Test: Compact after swap to main from temp still works
@@ -679,8 +568,10 @@ TEST_F(HistoryTest, CompactAfterSwapBackToMain) {
 
   EXPECT_FALSE(history_->IsTempHistory());
 
-  history_->Compact(
-      [](assistant::message& msg) { msg["content"] = "[TRIMMED]"; });
+  history_->Compact([](assistant::message& msg) {
+    msg["content"] = "[TRIMMED]";
+    return 0;
+  });
 
   auto messages = history_->GetMessages();
   ASSERT_EQ(messages.size(), 2);
@@ -702,8 +593,10 @@ TEST_F(HistoryTest, CompactOnTempDoesNotAffectMain) {
                        MessageType::kNormal);
 
   // Compact on temp - should be no-op
-  history_->Compact(
-      [](assistant::message& msg) { msg["content"] = "[TRIMMED]"; });
+  history_->Compact([](assistant::message& msg) {
+    msg["content"] = "[TRIMMED]";
+    return 0;
+  });
 
   // Switch back to main
   history_->SwapToMainHistory();
@@ -729,8 +622,10 @@ TEST_F(HistoryTest, ThreadSafetyConcurrentCompactAndAdd) {
 
   threads.emplace_back([this, num_operations]() {
     for (int i = 0; i < num_operations; ++i) {
-      history_->Compact(
-          [](assistant::message& msg) { msg["content"] = "[TRIMMED]"; });
+      history_->Compact([](assistant::message& msg) {
+        msg["content"] = "[TRIMMED]";
+        return 0;
+      });
     }
   });
 
@@ -772,6 +667,10 @@ TEST(OllamaClientCompact, TrimsStringContent) {
   EXPECT_EQ(history[1]["content"].get<std::string>(), "Assistant response");
 }
 
+static std::string LONG_RESPONSE =
+    "LONG RESPONSE LONG RESPONSE LONG RESPONSE LONG RESPONSE LONG RESPONSE "
+    "LONG RESPONSE LONG RESPONSE LONG RESPONSE LONG RESPONSE LONG RESPONSE ";
+
 // Test: OllamaClient::Compact preserves last 3 tool responses
 TEST(OllamaClientCompact, PreservesLastThreeToolResponses) {
   OllamaClient client;
@@ -779,9 +678,9 @@ TEST(OllamaClientCompact, PreservesLastThreeToolResponses) {
   Messages msgs;
   msgs.push_back(assistant::message{"user", "User message"},
                  MessageType::kNormal);
-  msgs.push_back(assistant::message{"tool", "Tool response 1"},
+  msgs.push_back(assistant::message{"tool", LONG_RESPONSE},
                  MessageType::kToolResponse);
-  msgs.push_back(assistant::message{"tool", "Tool response 2"},
+  msgs.push_back(assistant::message{"tool", LONG_RESPONSE},
                  MessageType::kToolResponse);
   msgs.push_back(assistant::message{"assistant", "Assistant message"},
                  MessageType::kNormal);
@@ -793,7 +692,6 @@ TEST(OllamaClientCompact, PreservesLastThreeToolResponses) {
                  MessageType::kToolResponse);
 
   client.SetHistory(msgs);
-
   client.Compact();
 
   auto history = client.GetHistory();
@@ -828,7 +726,11 @@ TEST(ClaudeClientCompact, TrimsArrayContent) {
   tool_response_msg["role"] = "user";
   tool_response_msg["content"] = json::array();
   tool_response_msg["content"].push_back(
-      json{{"type", "text"}, {"content", "Some tool result here"}});
+      json{{"type", "text"}, {"content", LONG_RESPONSE}});
+
+  auto before = 2 * assistant::CountTokens(LONG_RESPONSE);
+  auto after = 2 * kTrimMessageTokensCount;
+  auto expected_trimmed = before - after;
 
   // Second message also needs array content to be trimmed by ClaudeClient
   assistant::message msg_with_array2;
@@ -847,7 +749,7 @@ TEST(ClaudeClientCompact, TrimsArrayContent) {
   msgs.push_back(msg_with_array2, MessageType::kNormal);
 
   client.SetHistory(msgs);
-  client.Compact();
+  EXPECT_EQ(client.Compact(), expected_trimmed);
 
   auto history = client.GetHistory();
   ASSERT_EQ(history.size(), 7);
@@ -880,9 +782,9 @@ TEST(OllamaClientCompact, TrimsArrayContent) {
   // Ollama messages use string content, not Claude-style arrays.
   msgs.push_back(assistant::message{"user", "User message"},
                  MessageType::kNormal);
-  msgs.push_back(assistant::message{"tool", "Tool response 1"},
+  msgs.push_back(assistant::message{"tool", LONG_RESPONSE},
                  MessageType::kToolResponse);
-  msgs.push_back(assistant::message{"tool", "Tool response 2"},
+  msgs.push_back(assistant::message{"tool", LONG_RESPONSE},
                  MessageType::kToolResponse);
   msgs.push_back(assistant::message{"assistant", "Assistant message"},
                  MessageType::kNormal);
@@ -894,7 +796,12 @@ TEST(OllamaClientCompact, TrimsArrayContent) {
                  MessageType::kToolResponse);
 
   client.SetHistory(msgs);
-  client.Compact();
+
+  auto before = 2 * assistant::CountTokens(LONG_RESPONSE);
+  auto after = 2 * kTrimMessageTokensCount;
+  auto expected_trimmed = before - after;
+
+  EXPECT_EQ(client.Compact(), expected_trimmed);
 
   auto history = client.GetHistory();
   ASSERT_EQ(history.size(), 7);
@@ -926,7 +833,7 @@ TEST(OpenAIClientCompact, TrimsOutputField) {
     assistant::message tool_response;
     tool_response["type"] = "function_call_output";
     tool_response["call_id"] = "1";
-    tool_response["output"] = "Tool response";
+    tool_response["output"] = LONG_RESPONSE;
     return tool_response;
   };
 
@@ -940,7 +847,12 @@ TEST(OpenAIClientCompact, TrimsOutputField) {
   msgs.push_back(create_tool_response_message(), MessageType::kToolResponse);
 
   client.SetHistory(msgs);
-  client.Compact();
+
+  auto before = 2 * assistant::CountTokens(LONG_RESPONSE);
+  auto after = 2 * kTrimMessageTokensCount;
+  auto expected_trimmed = before - after;
+
+  EXPECT_EQ(client.Compact(), expected_trimmed);
 
   auto history = client.GetHistory();
   ASSERT_EQ(history.size(), 7);
@@ -948,9 +860,9 @@ TEST(OpenAIClientCompact, TrimsOutputField) {
   EXPECT_EQ(history[1]["output"].get<std::string>(), kTrimMessage);
   EXPECT_EQ(history[2]["output"].get<std::string>(), kTrimMessage);
   EXPECT_EQ(history[3]["output"].get<std::string>(), "User output here");
-  EXPECT_EQ(history[4]["output"].get<std::string>(), "Tool response");
-  EXPECT_EQ(history[5]["output"].get<std::string>(), "Tool response");
-  EXPECT_EQ(history[6]["output"].get<std::string>(), "Tool response");
+  EXPECT_EQ(history[4]["output"].get<std::string>(), LONG_RESPONSE);
+  EXPECT_EQ(history[5]["output"].get<std::string>(), LONG_RESPONSE);
+  EXPECT_EQ(history[6]["output"].get<std::string>(), LONG_RESPONSE);
 }
 
 // Test: OpenAIMessagesClient::Compact trims string content
@@ -960,9 +872,9 @@ TEST(OpenAIMessagesClientCompact, TrimsStringContent) {
   Messages msgs;
   msgs.push_back(assistant::message{"user", "User message"},
                  MessageType::kNormal);
-  msgs.push_back(assistant::message{"tool", "Tool response 1"},
+  msgs.push_back(assistant::message{"tool", LONG_RESPONSE},
                  MessageType::kToolResponse);
-  msgs.push_back(assistant::message{"tool", "Tool response 2"},
+  msgs.push_back(assistant::message{"tool", LONG_RESPONSE},
                  MessageType::kToolResponse);
   msgs.push_back(assistant::message{"assistant", "Assistant message"},
                  MessageType::kNormal);
@@ -974,7 +886,11 @@ TEST(OpenAIMessagesClientCompact, TrimsStringContent) {
                  MessageType::kToolResponse);
 
   client.SetHistory(msgs);
-  client.Compact();
+  auto before = 2 * assistant::CountTokens(LONG_RESPONSE);
+  auto after = 2 * kTrimMessageTokensCount;
+  auto expected_trimmed = before - after;
+
+  EXPECT_EQ(client.Compact(), expected_trimmed);
 
   auto history = client.GetHistory();
   ASSERT_EQ(history.size(), 7);

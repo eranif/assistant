@@ -1,7 +1,9 @@
 #include "assistant/client/ollama_client.hpp"
 
 #include "assistant/Curl.hpp"
+#include "assistant/assistant.hpp"
 #include "assistant/assistantlib.hpp"
+#include "assistant/common/tokens.hpp"
 #include "assistant/config.hpp"
 #include "assistant/cpp-mcp/mcp_logger.h"
 #include "assistant/helpers.hpp"
@@ -283,12 +285,18 @@ void OllamaClient::AddToolsResult(
   }
 }
 
-void OllamaClient::Compact(size_t responses_to_keep) {
-  m_history.Compact(
-      [](assistant::message& msg) {
+size_t OllamaClient::Compact(size_t responses_to_keep) {
+  return m_history.Compact(
+      [this](assistant::message& msg) {
+        size_t tokens_trimmed{0};
         if (msg.contains("content") && msg["content"].is_string()) {
-          msg["content"] = kTrimMessage;
+          size_t count = CountTokens(msg["content"].get<std::string>());
+          if (count > kTrimMessageTokensCount) {
+            msg["content"] = kTrimMessage;
+            tokens_trimmed += (count - kTrimMessageTokensCount);
+          }
         }
+        return tokens_trimmed;
       },
       responses_to_keep);
 }

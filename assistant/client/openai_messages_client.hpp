@@ -20,7 +20,7 @@ class OpenAIMessagesClient : public OllamaClient {
       [[maybe_unused]] const std::string& model) override;
   void AddToolsResult(
       std::vector<std::pair<FunctionCall, FunctionResult>> result) override;
-  void Compact(size_t responses_to_keep = 3) override;
+  size_t Compact(size_t responses_to_keep = 3) override;
   /// Only streaming is supported with OpenAI
   inline bool IsStreaming() const override { return true; }
 

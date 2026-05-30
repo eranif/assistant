@@ -1,6 +1,7 @@
 #include "assistant/client/openai_messages_client.hpp"
 
 #include "assistant/chat_completions_response_parser.hpp"
+#include "assistant/common/tokens.hpp"
 
 namespace assistant {
 
@@ -209,12 +210,19 @@ void OpenAIMessagesClient::AddToolsResult(
   }
 }
 
-void OpenAIMessagesClient::Compact(size_t responses_to_keep) {
-  m_history.Compact(
-      [](assistant::message& msg) {
+size_t OpenAIMessagesClient::Compact(size_t responses_to_keep) {
+  return m_history.Compact(
+      [this](assistant::message& msg) {
+        size_t tokens_trimmed{0};
         if (msg.contains("content") && msg["content"].is_string()) {
-          msg["content"] = kTrimMessage;
+          size_t count =
+              assistant::CountTokens(msg["content"].get<std::string>());
+          if (count > kTrimMessageTokensCount) {
+            msg["content"] = kTrimMessage;
+            tokens_trimmed += (count - kTrimMessageTokensCount);
+          }
         }
+        return tokens_trimmed;
       },
       responses_to_keep);
 }
