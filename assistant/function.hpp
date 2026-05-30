@@ -343,6 +343,29 @@ class FunctionTable {
   }
 
   /**
+   * @brief Retrieves all registered functions and their enabled status.
+   *
+   * Acquires the internal mutex to safely access the function registry,
+   * then constructs a snapshot of each function's name and whether it is
+   * enabled.
+   *
+   * @return A vector of pairs, where each pair contains the function name as a
+   * string and a bool indicating whether that function is enabled.
+   *
+   * @note This function is thread-safe due to the scoped lock on m_mutex.
+   */
+  std::vector<std::pair<std::string, bool>> GetAllFunctions()
+      FUNCTION_LOCKS(m_mutex) {
+    std::scoped_lock lk{m_mutex};
+    std::vector<std::pair<std::string, bool>> result;
+    result.reserve(m_functions.size());
+    for (auto& [name, func] : m_functions) {
+      result.push_back(std::make_pair(name, func->IsEnabled()));
+    }
+    return result;
+  }
+
+  /**
    * @brief Enables or disables a function by name.
    *
    * This method attempts to find a function with the specified name and modify
