@@ -216,7 +216,51 @@ struct History {
     active_history_->push_back(std::move(msg), mt);
   }
 
-  void Compact(std::function<void(assistant::message&)> msg_trim_func) {
+  /**
+   * @brief Returns the number of tool response messages currently stored in the
+   * active history.
+   *
+   * This method acquires the internal mutex before inspecting the active
+   * message history, so it is safe to call concurrently with other operations
+   * on the same object. If the active history is the temporary message buffer
+   * or is empty, the function reports zero.
+   *
+   * @return size_t The number of entries in the active history whose message
+   * type is MessageType::kToolResponse.
+   */
+  size_t GetToolResponseCount() const {
+    std::scoped_lock lock{mutex_};
+    if (active_history_ == &temp_messages_ || active_history_->empty()) {
+      return 0;
+    }
+
+    size_t count{0};
+    for (const auto& msg_type : active_history_->message_type_) {
+      if (msg_type == MessageType::kToolResponse) {
+        count++;
+      }
+    }
+    return count;
+  }
+
+  /**
+   * @brief Trims older tool response messages in the active history.
+   *
+   * Locks the history mutex, skips compaction when the active history is
+   * temporary or empty, and then walks the history backward to apply the
+   * provided trimming function to all but the most recent tool response
+   * messages.
+   *
+   * @param msg_trim_func std::function<void(assistant::message&)> Function
+   * invoked for each tool response message that should be trimmed. The callback
+   * receives the message by reference and may modify it in place.
+   * @param responses_to_keep size_t Number of most recent tool response
+   * messages to leave unmodified. Defaults to 3.
+   *
+   * @return void This function does not return a value.
+   */
+  void Compact(std::function<void(assistant::message&)> msg_trim_func,
+               size_t responses_to_keep = 3) {
     std::scoped_lock lock{mutex_};
     // we don't compact on temp history
     if (active_history_ == &temp_messages_ || active_history_->empty()) {
@@ -231,7 +275,7 @@ struct History {
         continue;
       }
 
-      if (responses_found < 3) {
+      if (responses_found < responses_to_keep) {
         responses_found++;
         continue;
       }
