@@ -205,7 +205,7 @@ void OpenAIMessagesClient::AddToolsResult(
     tool_response["role"] = "tool";
     tool_response["tool_call_id"] = fcall.invocation_id.value_or("");
     tool_response["content"] = p.first;
-    AddMessage(std::move(tool_response), MessageType::kToolRequest);
+    AddMessage(std::move(tool_response), MessageType::kToolResponse);
   }
 }
 
