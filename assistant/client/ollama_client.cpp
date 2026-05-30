@@ -283,12 +283,14 @@ void OllamaClient::AddToolsResult(
   }
 }
 
-void OllamaClient::Compact() {
-  m_history.Compact([](assistant::message& msg) {
-    if (msg.contains("content") && msg["content"].is_string()) {
-      msg["content"] = kTrimMessage;
-    }
-  });
+void OllamaClient::Compact(size_t responses_to_keep) {
+  m_history.Compact(
+      [](assistant::message& msg) {
+        if (msg.contains("content") && msg["content"].is_string()) {
+          msg["content"] = kTrimMessage;
+        }
+      },
+      responses_to_keep);
 }
 
 std::pair<std::string, std::string> OllamaClient::BuildToolResponseContent(

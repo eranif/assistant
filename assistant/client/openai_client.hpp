@@ -17,7 +17,7 @@ class OpenAIClient : public OllamaClient {
 
   /// Only streaming is supported with OpenAI
   inline bool IsStreaming() const override { return true; }
-  void Compact() override;
+  void Compact(size_t responses_to_keep = 3) override;
 
  protected:
   static bool OnRawResponse(const std::string& resp, void* user_data);

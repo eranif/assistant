@@ -416,6 +416,8 @@ int main(int argc, char** argv) {
               << " to get model information." << std::endl;
     std::cout << Yellow("#") << " Type " << Cyan("/default")
               << " restore to chat default options." << std::endl;
+    std::cout << Yellow("#") << " Type " << Cyan("/compact")
+              << " to run client side compaction" << std::endl;
     std::cout << Yellow("#") << " To read prompt from a file, use " << Cyan("@")
               << "filename followed by ENTER" << std::endl;
     std::cout << Yellow("#") << " Use " << Cyan("/no_tools")
@@ -456,6 +458,13 @@ int main(int argc, char** argv) {
     } else if (prompt == "/int") {
       cli->Interrupt();
       break;
+    } else if (prompt == "/compact") {
+      std::cout << ">> Number of tool responses: "
+                << cli->GetToolResponseCount() << std::endl;
+      cli->Compact(1);
+      std::cout << ">> Client side compaction completed" << std::endl;
+      PrintPrompt();
+      continue;
     } else if (prompt == "/cache_static") {
       cli->SetCachingPolicy(assistant::CachePolicy::kStatic);
       std::cout << ">> Static caching is enabled" << std::endl;

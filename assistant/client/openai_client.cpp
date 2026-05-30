@@ -193,12 +193,14 @@ void OpenAIClient::AddToolsResult(
   }
 }
 
-void OpenAIClient::Compact() {
-  m_history.Compact([](assistant::message& msg) {
-    if (msg.contains("output") && msg["output"].is_string()) {
-      msg["output"] = kTrimMessage;
-    }
-  });
+void OpenAIClient::Compact(size_t responses_to_keep) {
+  m_history.Compact(
+      [](assistant::message& msg) {
+        if (msg.contains("output") && msg["output"].is_string()) {
+          msg["output"] = kTrimMessage;
+        }
+      },
+      responses_to_keep);
 }
 
 }  // namespace assistant

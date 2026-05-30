@@ -373,17 +373,19 @@ void ClaudeClient::AddToolsResult(
   AddMessage(std::move(msg), MessageType::kToolResponse);
 }
 
-void ClaudeClient::Compact() {
-  m_history.Compact([](assistant::message& msg) {
-    if (msg.contains("content") && msg["content"].is_array()) {
-      auto& j_array = msg["content"];
-      for (auto& element : j_array) {
-        if (element.contains("content") && element["content"].is_string()) {
-          element["content"] = kTrimMessage;
+void ClaudeClient::Compact(size_t responses_to_keep) {
+  m_history.Compact(
+      [](assistant::message& msg) {
+        if (msg.contains("content") && msg["content"].is_array()) {
+          auto& j_array = msg["content"];
+          for (auto& element : j_array) {
+            if (element.contains("content") && element["content"].is_string()) {
+              element["content"] = kTrimMessage;
+            }
+          }
         }
-      }
-    }
-  });
+      },
+      responses_to_keep);
 }
 
 assistant::messages ClaudeClient::GetMessages() const {

@@ -414,7 +414,7 @@ class ClientBase {
   virtual void AddToolsResult(
       std::vector<std::pair<FunctionCall, FunctionResult>> result) = 0;
 
-  virtual void Compact() = 0;
+  virtual void Compact(size_t response_to_keep = 3) = 0;
   ///===---------------------------
   /// Client API - END
   ///===---------------------------
@@ -466,6 +466,10 @@ class ClientBase {
   /// Return the history messages.
   inline assistant::messages GetHistory() const {
     return m_history.GetMessages();
+  }
+
+  inline size_t GetToolResponseCount() const {
+    return m_history.GetToolResponseCount();
   }
 
   /// Replace the history.

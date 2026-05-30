@@ -209,12 +209,14 @@ void OpenAIMessagesClient::AddToolsResult(
   }
 }
 
-void OpenAIMessagesClient::Compact() {
-  m_history.Compact([](assistant::message& msg) {
-    if (msg.contains("content") && msg["content"].is_string()) {
-      msg["content"] = kTrimMessage;
-    }
-  });
+void OpenAIMessagesClient::Compact(size_t responses_to_keep) {
+  m_history.Compact(
+      [](assistant::message& msg) {
+        if (msg.contains("content") && msg["content"].is_string()) {
+          msg["content"] = kTrimMessage;
+        }
+      },
+      responses_to_keep);
 }
 
 void OpenAIMessagesClient::InvokeTools(std::shared_ptr<ChatRequest> request) {
