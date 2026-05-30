@@ -286,8 +286,7 @@ void OllamaClient::AddToolsResult(
 void OllamaClient::Compact() {
   m_history.Compact([](assistant::message& msg) {
     if (msg.contains("content") && msg["content"].is_string()) {
-      msg["content"] =
-          "[Tool response content truncated by system to save memory]";
+      msg["content"] = kTrimMessage;
     }
   });
 }

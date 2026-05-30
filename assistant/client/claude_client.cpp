@@ -379,8 +379,7 @@ void ClaudeClient::Compact() {
       auto& j_array = msg["content"];
       for (auto& element : j_array) {
         if (element.contains("content") && element["content"].is_string()) {
-          element["content"] =
-              "[Tool response content truncated by system to save memory]";
+          element["content"] = kTrimMessage;
         }
       }
     }

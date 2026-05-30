@@ -196,8 +196,7 @@ void OpenAIClient::AddToolsResult(
 void OpenAIClient::Compact() {
   m_history.Compact([](assistant::message& msg) {
     if (msg.contains("output") && msg["output"].is_string()) {
-      msg["output"] =
-          "[Tool response content truncated by system to save memory]";
+      msg["output"] = kTrimMessage;
     }
   });
 }

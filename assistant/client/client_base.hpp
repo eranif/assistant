@@ -125,6 +125,9 @@ struct Messages {
   }
 };
 
+inline constexpr const char kTrimMessage[] =
+    "[TOOL RESPONSE CONTENT TRUNCATED BY SYSTEM TO SAVE MEMORY]";
+
 struct History {
   /**
    * @brief Constructs a History object with the active history pointing to the
@@ -222,12 +225,17 @@ struct History {
 
     // Remove tool responses. Note that we keep the last 3 tool responses
     size_t responses_found{0};
-    for (int i = static_cast<int>(active_history_->size() - 1); i >= 0; --i) {
+    for (int i = static_cast<int>(active_history_->size()) - 1; i >= 0; --i) {
       auto msg_type = active_history_->message_type_[i];
-      if (msg_type == MessageType::kToolResponse && responses_found < 3) {
+      if (msg_type != MessageType::kToolResponse) {
+        continue;
+      }
+
+      if (responses_found < 3) {
         responses_found++;
         continue;
       }
+
       auto& msg = active_history_->messages_[i];
       msg_trim_func(msg);
     }
