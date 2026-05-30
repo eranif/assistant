@@ -170,18 +170,19 @@ void ClientBase::InvokeTools(std::shared_ptr<ChatRequest> request) {
       if (!can_run_tool.IsAllowed()) {
         result.isError = true;
         result.text = can_run_tool.reason;
+        ss = {};
+        ss << "Failed to run tool: '" << func_call.name << "'.";
         request->callback_(ss.str(), Reason::kToolDenied, false);
 
       } else {
         ss = {};
-        ss << "Permission to run tool: " << func_call.name << " is granted.";
+        ss << "Permission to run tool: '" << func_call.name << "' is granted.";
         request->callback_(ss.str(), Reason::kToolAllowed, false);
         result = GetFunctionTable().Call(func_call);
-
-        ss = {};
-        ss << "Tool output: " << result;
-        request->callback_(ss.str(), Reason::kLogNotice, false);
       }
+      ss = {};
+      ss << "Tool output: " << result;
+      request->callback_(ss.str(), Reason::kLogDebug, false);
       tool_call_results.push_back({func_call, result});
     }
   }
