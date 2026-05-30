@@ -117,7 +117,7 @@ bool OpenAIClient::HandleResponse(const std::string& resp,
         auto output = token.GetCompactionOutput().value();
         m_history.ClearAll();
         assistant::message msg{output};
-        AddMessage(std::move(msg));
+        AddMessage(std::move(msg), MessageType::kNormal);
         req->callback_(
             "History has been updated with server-side history compaction.",
             Reason::kServerCompaction, false);
@@ -160,7 +160,7 @@ bool OpenAIClient::HandleResponse(const std::string& resp,
             << "User cancelled response processing (callback returned false).";
       }
       OLOG(LogLevel::kInfo) << "<== " << msg;
-      AddMessage(std::move(msg));
+      AddMessage(std::move(msg), MessageType::kNormal);
     }
     return cb_result;
   } catch (const std::exception& e) {
@@ -189,8 +189,17 @@ void OpenAIClient::AddToolsResult(
       m_pendingMessages.push_back(p.second);
     }
     tool_response["output"] = p.first;
-    AddMessage(std::move(tool_response));
+    AddMessage(std::move(tool_response), MessageType::kToolResponse);
   }
+}
+
+void OpenAIClient::Compact() {
+  m_history.Compact([](assistant::message& msg) {
+    if (msg.contains("output") && msg["output"].is_string()) {
+      msg["output"] =
+          "[Tool response content truncated by system to save memory]";
+    }
+  });
 }
 
 }  // namespace assistant

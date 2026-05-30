@@ -65,7 +65,7 @@ bool ClientBase::HandleResponse(const assistant::response& resp,
           << "User cancelled response processing (callback returned false)."
           << msg;
       OLOG(LogLevel::kInfo) << "<== " << msg;
-      AddMessage(std::move(msg));
+      AddMessage(std::move(msg), MessageType::kNormal);
       return false;
     }
 
@@ -76,7 +76,7 @@ bool ClientBase::HandleResponse(const assistant::response& resp,
         assistant::message msg{std::string{kAssistantRole},
                                chat_user_data.current_response};
         OLOG(LogLevel::kDebug) << "<== " << msg;
-        AddMessage(std::move(msg));
+        AddMessage(std::move(msg), MessageType::kNormal);
       } break;
       default:
         break;
@@ -90,8 +90,9 @@ bool ClientBase::OnResponse(const assistant::response& resp, void* user_data) {
   return cud->client->HandleResponse(resp, *cud);
 }
 
-void ClientBase::AddMessage(std::optional<assistant::message> msg) {
-  m_history.AddMessage(msg);
+void ClientBase::AddMessage(std::optional<assistant::message> msg,
+                            MessageType mt) {
+  m_history.AddMessage(msg, mt);
 }
 
 assistant::messages ClientBase::GetMessages() const {
@@ -139,7 +140,7 @@ void ClientBase::InvokeTools(std::shared_ptr<ChatRequest> request) {
     if (m_interrupt.load()) {
       return;
     }
-    AddMessage(std::move(msg));
+    AddMessage(std::move(msg), MessageType::kToolRequest);
     for (auto func_call : calls) {
       if (IsInterrupted()) {
         OLOG(LogLevel::kWarning) << "User interrupted.";

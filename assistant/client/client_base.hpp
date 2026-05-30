@@ -96,6 +96,35 @@ struct ChatRequestQueue {
   std::vector<std::shared_ptr<ChatRequest>> m_vec GUARDED_BY(m_mutex);
 };
 
+enum class MessageType {
+  kNormal,
+  kToolRequest,
+  kToolResponse,
+};
+
+struct Messages {
+  assistant::messages messages_;
+  std::vector<MessageType> message_type_;
+
+  void push_back(assistant::message msg, MessageType mt) {
+    messages_.push_back(std::move(msg));
+    message_type_.push_back(mt);
+  }
+
+  inline void clear() {
+    messages_.clear();
+    message_type_.clear();
+  }
+
+  inline bool empty() const { return messages_.empty(); }
+  inline size_t size() const { return messages_.size(); }
+
+  void set(const Messages& other) {
+    messages_ = other.messages_;
+    message_type_ = other.message_type_;
+  }
+};
+
 struct History {
   /**
    * @brief Constructs a History object with the active history pointing to the
@@ -178,9 +207,30 @@ struct History {
    *
    * @param msg The message to add (moved into the container).
    */
-  void AddMessage(assistant::message msg) {
+  void AddMessage(assistant::message msg,
+                  MessageType mt = MessageType::kNormal) {
     std::scoped_lock lock{mutex_};
-    active_history_->push_back(std::move(msg));
+    active_history_->push_back(std::move(msg), mt);
+  }
+
+  void Compact(std::function<void(assistant::message&)> msg_trim_func) {
+    std::scoped_lock lock{mutex_};
+    // we don't compact on temp history
+    if (active_history_ == &temp_messages_ || active_history_->empty()) {
+      return;
+    }
+
+    // Remove tool responses. Note that we keep the last 3 tool responses
+    size_t responses_found{0};
+    for (int i = static_cast<int>(active_history_->size() - 1); i >= 0; --i) {
+      auto msg_type = active_history_->message_type_[i];
+      if (msg_type == MessageType::kToolResponse && responses_found < 3) {
+        responses_found++;
+        continue;
+      }
+      auto& msg = active_history_->messages_[i];
+      msg_trim_func(msg);
+    }
   }
 
   /**
@@ -190,12 +240,12 @@ struct History {
    * @param msg Optional message to add. If empty, the function returns without
    * modification.
    */
-  void AddMessage(std::optional<assistant::message> msg) {
+  void AddMessage(std::optional<assistant::message> msg, MessageType mt) {
     if (!msg.has_value()) {
       return;
     }
     std::scoped_lock lock{mutex_};
-    active_history_->push_back(std::move(msg.value()));
+    active_history_->push_back(std::move(msg.value()), mt);
   }
 
   /**
@@ -205,7 +255,19 @@ struct History {
    */
   assistant::messages GetMessages() const {
     std::scoped_lock lock{mutex_};
-    return *active_history_;
+    return active_history_->messages_;
+  }
+
+  /**
+   * @brief Replaces all messages in the currently active history with the
+   * provided messages.
+   *
+   * @param msgs The messages to set (copied into the active history after
+   * clearing it).
+   */
+  void SetMessages(const Messages& msgs) {
+    std::scoped_lock lock{mutex_};
+    active_history_->set(msgs);
   }
 
   /**
@@ -217,30 +279,10 @@ struct History {
    */
   void SetMessages(const assistant::messages& msgs) {
     std::scoped_lock lock{mutex_};
-    active_history_->clear();
-    active_history_->insert(active_history_->end(), msgs.begin(), msgs.end());
-  }
-
-  /**
-   * @brief Reduces the active history size to a maximum by removing the oldest
-   * messages.
-   *
-   * Removes messages from the beginning of the active history until the size is
-   * at or below max_size. Does nothing if the current size is already within
-   * the limit.
-   *
-   * @param max_size The maximum number of messages to retain.
-   */
-  void ShrinkToFit(size_t max_size) {
-    std::scoped_lock lock{mutex_};
-    if (active_history_->size() <= max_size) {
-      return;
-    }
-
-    // Remove messages from the start ("old messages")
-    while (!active_history_->empty() && (active_history_->size() > max_size)) {
-      active_history_->erase(active_history_->begin());
-    }
+    Messages m;
+    m.messages_ = msgs;
+    m.message_type_ = {msgs.size(), MessageType::kNormal};
+    active_history_->set(m);
   }
 
   /**
@@ -278,9 +320,9 @@ struct History {
 
  private:
   mutable std::mutex mutex_;
-  assistant::messages messages_ GUARDED_BY(mutex_);
-  assistant::messages temp_messages_ GUARDED_BY(mutex_);
-  assistant::messages* active_history_ GUARDED_BY(mutex_){nullptr};
+  Messages messages_ GUARDED_BY(mutex_);
+  Messages temp_messages_ GUARDED_BY(mutex_);
+  Messages* active_history_ GUARDED_BY(mutex_){nullptr};
   size_t swap_count_ GUARDED_BY(mutex_){0};
 };
 
@@ -320,6 +362,7 @@ class ClientBase {
   virtual void AddToolsResult(
       std::vector<std::pair<FunctionCall, FunctionResult>> result) = 0;
 
+  virtual void Compact() = 0;
   ///===---------------------------
   /// Client API - END
   ///===---------------------------
@@ -374,6 +417,7 @@ class ClientBase {
   }
 
   /// Replace the history.
+  inline void SetHistory(const Messages& msgs) { m_history.SetMessages(msgs); }
   inline void SetHistory(const assistant::messages& msgs) {
     m_history.SetMessages(msgs);
   }
@@ -501,7 +545,8 @@ class ClientBase {
   void ProcessChatRequestQueue();
   bool HandleResponse(const assistant::response& resp,
                       ChatContext& chat_user_data);
-  virtual void AddMessage(std::optional<assistant::message> msg);
+  virtual void AddMessage(std::optional<assistant::message> msg,
+                          MessageType mt);
   virtual assistant::messages GetMessages() const;
   bool ModelHasCapability(const std::string& model_name, ModelCapabilities c);
 

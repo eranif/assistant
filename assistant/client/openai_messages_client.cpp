@@ -173,7 +173,7 @@ bool OpenAIMessagesClient::HandleResponse(const std::string& resp,
       }
       OLOG(LogLevel::kInfo) << "<== " << msg;
       if (!chat_context->current_response.empty()) {
-        AddMessage(std::move(msg));
+        AddMessage(std::move(msg), MessageType::kNormal);
       }
     }
     return cb_result;
@@ -205,8 +205,17 @@ void OpenAIMessagesClient::AddToolsResult(
     tool_response["role"] = "tool";
     tool_response["tool_call_id"] = fcall.invocation_id.value_or("");
     tool_response["content"] = p.first;
-    AddMessage(std::move(tool_response));
+    AddMessage(std::move(tool_response), MessageType::kToolRequest);
   }
+}
+
+void OpenAIMessagesClient::Compact() {
+  m_history.Compact([](assistant::message& msg) {
+    if (msg.contains("content") && msg["content"].is_string()) {
+      msg["content"] =
+          "[Tool response content truncated by system to save memory]";
+    }
+  });
 }
 
 void OpenAIMessagesClient::InvokeTools(std::shared_ptr<ChatRequest> request) {
@@ -219,7 +228,7 @@ void OpenAIMessagesClient::InvokeTools(std::shared_ptr<ChatRequest> request) {
     if (m_interrupt.load()) {
       return;
     }
-    AddMessage(std::move(msg));
+    AddMessage(std::move(msg), MessageType::kToolRequest);
     for (auto func_call : calls) {
       if (IsInterrupted()) {
         OLOG(LogLevel::kWarning) << "User interrupted.";

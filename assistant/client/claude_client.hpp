@@ -30,6 +30,7 @@ class ClaudeClient : public OllamaClient {
 
   void AddToolsResult(
       std::vector<std::pair<FunctionCall, FunctionResult>> result) override;
+  void Compact() override;
 
  protected:
   void ProcessChatRequest(std::shared_ptr<ChatRequest> chat_request) override;

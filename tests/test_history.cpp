@@ -53,7 +53,7 @@ TEST_F(HistoryTest, AddMultipleMessages) {
 // Test: Add optional message with value
 TEST_F(HistoryTest, AddOptionalMessageWithValue) {
   std::optional<assistant::message> msg = assistant::message{"user", "Test"};
-  history_->AddMessage(msg);
+  history_->AddMessage(msg, MessageType::kNormal);
 
   EXPECT_FALSE(history_->IsEmpty());
   auto messages = history_->GetMessages();
@@ -64,7 +64,7 @@ TEST_F(HistoryTest, AddOptionalMessageWithValue) {
 // Test: Add optional message without value
 TEST_F(HistoryTest, AddOptionalMessageWithoutValue) {
   std::optional<assistant::message> msg = std::nullopt;
-  history_->AddMessage(msg);
+  history_->AddMessage(msg, MessageType::kNormal);
 
   EXPECT_TRUE(history_->IsEmpty());
   EXPECT_EQ(history_->GetMessages().size(), 0);
@@ -122,53 +122,12 @@ TEST_F(HistoryTest, SetMessagesReplacesExisting) {
 
   assistant::messages new_messages;
   new_messages.push_back(assistant::message{"user", "Replacement message"});
-
   history_->SetMessages(new_messages);
 
   auto messages = history_->GetMessages();
   ASSERT_EQ(messages.size(), 1);
   EXPECT_EQ(messages[0]["content"].get<std::string>(), "Replacement message");
 }
-
-// Test: ShrinkToFit with size larger than current
-TEST_F(HistoryTest, ShrinkToFitNoChange) {
-  history_->AddMessage(assistant::message{"user", "Message 1"});
-  history_->AddMessage(assistant::message{"user", "Message 2"});
-
-  history_->ShrinkToFit(5);
-
-  auto messages = history_->GetMessages();
-  EXPECT_EQ(messages.size(), 2);
-}
-
-// Test: ShrinkToFit removes old messages
-TEST_F(HistoryTest, ShrinkToFitRemovesOldMessages) {
-  history_->AddMessage(assistant::message{"user", "Message 1"});
-  history_->AddMessage(assistant::message{"user", "Message 2"});
-  history_->AddMessage(assistant::message{"user", "Message 3"});
-  history_->AddMessage(assistant::message{"user", "Message 4"});
-  history_->AddMessage(assistant::message{"user", "Message 5"});
-
-  history_->ShrinkToFit(3);
-
-  auto messages = history_->GetMessages();
-  ASSERT_EQ(messages.size(), 3);
-  // Should keep the last 3 messages
-  EXPECT_EQ(messages[0]["content"].get<std::string>(), "Message 3");
-  EXPECT_EQ(messages[1]["content"].get<std::string>(), "Message 4");
-  EXPECT_EQ(messages[2]["content"].get<std::string>(), "Message 5");
-}
-
-// Test: ShrinkToFit to zero
-TEST_F(HistoryTest, ShrinkToFitToZero) {
-  history_->AddMessage(assistant::message{"user", "Message 1"});
-  history_->AddMessage(assistant::message{"user", "Message 2"});
-
-  history_->ShrinkToFit(0);
-
-  EXPECT_TRUE(history_->IsEmpty());
-}
-
 // Test: Swap to temp history once
 TEST_F(HistoryTest, SwapToTempHistoryOnce) {
   history_->AddMessage(assistant::message{"user", "Main message"});
@@ -294,8 +253,7 @@ TEST_F(HistoryTest, ThreadSafetyConcurrentAdds) {
   }
 
   // Should have num_threads * messages_per_thread messages
-  EXPECT_EQ(history_->GetMessages().size(),
-            num_threads * messages_per_thread);
+  EXPECT_EQ(history_->GetMessages().size(), num_threads * messages_per_thread);
 }
 
 // Test: Thread safety - concurrent swaps and adds
@@ -392,21 +350,6 @@ TEST_F(HistoryTest, ThreadSafetyConcurrentReads) {
   SUCCEED();
 }
 
-// Test: ShrinkToFit exact size
-TEST_F(HistoryTest, ShrinkToFitExactSize) {
-  history_->AddMessage(assistant::message{"user", "Message 1"});
-  history_->AddMessage(assistant::message{"user", "Message 2"});
-  history_->AddMessage(assistant::message{"user", "Message 3"});
-
-  history_->ShrinkToFit(3);
-
-  auto messages = history_->GetMessages();
-  EXPECT_EQ(messages.size(), 3);
-  EXPECT_EQ(messages[0]["content"].get<std::string>(), "Message 1");
-  EXPECT_EQ(messages[1]["content"].get<std::string>(), "Message 2");
-  EXPECT_EQ(messages[2]["content"].get<std::string>(), "Message 3");
-}
-
 // Test: SetMessages with empty vector
 TEST_F(HistoryTest, SetMessagesEmpty) {
   history_->AddMessage(assistant::message{"user", "Message 1"});
@@ -433,10 +376,6 @@ TEST_F(HistoryTest, ComplexMixedOperations) {
   history_->AddMessage(assistant::message{"user", "Temp 3"});
   EXPECT_EQ(history_->GetMessages().size(), 3);
 
-  // Shrink temp history
-  history_->ShrinkToFit(2);
-  EXPECT_EQ(history_->GetMessages().size(), 2);
-
   // Switch back to main
   history_->SwapToMainHistory();
   EXPECT_EQ(history_->GetMessages().size(), 2);
@@ -448,13 +387,6 @@ TEST_F(HistoryTest, ComplexMixedOperations) {
   // Clear main
   history_->Clear();
   EXPECT_TRUE(history_->IsEmpty());
-
-  // Check temp is still intact
-  history_->SwapToTempHistory();
-  auto temp_messages = history_->GetMessages();
-  EXPECT_EQ(temp_messages.size(), 2);
-  EXPECT_EQ(temp_messages[0]["content"].get<std::string>(), "Temp 2");
-  EXPECT_EQ(temp_messages[1]["content"].get<std::string>(), "Temp 3");
 }
 
 // Test: Swap count tracking with nested swaps

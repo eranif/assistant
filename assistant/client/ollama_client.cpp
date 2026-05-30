@@ -225,7 +225,7 @@ void OllamaClient::CreateAndPushChatRequest(
       history = {msg.value()};
     }
   } else {
-    AddMessage(msg);
+    AddMessage(msg, MessageType::kNormal);
     history = GetMessages();
   }
 
@@ -276,11 +276,20 @@ void OllamaClient::AddToolsResult(
     assistant::message msg{"tool", p.first};
 
     msg["tool_name"] = fcall.name;
-    AddMessage(std::move(msg));
+    AddMessage(std::move(msg), MessageType::kToolResponse);
     if (!p.second.empty()) {
       m_pendingMessages.push_back(p.second);
     }
   }
+}
+
+void OllamaClient::Compact() {
+  m_history.Compact([](assistant::message& msg) {
+    if (msg.contains("content") && msg["content"].is_string()) {
+      msg["content"] =
+          "[Tool response content truncated by system to save memory]";
+    }
+  });
 }
 
 std::pair<std::string, std::string> OllamaClient::BuildToolResponseContent(

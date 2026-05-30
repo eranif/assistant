@@ -94,7 +94,7 @@ void ClaudeClient::CreateAndPushChatRequest(
       history = {msg.value()};
     }
   } else {
-    AddMessage(msg);
+    AddMessage(msg, MessageType::kNormal);
     history = GetMessages();
   }
 
@@ -326,7 +326,7 @@ bool ClaudeClient::HandleResponse(const std::string& resp,
             << "User cancelled response processing (callback returned false).";
       }
       OLOG(LogLevel::kInfo) << "<== " << msg;
-      AddMessage(std::move(msg));
+      AddMessage(std::move(msg), MessageType::kNormal);
 
       if (!cb_result) {
         return false;
@@ -370,7 +370,21 @@ void ClaudeClient::AddToolsResult(
   assistant::message msg;
   msg["role"] = "user";
   msg["content"] = content_array;
-  AddMessage(std::move(msg));
+  AddMessage(std::move(msg), MessageType::kToolResponse);
+}
+
+void ClaudeClient::Compact() {
+  m_history.Compact([](assistant::message& msg) {
+    if (msg.contains("content") && msg["content"].is_array()) {
+      auto& j_array = msg["content"];
+      for (auto& element : j_array) {
+        if (element.contains("content") && element["content"].is_string()) {
+          element["content"] =
+              "[Tool response content truncated by system to save memory]";
+        }
+      }
+    }
+  });
 }
 
 assistant::messages ClaudeClient::GetMessages() const {

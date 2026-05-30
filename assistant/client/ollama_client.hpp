@@ -46,7 +46,7 @@ class OllamaClient : public ClientBase {
 
   void AddToolsResult(
       std::vector<std::pair<FunctionCall, FunctionResult>> result) override;
-
+  void Compact() override;
   /// This method should be called from another thread.
   void Interrupt() override;
 
