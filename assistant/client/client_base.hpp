@@ -595,6 +595,11 @@ class ClientBase {
 
   virtual inline bool IsStreaming() const { return m_stream.load(); }
 
+  /** @brief Counts the number of tokens in a text string. This is a rough
+   * estimation using heuristics.
+   */
+  size_t CountTokens(const std::string& str) const;
+
  protected:
   static bool OnResponse(const assistant::response& resp, void* user_data);
   static bool OnResponseRaw(const std::string& resp, void* user_data);
