@@ -25,11 +25,14 @@ void OpenAIClient::ProcessChatRequest(
   }
   chat_request->request_["max_output_tokens"] = GetMaxTokens();
 
-  // Auto-compaction
-  chat_request->request_["context_management"] = {{
-      {"type", "compaction"},
-      {"compact_threshold", GetCompactionThreshold()},
-  }};
+  // Server-side auto-compaction via OpenAI's context_management API.
+  // Only injected when the threshold is non-zero; zero means disabled.
+  if (const size_t threshold = GetAutoCompactThreshold(); threshold > 0) {
+    chat_request->request_["context_management"] = {{
+        {"type", "compaction"},
+        {"compact_threshold", threshold},
+    }};
+  }
 
   // Re-serialize tools in /v1/responses format (flat, not nested under
   // "function")

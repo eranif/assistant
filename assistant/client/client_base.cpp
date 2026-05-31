@@ -126,7 +126,7 @@ void ClientBase::ApplyConfig(const assistant::Config* conf) {
   m_function_table.ReloadMCPServers(conf);
   m_server_timeout.set_value(conf->GetServerTimeoutSettings());
   m_keep_alive.set_value(conf->GetKeepAlive());
-  m_compaction_threshold = conf->GetEndpoint()->compaction_threshold_;
+  m_auto_compact_threshold = conf->GetEndpoint()->auto_compact_threshold_;
   m_stream = conf->IsStream();
 }
 

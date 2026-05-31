@@ -61,7 +61,7 @@ inline std::ostream& operator<<(std::ostream& os, const MCPServerConfig& mcp) {
 
 constexpr size_t kMaxTokensDefault = 64000;
 constexpr size_t kDefaultContextSize = 32 * 1024;
-constexpr size_t kDefaultCompactionThreshold = 10000;
+constexpr size_t kDefaultAutoCompactThreshold = 10000;
 constexpr std::string_view kEndpointOllamaLocal = "http://127.0.0.1:11434";
 constexpr std::string_view kEndpointAnthropic = "https://api.anthropic.com";
 constexpr std::string_view kEndpointOllamaCloud = "https://ollama.com";
@@ -109,8 +109,12 @@ struct Endpoint {
   std::optional<size_t> context_size_{kDefaultContextSize};
   bool verify_server_ssl_{true};
   TransportType transport_{TransportType::httplib};
-  size_t compaction_threshold_{kDefaultCompactionThreshold};
-  /// Anthropic-only: server-side compaction settings. Disabled by default.
+  /// Client-side auto-compaction threshold (in estimated tokens). When the
+  /// accumulated token count across messages exceeds this value,
+  /// CompactIfNeeded() trims old tool-response messages from the local history.
+  /// Set to 0 to disable client-side auto-compaction entirely.
+  size_t auto_compact_threshold_{kDefaultAutoCompactThreshold};
+  /// Anthropic/OpenAI: server-side compaction settings. Disabled by default.
   ServerCompaction server_compaction_;
 };
 

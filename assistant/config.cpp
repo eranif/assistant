@@ -227,15 +227,15 @@ ParseResult ConfigBuilder::FromContent(const std::string& content,
           }
         }
 
-        if (endpoint_json.contains("compaction_threshold") &&
-            endpoint_json["compaction_threshold"].is_number_unsigned()) {
-          endpoint->compaction_threshold_ =
-              endpoint_json["compaction_threshold"].get<size_t>();
+        if (endpoint_json.contains("auto_compact_threshold") &&
+            endpoint_json["auto_compact_threshold"].is_number_unsigned()) {
+          endpoint->auto_compact_threshold_ =
+              endpoint_json["auto_compact_threshold"].get<size_t>();
         } else if (endpoint->context_size_.has_value()) {
           // Set the compaction threshold to proper default, we default to 1/2
           // of the context_size
-          endpoint->compaction_threshold_ = endpoint->context_size_.value() / 2;
-        }  // else use the default value of 100,000
+          endpoint->auto_compact_threshold_ = endpoint->context_size_.value() / 2;
+        }  // else use kDefaultAutoCompactThreshold
 
         // Anthropic server-side compaction (beta).
         // Schema:
