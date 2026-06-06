@@ -10,7 +10,7 @@ TEST(OpenAIMessagesClient, EndpointConfiguration) {
 
   // Verify endpoint is configured for OpenAI messages API
   EXPECT_EQ(endpoint.type_, EndpointKind::moonshotai);
-  EXPECT_EQ(endpoint.url_, kEndpointOpenAI);
+  EXPECT_EQ(endpoint.url_, kEndpointMoonshotAI);
 }
 
 TEST(OpenAIMessagesClient, ClientCreation) {
