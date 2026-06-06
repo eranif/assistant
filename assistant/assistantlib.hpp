@@ -83,6 +83,7 @@ enum class EndpointKind {
   anthropic,
   openai,
   moonshotai,
+  minimax,
 };
 
 enum class TransportType {
@@ -467,7 +468,8 @@ class ITransport {
           models.push_back(model["id"]);
         }
       } break;
-      case assistant::EndpointKind::moonshotai: {
+      case assistant::EndpointKind::moonshotai:
+      case assistant::EndpointKind::minimax: {
         for (auto& model : json_response["data"]) {
           models.push_back(model["id"]);
         }
@@ -532,6 +534,7 @@ class ITransport {
       case assistant::EndpointKind::openai:
         return "/v1/models";
       case assistant::EndpointKind::moonshotai:
+      case assistant::EndpointKind::minimax:
         return "/v1/models";
       default:
       case assistant::EndpointKind::ollama:
@@ -545,6 +548,7 @@ class ITransport {
       case assistant::EndpointKind::openai:
         return "/v1/responses";
       case assistant::EndpointKind::moonshotai:
+      case assistant::EndpointKind::minimax:
         return "/v1/chat/completions";
       default:
       case assistant::EndpointKind::ollama:
@@ -963,7 +967,8 @@ class ClientImpl : public ITransport {
         auto res = cli->Get("/", headers_);
         return res;
       } break;
-      case assistant::EndpointKind::moonshotai: {
+      case assistant::EndpointKind::moonshotai:
+      case assistant::EndpointKind::minimax: {
         auto res = cli->Get("/", headers_);
         return res;
       } break;

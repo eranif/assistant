@@ -33,6 +33,7 @@ inline std::optional<std::shared_ptr<ClientBase>> MakeClient(
         client = std::make_shared<OpenAIClient>(*endpoint);
         break;
       case EndpointKind::moonshotai:
+      case EndpointKind::minimax:
         client = std::make_shared<OpenAIMessagesClient>(*endpoint);
         break;
     }

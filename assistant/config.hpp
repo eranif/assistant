@@ -66,6 +66,8 @@ constexpr std::string_view kEndpointOllamaLocal = "http://127.0.0.1:11434";
 constexpr std::string_view kEndpointAnthropic = "https://api.anthropic.com";
 constexpr std::string_view kEndpointOllamaCloud = "https://ollama.com";
 constexpr std::string_view kEndpointOpenAI = "https://api.openai.com";
+constexpr std::string_view kEndpointMoonshotAI = "https://api.moonshot.ai";
+constexpr std::string_view kEndpointMinimax = "https://api.minimax.io";
 
 static std::unordered_map<std::string, std::string> kDefaultOllamaHeaders = {
     {"Host", "127.0.0.1"}};
@@ -134,8 +136,15 @@ struct OpenAIEndpoint : public Endpoint {
 
 struct MoonshotAIEndpoint : public Endpoint {
   MoonshotAIEndpoint() {
-    url_ = kEndpointOpenAI;
+    url_ = kEndpointMoonshotAI;
     type_ = EndpointKind::moonshotai;
+  }
+};
+
+struct MinimaxEndpoint : public Endpoint {
+  MinimaxEndpoint() {
+    url_ = kEndpointMinimax;
+    type_ = EndpointKind::minimax;
   }
 };
 

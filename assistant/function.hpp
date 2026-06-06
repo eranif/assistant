@@ -112,6 +112,7 @@ class FunctionBase {
     switch (kind) {
       case EndpointKind::ollama:
       case EndpointKind::moonshotai:
+      case EndpointKind::minimax:
         return ToOllamaJson();
       case EndpointKind::openai:
         return ToOpenAIJson();
