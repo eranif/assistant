@@ -513,6 +513,10 @@ class ClientBase {
     m_endpoint.with_mut([ep](Endpoint& endpoint) { endpoint = ep; });
   }
 
+  inline std::optional<bool> IsThinking() const {
+    return m_endpoint.get_value().thinking_;
+  }
+
   inline std::string GetModel() const { return m_endpoint.get_value().model_; }
 
   inline std::optional<Pricing> GetPricing() const {

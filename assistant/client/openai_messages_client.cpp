@@ -34,10 +34,12 @@ void OpenAIMessagesClient::ProcessChatRequest(
   chat_request->request_.erase("keep_alive");
   chat_request->request_.erase("options");
 
-  if (GetEndpointKind() == EndpointKind::moonshotai ||
-      GetEndpointKind() == EndpointKind::minimax) {
+  if ((GetEndpointKind() == EndpointKind::moonshotai ||
+       GetEndpointKind() == EndpointKind::minimax) &&
+      IsThinking().has_value()) {
     // disable Thinking mode for MoonshotAI.
-    chat_request->request_["thinking"] = {{"type", "disabled"}};
+    std::string thinking = *IsThinking() ? "enabled" : "disabled";
+    chat_request->request_["thinking"] = {{"type", thinking}};
   }
 
   try {

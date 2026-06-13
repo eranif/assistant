@@ -105,6 +105,7 @@ struct Endpoint {
   EndpointKind type_{EndpointKind::ollama};
   std::unordered_map<std::string, std::string> headers_;
   bool active_{false};
+  std::optional<bool> thinking_{std::nullopt};
   std::string model_;
   std::vector<std::string> models_;
   std::optional<size_t> max_tokens_{kMaxTokensDefault};

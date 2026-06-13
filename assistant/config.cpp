@@ -234,8 +234,14 @@ ParseResult ConfigBuilder::FromContent(const std::string& content,
         } else if (endpoint->context_size_.has_value()) {
           // Set the compaction threshold to proper default, we default to 1/2
           // of the context_size
-          endpoint->auto_compact_threshold_ = endpoint->context_size_.value() / 2;
+          endpoint->auto_compact_threshold_ =
+              endpoint->context_size_.value() / 2;
         }  // else use kDefaultAutoCompactThreshold
+
+        if (endpoint_json.contains("thinking") &&
+            endpoint_json["thinking"].is_boolean()) {
+          endpoint->thinking_ = endpoint_json["thinking"].get<bool>();
+        }
 
         // Anthropic server-side compaction (beta).
         // Schema:
