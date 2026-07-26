@@ -182,13 +182,19 @@ void ClaudeClient::ProcessChatRequest(
         .chat_context = chat_request,
     };
 
-    {
-      auto client = CreateClient();
-      SetInterruptClientLocker locker{this, client.get()};
-      client->chat_raw_output(chat_request->request_,
-                              &ClaudeClient::OnRawResponse,
-                              static_cast<void*>(&user_data));
-    }
+    SendWithRetry(
+        [&] {
+          // Reset the streaming parser and accumulated text so a retry starts
+          // from a clean slate.
+          m_responseParser->Reset();
+          user_data.current_response.clear();
+          auto client = CreateClient();
+          SetInterruptClientLocker locker{this, client.get()};
+          client->chat_raw_output(chat_request->request_,
+                                  &ClaudeClient::OnRawResponse,
+                                  static_cast<void*>(&user_data));
+        },
+        chat_request->callback_);
 
     if (!chat_request->func_calls_.empty()) {
       InvokeTools(chat_request);

@@ -14,6 +14,8 @@ add_library(
   ${CMAKE_CURRENT_LIST_DIR}/client/openai_messages_client.hpp
   ${CMAKE_CURRENT_LIST_DIR}/client/client_base.cpp
   ${CMAKE_CURRENT_LIST_DIR}/client/client_base.hpp
+  ${CMAKE_CURRENT_LIST_DIR}/client/retry_policy.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/client/retry_policy.hpp
   ${CMAKE_CURRENT_LIST_DIR}/mcp.cpp
   ${CMAKE_CURRENT_LIST_DIR}/mcp.hpp
   ${CMAKE_CURRENT_LIST_DIR}/function.cpp

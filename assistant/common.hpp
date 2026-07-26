@@ -87,6 +87,10 @@ enum class Reason {
   kMaxTokensReached,
   /// Server Compaction
   kServerCompaction,
+  /// A recoverable failure (e.g. rate limit) was hit and the request is about
+  /// to be retried after a backoff delay. The text carries a human-readable
+  /// description of the wait.
+  kRetry,
 };
 
 enum class ModelCapabilities {

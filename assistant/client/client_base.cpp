@@ -1,5 +1,9 @@
 #include "assistant/client/client_base.hpp"
 
+#include <chrono>
+#include <thread>
+
+#include "assistant/assistantlib.hpp"
 #include "assistant/logger.hpp"
 #include "assistant/tool.hpp"
 
@@ -88,6 +92,66 @@ bool ClientBase::HandleResponse(const assistant::response& resp,
 bool ClientBase::OnResponse(const assistant::response& resp, void* user_data) {
   ChatContext* cud = reinterpret_cast<ChatContext*>(user_data);
   return cud->client->HandleResponse(resp, *cud);
+}
+
+void ClientBase::SendWithRetry(const std::function<void()>& send,
+                               const OnResponseCallback& callback) {
+  auto policy = GetRetryPolicy();
+  for (size_t attempt = 0;; ++attempt) {
+    try {
+      send();
+      return;
+    } catch (const std::exception& e) {
+      if (!policy || m_interrupt.load()) {
+        throw;
+      }
+
+      RetryContext ctx;
+      ctx.attempt = attempt;
+      ctx.error_message = e.what();
+      if (const auto* http = dynamic_cast<const http_exception*>(&e)) {
+        ctx.http_status = http->status();
+      }
+
+      if (!policy->ShouldRetry(ctx)) {
+        throw;
+      }
+
+      auto delay = policy->GetDelay(ctx);
+      // Round up to whole seconds for the human-readable message.
+      auto seconds =
+          (delay.count() + 999) / 1000;  // ceil(delay_ms / 1000)
+
+      std::stringstream ss;
+      ss << "Retrying " << (attempt + 1);
+      if (auto max_retries = policy->GetMaxRetries()) {
+        ss << " / " << *max_retries;
+      }
+      ss << " in " << seconds << (seconds == 1 ? " second" : " seconds") << ".";
+
+      // The underlying error is verbose (it may contain the full response
+      // body); keep it in the log only, and surface a concise message to the
+      // caller.
+      OLOG(LogLevel::kWarning)
+          << ss.str() << " Request failed: " << e.what();
+      if (callback) {
+        callback(ss.str(), Reason::kRetry, false);
+      }
+
+      // Interruptible sleep: wake up periodically so an Interrupt() aborts the
+      // backoff promptly instead of blocking for the full delay.
+      constexpr auto kSlice = std::chrono::milliseconds(50);
+      auto remaining = delay;
+      while (remaining.count() > 0) {
+        if (m_interrupt.load()) {
+          throw;
+        }
+        auto step = remaining < kSlice ? remaining : kSlice;
+        std::this_thread::sleep_for(step);
+        remaining -= step;
+      }
+    }
+  }
 }
 
 void ClientBase::AddMessage(std::optional<assistant::message> msg,

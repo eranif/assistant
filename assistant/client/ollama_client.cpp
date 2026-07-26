@@ -167,13 +167,17 @@ void OllamaClient::ProcessChatRequest(
     user_data.thinking_start_tag = "<think>";
     user_data.thinking_end_tag = "</think>";
 
-    {
-      auto client = CreateClient();
-      SetInterruptClientLocker locker{this, client.get()};
-      OLOG_DEBUG() << "Sending:" << chat_request->request_.dump(1);
-      client->chat(chat_request->request_, &OllamaClient::OnResponse,
-                   static_cast<void*>(&user_data));
-    }
+    SendWithRetry(
+        [&] {
+          // Reset any accumulated stream state so a retry starts clean.
+          user_data.current_response.clear();
+          auto client = CreateClient();
+          SetInterruptClientLocker locker{this, client.get()};
+          OLOG_DEBUG() << "Sending:" << chat_request->request_.dump(1);
+          client->chat(chat_request->request_, &OllamaClient::OnResponse,
+                       static_cast<void*>(&user_data));
+        },
+        chat_request->callback_);
 
     if (!chat_request->func_calls_.empty()) {
       InvokeTools(chat_request);

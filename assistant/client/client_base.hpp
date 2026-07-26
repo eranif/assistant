@@ -8,6 +8,7 @@
 #include <unordered_map>
 
 #include "assistant/attributes.hpp"
+#include "assistant/client/retry_policy.hpp"
 #include "assistant/common.hpp"
 #include "assistant/common/tokens.hpp"
 #include "assistant/config.hpp"
@@ -428,6 +429,18 @@ class ClientBase {
     m_on_invoke_tool_cb = std::move(cb);
   }
 
+  /// Install a custom retry policy. Pass `nullptr` to disable retries. By
+  /// default every client uses an `ExponentialBackoffRetryPolicy`, so limit
+  /// conditions (HTTP 429 / 529, and optionally 5xx) are retried with
+  /// exponential backoff out of the box.
+  void SetRetryPolicy(std::shared_ptr<RetryPolicy> policy) {
+    m_retry_policy.set_value(std::move(policy));
+  }
+
+  std::shared_ptr<RetryPolicy> GetRetryPolicy() const {
+    return m_retry_policy.get_value();
+  }
+
   virtual void InvokeTools(std::shared_ptr<ChatRequest> request);
 
   virtual void ApplyConfig(const assistant::Config* conf);
@@ -608,6 +621,16 @@ class ClientBase {
   static bool OnResponse(const assistant::response& resp, void* user_data);
   static bool OnResponseRaw(const std::string& resp, void* user_data);
   void ProcessChatRequestQueue();
+
+  /// Run `send` (which performs one transport round-trip and may throw on
+  /// failure), consulting the active RetryPolicy to retry recoverable failures
+  /// after a backoff delay. Retries are reported to `callback` as
+  /// `Reason::kRetry`. Re-throws the last exception once the policy stops
+  /// asking for retries (so the caller's existing `catch` still surfaces the
+  /// error as `kFatalError`). The backoff sleep is interruptible: an
+  /// `Interrupt()` during the wait aborts the retry loop.
+  void SendWithRetry(const std::function<void()>& send,
+                     const OnResponseCallback& callback);
   bool HandleResponse(const assistant::response& resp,
                       ChatContext& chat_user_data);
   virtual void AddMessage(std::optional<assistant::message> msg,
@@ -629,6 +652,8 @@ class ClientBase {
   std::atomic_size_t m_auto_compact_threshold{kDefaultAutoCompactThreshold};
   Locker<std::string> m_keep_alive{"5m"};
   OnToolInvokeCallback m_on_invoke_tool_cb{nullptr};
+  Locker<std::shared_ptr<RetryPolicy>> m_retry_policy{
+      std::make_shared<ExponentialBackoffRetryPolicy>()};
   Locker<std::optional<Pricing>> m_cost;
   std::atomic<double> m_total_amount{0.0};
   std::atomic<double> m_last_request_amount{0.0};

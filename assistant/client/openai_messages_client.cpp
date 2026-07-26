@@ -43,7 +43,6 @@ void OpenAIMessagesClient::ProcessChatRequest(
   }
 
   try {
-    m_responseParser = std::make_unique<chat_completions::ResponseParser>();
     std::string model_name = chat_request->request_["model"].get<std::string>();
 
     // Prepare chat user data.
@@ -54,13 +53,18 @@ void OpenAIMessagesClient::ProcessChatRequest(
         .chat_context = chat_request,
     };
 
-    {
-      auto client = CreateClient();
-      SetInterruptClientLocker locker{this, client.get()};
-      client->chat_raw_output(chat_request->request_,
-                              &OpenAIMessagesClient::OnRawResponse,
-                              static_cast<void*>(&user_data));
-    }
+    SendWithRetry(
+        [&] {
+          // Fresh parser and accumulated text per attempt.
+          m_responseParser = std::make_unique<chat_completions::ResponseParser>();
+          user_data.current_response.clear();
+          auto client = CreateClient();
+          SetInterruptClientLocker locker{this, client.get()};
+          client->chat_raw_output(chat_request->request_,
+                                  &OpenAIMessagesClient::OnRawResponse,
+                                  static_cast<void*>(&user_data));
+        },
+        chat_request->callback_);
 
     if (!chat_request->func_calls_.empty()) {
       InvokeTools(chat_request);

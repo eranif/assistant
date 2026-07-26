@@ -238,6 +238,9 @@ void HandlePrompt(std::shared_ptr<assistant::ClientBase> cli,
             case assistant::Reason::kServerCompaction:
               std::cout << Gray(output) << std::endl;
               break;
+            case assistant::Reason::kRetry:
+              std::cout << Yellow(output) << std::endl;
+              break;
             case assistant::Reason::kDone:
               std::cout << std::endl;
               OLOG_INFO() << "Completed!";

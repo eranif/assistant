@@ -121,6 +121,20 @@ class invalid_json_exception : public assistant::exception {
   using exception::exception;
 };
 
+/// Thrown when the server responds with an HTTP error status (>= 400). Carries
+/// the numeric status code so that higher layers (e.g. a retry policy) can
+/// distinguish recoverable conditions such as 429 (too many requests) or 529
+/// (overloaded) from permanent client errors.
+class http_exception : public assistant::exception {
+ public:
+  http_exception(int status, const std::string& msg)
+      : assistant::exception(msg), status_(status) {}
+  int status() const noexcept { return status_; }
+
+ private:
+  int status_{0};
+};
+
 class image {
  public:
   image(const std::string base64_sequence, bool valid = true) {
@@ -809,7 +823,7 @@ class ClientImpl : public ITransport {
         errmsg << "\nPartial buffer:\n" << partial_messages;
         OLOG(LogLevel::kError) << errmsg.str();
         if (assistant::use_exceptions) {
-          throw assistant::exception(errmsg.str());
+          throw assistant::http_exception(res.value().status, errmsg.str());
         }
         return false;
       }
@@ -858,7 +872,7 @@ class ClientImpl : public ITransport {
         errmsg << "\nPayload:\n" << accumlated_buffer;
         OLOG(LogLevel::kError) << errmsg.str();
         if (assistant::use_exceptions) {
-          throw assistant::exception(errmsg.str());
+          throw assistant::http_exception(res.value().status, errmsg.str());
         }
         return false;
       }
