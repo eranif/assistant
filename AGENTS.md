@@ -4,7 +4,7 @@
 
 ## What this repo is
 
-A C++20 static library, **`assistantlib`**, that provides a unified runtime API for talking to multiple LLM providers (Anthropic Claude, OpenAI `/v1/responses`, OpenAI-compatible `/v1/chat/completions` for Moonshot AI, and local/remote Ollama), plus tool calling (in-process and via the **Model Context Protocol** — stdio / SSE / remote stdio over SSH). A demo executable, **`code-assist`**, exercises the library as an interactive REPL.
+A C++20 static library, **`assistantlib`**, that provides a unified runtime API for talking to multiple LLM providers (Anthropic Claude, OpenAI `/v1/responses`, OpenAI-compatible `/v1/chat/completions` for Moonshot AI and Minimax, and local/remote Ollama), plus tool calling (in-process and via the **Model Context Protocol** — stdio / SSE / remote stdio over SSH). A demo executable, **`code-assist`**, exercises the library as an interactive REPL.
 
 ## Repo map
 
@@ -13,11 +13,11 @@ assistant/                  core library (assistantlib)
 ├── assistant.hpp           umbrella header — MakeClient(Config|content|path) factory
 ├── assistantlib.hpp        legacy umbrella — message/request/response/ITransport/EndpointKind/TransportType
 ├── client/                 ClientBase + provider clients
-│   ├── client_base.hpp     abstract API + ChatRequest, ChatRequestQueue, History
+│   ├── client_base.hpp     abstract API + ChatRequest, ChatRequestQueue, History (with MessageType tags)
 │   ├── ollama_client.*     base concrete impl (others inherit from this, not from ClientBase)
 │   ├── claude_client.*     Anthropic
 │   ├── openai_client.*     OpenAI /v1/responses
-│   └── openai_messages_client.*   OpenAI-compatible /v1/chat/completions
+│   └── openai_messages_client.*   OpenAI-compatible /v1/chat/completions (Moonshot AI, Minimax)
 ├── config.hpp+cpp          Config / ConfigBuilder / Endpoint subclasses / MCPServerConfig
 ├── EnvExpander.hpp+cpp     ${VAR} / $VAR expansion across JSON trees
 ├── function.hpp+cpp        Param / FunctionBase / InProcessFunction / ExternalFunction / FunctionBuilder / FunctionTable
@@ -27,7 +27,7 @@ assistant/                  core library (assistantlib)
 ├── openai_response_parser.*
 ├── chat_completions_response_parser.*
 ├── Curl.hpp+cpp            alternate ITransport that shells out to system `curl`
-├── Process.hpp+cpp         cross-platform process runner
+├── Process.hpp+cpp         cross-platform process runner (one-shot + bidirectional interactive)
 ├── logger.hpp              OLOG(level), OLOG_INFO/DEBUG/...; sink/file overrides
 ├── common.hpp              Locker<T>, ChatOptions, ModelCapabilities, Reason, Pricing, Usage, PRICING_TABLE
 ├── helpers.hpp             Result<V,E>, JoinArray, trim, split_into_lines, try_read_jsons_from_string, ASSIGN_OPT_OR_RETURN macros
@@ -37,6 +37,7 @@ assistant/                  core library (assistantlib)
 └── common/                 vendored single-header deps:
                               json.hpp (nlohmann), httplib.h (cpp-httplib),
                               base64.hpp, magic_enum.hpp
+                            plus first-party tokens.hpp (CountTokens estimator)
 
 cli/                        code-assist demo executable (gated by ASSISTANTLIB_BUILD_EXAMPLE)
 tests/                      10 GoogleTest binaries (gated by ASSISTANTLIB_BUILD_TESTS or ENABLE_TESTS)
@@ -47,8 +48,8 @@ submodules/googletest/      git submodule
 
 ## Key entry points
 
-- **`assistant/assistant.hpp` → `MakeClient(Config|json_content|path)`** — the only factory you need to construct a client. Returns `optional<shared_ptr<ClientBase>>`. Picks the concrete client class from `Endpoint::type_` (`ollama`/`anthropic`/`openai`/`moonshotai`).
-- **`assistant/client/client_base.hpp` → `ClientBase`** — the runtime API every client implements: `Chat`, `IsRunning`, `List`/`ListJSON`, `GetModelInfo`, `GetModelCapabilities`, `CreateAndPushChatRequest`, `AddToolsResult`, `ApplyConfig`, `Interrupt`, plus history/system-message/cost/usage/transport accessors.
+- **`assistant/assistant.hpp` → `MakeClient(Config|json_content|path)`** — the only factory you need to construct a client. Returns `optional<shared_ptr<ClientBase>>`. Picks the concrete client class from `Endpoint::type_` (`ollama`/`anthropic`/`openai`/`moonshotai`/`minimax` — the last two share `OpenAIMessagesClient`).
+- **`assistant/client/client_base.hpp` → `ClientBase`** — the runtime API every client implements: `Chat`, `IsRunning`, `List`/`ListJSON`, `GetModelInfo`, `GetModelCapabilities`, `CreateAndPushChatRequest`, `AddToolsResult`, `Compact`, `ApplyConfig`, `Interrupt`, plus history/system-message/cost/usage/transport accessors.
 - **`assistant/config.hpp` → `ConfigBuilder::FromFile/FromContent`** — the only public constructor for `Config`; runs `EnvExpander` first, then validates and applies defaults.
 - **`assistant/function.hpp` → `FunctionBuilder`** — fluent registration of in-process tools. `FunctionTable::AddMCPServer` registers MCP-backed tools.
 - **`cli/main.cpp` → `main`** — the demo. Read this if you need an end-to-end example.
@@ -76,7 +77,7 @@ Read with `lk.get_value()` (returns a copy) or `lk.with([](const T&){})` (lock h
 ### Tool schemas are endpoint-specific
 
 `FunctionBase::ToJSON(EndpointKind)` produces three different shapes:
-- **Ollama / Moonshot**: nested `{type:"function", function:{name, parameters}}` with a `required` array.
+- **Ollama / Moonshot / Minimax**: nested `{type:"function", function:{name, parameters}}` with a `required` array.
 - **OpenAI** (`/v1/responses`): flat `{type:"function", name, parameters, strict:true}` with `additionalProperties:false` and **all parameters listed in `required`** (OpenAI strict mode); optional types widen to `["<type>","null"]`.
 - **Anthropic**: `{name, input_schema}`; with `CachePolicy::kStatic`, the last tool gains `cache_control:{type:"ephemeral"}`.
 
@@ -89,6 +90,10 @@ When adding a parameter, run the response-format tests (`test_openai_response_fo
 ### MCP servers can be remote
 
 `MCPClient(SSHLogin, args, env)` runs a stdio MCP server on a remote host by composing an `ssh ... -p PORT HOST "<wrapped command>"` invocation. The wrapper escapes embedded quotes and adds `ServerAliveInterval=30` for keepalive. This is configured via `mcp_servers[*].stdio.ssh` in the JSON config.
+
+### History compaction is two separate mechanisms
+
+Every history entry carries a `MessageType` tag (`kNormal`/`kToolRequest`/`kToolResponse`). Client-side compaction (`ClientBase::Compact(keep = 3)`) replaces old tool-response content with a fixed truncation marker and returns estimated tokens trimmed — it is **caller-initiated**; despite its name, the config key `endpoints[].auto_compact_threshold` does not trigger anything automatically in the library (and the `CompactIfNeeded()` mentioned in a `config.hpp` comment does not exist). Server-side compaction is separate: Anthropic via the `endpoints[].server_compaction` config block (beta header + `context_management.edits`), OpenAI `/v1/responses` via `auto_compact_threshold` forwarded as `compact_threshold`. Both surface to callbacks as `Reason::kServerCompaction`.
 
 ### Built-in CLI tools are demo-only
 

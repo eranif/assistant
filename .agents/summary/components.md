@@ -90,6 +90,10 @@ Generic utilities, all `inline`. Notable items:
 - `ReadYesOrNoFromUser`, `GetTextFromUser`, `GetChoiceFromUser` — interactive console helpers used by the CLI demo.
 - Macros: `ASSIGN_OPT_OR_RETURN(decl, expr, return_value)` and `ASSIGN_OPT_OR_RETURN_NULLOPT(decl, expr)` — early-return on `std::optional` absence. `ASSIGN_FUNC_ARG_OR_RETURN(var, expr)` is in `function.hpp` and returns a `FunctionResult` error instead.
 
+### `assistant/common/tokens.hpp`
+
+A single inline function, `assistant::CountTokens(std::string_view) → size_t` — a local heuristic approximation of the cl100k_base tokenizer (no BPE table, no network; ±5% prose / ±10% code). Used by the history-compaction paths to account for tokens trimmed, and to compute `kTrimMessageTokensCount`.
+
 ### `assistant/attributes.hpp`
 
 Clang thread-safety annotation macros that compile to `__attribute__((...))` on Clang and to nothing elsewhere. Repo-wide `-Wthread-safety` flag (set by the top-level `CMakeLists.txt`) turns them into compile-time checks. Macros: `SCOPED_CAPABILITY`, `REQUIRES`, `ACQUIRE`, `RELEASE`, `GUARDED_BY`, `CALLER_MUST_LOCK`, `FUNCTION_LOCKS`.
@@ -100,13 +104,22 @@ Templated `ThreadNotifier<Value>` — a condvar-backed slot. `Wait(milliseconds)
 
 ### `assistant/Process.hpp` / `Process.cpp`
 
-Cross-platform process runner. Exposes:
+Cross-platform process runner with two modes sharing a single internal `SpawnProcess` helper per platform.
+
+**One-shot** (static methods):
 
 - `Process::RunProcessAndWait(argv, output_cb, use_shell=false) → int` — synchronous, with stdout/stderr streamed to `output_cb`; returning `false` from the callback terminates the child.
 - `Process::RunProcessAndWait(argv, use_shell=false) → ProcessOutput` — convenience overload that captures full stdout/stderr.
-- `Process::RunProcessAsync(argv, output_cb, completion_cb, use_shell=false) → bool` — same model but async.
-- `Process::TerminateProcess(pid)`, `Process::IsAlive(pid)`.
-- `Process::EnableExecLog(bool)`, `Process::IsExecLogEnabled()` — toggles a debug log of every command launched.
+- `Process::RunProcessAsync(argv, output_cb, completion_cb, use_shell=false) → bool` — same model but async (detached worker thread; `completion_cb(exit_code)` fires on that thread). Note: the async API no longer surfaces the child PID.
+- In one-shot mode the child's **stdin is closed immediately after spawn**, so children that block reading stdin see EOF instead of hanging.
+
+**Interactive** (instance methods; constructor is private):
+
+- `Process::StartInteractive(argv, output_cb, use_shell=false) → shared_ptr<Process>` — spawns a bidirectional child; `nullptr` on failure. A detached reader thread (holding only a `weak_ptr`) polls stdout/stderr (`select()` on POSIX, `PeekNamedPipe` on Windows) and invokes `output_cb`; the callback's return value is ignored in this mode.
+- `Write(data)` / `WriteLine(data)` — mutex-guarded stdin writes, callable from any thread.
+- `IsRunning()`, `GetPid()`, `SendInterrupt()` (SIGINT / `CTRL_BREAK_EVENT`), `Stop()` (POSIX: close stdin, SIGTERM, 3 s grace, then SIGKILL; Windows: hard terminate). The destructor calls `Stop()`, so dropping the last `shared_ptr` kills and reaps the child.
+
+Shared statics: `Process::TerminateProcess(pid)` (SIGTERM on POSIX, hard kill on Windows), `Process::IsAlive(pid)`, `Process::EnableExecLog(bool)` / `IsExecLogEnabled()`. `use_shell` wraps the command in `/bin/bash -c` (POSIX) or `cmd.exe /c` (Windows). Exit codes: POSIX maps signal deaths to `128 + signo`. The interactive API currently has no in-repo production consumer (`Curl` uses only the one-shot API; MCP stdio spawning is handled independently inside `cpp-mcp`).
 
 ### `assistant/Curl.hpp` / `Curl.cpp`
 
@@ -118,7 +131,7 @@ Cross-platform process runner. Exposes:
 
 Despite the legacy filename, this is the most fundamental header. It defines:
 
-- `EndpointKind` enum: `ollama`, `anthropic`, `openai`, `moonshotai`.
+- `EndpointKind` enum: `ollama`, `anthropic`, `openai`, `moonshotai`, `minimax`.
 - `TransportType` enum: `httplib`, `curl`.
 - `assistant::json` (alias for `nlohmann::ordered_json`) and `assistant::base64`.
 - `assistant::message`, `assistant::messages`, `assistant::request`, `assistant::response` — JSON-derived value types.
@@ -135,7 +148,7 @@ A small inline `assistant::ResponseParser` for parsing Ollama-shaped streaming r
 
 ### `assistant/config.hpp` / `config.cpp`
 
-Defines `Endpoint`, the pre-built `AnthropicEndpoint` / `OpenAIEndpoint` / `MoonshotAIEndpoint` / `OllamaLocalEndpoint` / `OllamaCloudEndpoint`, `ServerTimeout`, `MCPServerConfig` (with `StdioParams` / `SseParams`), `Config`, and `ConfigBuilder` with `FromFile(path, env_map?)` and `FromContent(json_str, env_map?)`. Enforces "exactly one active endpoint" and applies defaults (`max_tokens=64000`, `context_size=32K`, `compaction_threshold=10000`, `connect_ms=100`, `read/write_ms=10000`, `keep_alive="5m"`).
+Defines `Endpoint`, the pre-built `AnthropicEndpoint` / `OpenAIEndpoint` / `MoonshotAIEndpoint` / `MinimaxEndpoint` / `OllamaLocalEndpoint` / `OllamaCloudEndpoint`, `ServerCompaction`, `ServerTimeout`, `MCPServerConfig` (with `StdioParams` / `SseParams`), `Config`, and `ConfigBuilder` with `FromFile(path, env_map?)` and `FromContent(json_str, env_map?)`. Enforces "exactly one active endpoint" and applies defaults (`max_tokens=64000`, `context_size=32K`, `auto_compact_threshold` = `context_size/2` or `10000`, `connect_ms=100`, `read/write_ms=10000`, `keep_alive="5m"`). Endpoint-level keys `thinking` and `server_compaction` are optional (see `data_models.md`).
 
 ### `assistant/EnvExpander.hpp` / `EnvExpander.cpp`
 
@@ -154,7 +167,7 @@ The tool-calling vocabulary:
 - `FunctionBuilder` — fluent builder (`SetDescription`, `AddRequiredParam`, `AddOptionalParam`, `AddMinMaxValidation`, `AddStringEnumValidation`, `SetCallback`, `SetHumanInTheLoopCallback`, `Build`).
 - `FunctionCall` — `{ name, args, optional invocation_id }`, the model's request to invoke a tool.
 - `FunctionResult` — `{ isError, text }`.
-- `FunctionTable` — registry (mutex-guarded `std::map<name, shared_ptr<FunctionBase>>`). Methods: `Add`, `AddMCPServer`, `Call`, `CanRunTool`, `Clear`, `ReloadMCPServers(Config*)`, `Merge`, `EnableAll(b)`, `EnableFunction(name, b)`, `GetFunctionsCount`, `IsEmpty`, `ToJSON(kind, cache_policy)`.
+- `FunctionTable` — registry (mutex-guarded `std::map<name, shared_ptr<FunctionBase>>`). Methods: `Add`, `AddMCPServer`, `Call`, `CanRunTool`, `Clear`, `ReloadMCPServers(Config*)`, `Merge`, `EnableAll(b)`, `EnableFunction(name, b)`, `GetFunctionsCount`, `IsEmpty`, `GetAllFunctions`, `ToJSON(kind, cache_policy)`.
 
 ## MCP integration
 
@@ -176,7 +189,7 @@ The MCP protocol implementation (built as the static library `mcp-cpp` and linke
 
 ### `assistant/client/client_base.hpp` / `client_base.cpp`
 
-`ClientBase` — abstract API. Owns `FunctionTable`, `History`, `ChatRequestQueue`, `Locker<Endpoint>`, system messages, server timeout, model-capabilities cache, pricing, aggregated usage, caching policy, transport type, the interrupt flag, and the streaming flag. See `interfaces.md` for the full method list. Defines `ChatRequest`, `ChatRequestFinaliser`, `ChatContext`, `ChatRequestQueue`, and `History` in the same header (they are part of the runtime state of every client).
+`ClientBase` — abstract API. Owns `FunctionTable`, `History`, `ChatRequestQueue`, `Locker<Endpoint>`, system messages, server timeout, model-capabilities cache, pricing, aggregated usage, caching policy, transport type, the auto-compact threshold, the interrupt flag, and the streaming flag. See `interfaces.md` for the full method list. Defines `ChatRequest`, `ChatRequestFinaliser`, `ChatContext`, `ChatRequestQueue`, `MessageType`, `Messages`, and `History` in the same header (they are part of the runtime state of every client). Each concrete client implements `Compact(responses_to_keep)` with a provider-shaped trim lambda over the history's tool responses.
 
 ### `assistant/client/ollama_client.hpp` / `ollama_client.cpp`
 
@@ -184,15 +197,15 @@ The "neutral" implementation. Speaks to a local Ollama server (`http://127.0.0.1
 
 ### `assistant/client/claude_client.hpp` / `claude_client.cpp`
 
-Anthropic client. Overrides `GetModelInfo`, `GetModelCapabilities`, `CreateAndPushChatRequest`, `AddToolsResult`, `ProcessChatRequest`, `ProcessChatRequestQueue`, and `GetMessages` (Claude does not use a `role:"system"` message; the system prompt goes in a separate field). Uses `claude::ResponseParser` for streaming.
+Anthropic client. Overrides `GetModelInfo`, `GetModelCapabilities`, `CreateAndPushChatRequest`, `AddToolsResult`, `ProcessChatRequest`, `ProcessChatRequestQueue`, and `GetMessages` (Claude does not use a `role:"system"` message; the system prompt goes in a separate field). Uses `claude::ResponseParser` for streaming. Implements Anthropic server-side compaction (beta): when `server_compaction.enabled`, `GetHttpHeaders()` merges in `anthropic-beta: compact-2026-01-12` and requests carry a `context_management.edits` entry of type `compact_20260112`; a streamed compaction summary surfaces to the callback as `Reason::kServerCompaction` and is persisted into history as a `{"type": "compaction"}` content block.
 
 ### `assistant/client/openai_client.hpp` / `openai_client.cpp`
 
-OpenAI client targeting `/v1/responses`. Overrides `GetModelCapabilities`, `AddToolsResult`, and the streaming pipeline (`OnRawResponse`, `ProcessChatRequest`, `HandleResponse`). Forces `IsStreaming() == true`. Uses `OpenAIResponseParser`.
+OpenAI client targeting `/v1/responses`. Overrides `GetModelCapabilities`, `AddToolsResult`, and the streaming pipeline (`OnRawResponse`, `ProcessChatRequest`, `HandleResponse`). Forces `IsStreaming() == true`. Uses `OpenAIResponseParser`. When `auto_compact_threshold > 0` it forwards `context_management: [{type: "compaction", compact_threshold: N}]` on every request; on a server compaction event it replaces the local history with the compaction output and fires `Reason::kServerCompaction`.
 
 ### `assistant/client/openai_messages_client.hpp` / `openai_messages_client.cpp`
 
-OpenAI-compatible client targeting the standard `/v1/chat/completions` endpoint (used for Moonshot AI and other compatible APIs — note the default endpoint constructor is `MoonshotAIEndpoint`). Overrides `GetModelCapabilities`, `AddToolsResult`, `InvokeTools`, and the streaming pipeline. Uses `chat_completions::ResponseParser`.
+OpenAI-compatible client targeting the standard `/v1/chat/completions` endpoint (used for Moonshot AI, Minimax, and other compatible APIs — note the default endpoint constructor is `MoonshotAIEndpoint`). Overrides `GetModelCapabilities`, `AddToolsResult`, `InvokeTools`, and the streaming pipeline. Uses `chat_completions::ResponseParser`. Honours the endpoint `thinking` flag: when set, requests carry `"thinking": {"type": "enabled"|"disabled"}`; when unset, no field is emitted.
 
 ## Response parsers
 
@@ -224,8 +237,8 @@ Hosts the interactive helpers used by `main.cpp` — note that several similar h
 | `test_config_file` | `ConfigBuilder::FromFile` |
 | `test_config` | `ConfigBuilder::FromContent` and built-in defaults |
 | `test_env_expander` | `EnvExpander` (string and recursive JSON) |
-| `test_history` | `History` swap/clear/shrink behaviour |
-| `test_process` | `Process::RunProcessAndWait` / `RunProcessAsync` |
+| `test_history` | `History` swap/clear behaviour, `Compact` semantics (keep-N, token accounting, temp-history no-op), per-client `Compact` trim shapes |
+| `test_process` | `Process::RunProcessAndWait` / `RunProcessAsync` / interactive mode (`StartInteractive`, `Write`, `SendInterrupt`, `Stop`; POSIX-only) |
 | `test_claude_response_parser` | streaming Anthropic events |
 | `test_openai_response_parser` | streaming `/v1/responses` events |
 | `test_openai_response_format` | OpenAI tool/JSON schema generation |

@@ -195,6 +195,7 @@ flowchart TB
 | `/no_history` | Set `ChatOptions::kNoHistory`. |
 | `/reset` | Clear history + queue, restore default options. |
 | `/int` | `cli->Interrupt()` and exit the REPL. |
+| `/compact` | Print `GetToolResponseCount()` and run client-side compaction (`cli->Compact(1)`). |
 | `/cache_static` | `SetCachingPolicy(kStatic)`. |
 | `/cache_auto` | `SetCachingPolicy(kAuto)`. |
 | `/cache_none` | `SetCachingPolicy(kNone)`. |
@@ -213,7 +214,26 @@ flowchart TB
 
 When the response callback receives `Reason::kMaxTokensReached`, the CLI demo replaces the user prompt with `"Please continue from exactly where you left off."` and re-issues the chat call. This loop is implemented in `HandlePrompt(...)` and continues until `Reason::kDone` or another terminal reason is delivered.
 
-## 7. Build and test
+## 7. History compaction
+
+Two flows exist (see `architecture.md` for the design rationale):
+
+**Client-side (caller-initiated, any provider):**
+
+```mermaid
+flowchart LR
+  A["Caller: client->Compact(keep)"] --> B["History::Compact(trim_fn, keep)"]
+  B --> C{active history is temp or empty?}
+  C -->|yes| D[return 0]
+  C -->|no| E[walk history backward]
+  E --> F["skip kNormal / kToolRequest;<br/>keep newest N kToolResponse"]
+  F --> G["older tool responses:<br/>content := kTrimMessage"]
+  G --> H[return tokens trimmed]
+```
+
+**Server-side (Anthropic, configured via `endpoints[].server_compaction`):** `ClaudeClient` adds the beta header + `context_management.edits` to each request; when the API streams a compaction block, the client stashes the summary, fires the callback with `Reason::kServerCompaction`, and persists a `{"type": "compaction"}` content block into history so future turns reuse the compacted prefix. With `pause_after_compaction: true` the API stops after the compaction block so the caller decides how to continue. OpenAI's variant is automatic: `auto_compact_threshold > 0` is forwarded as `compact_threshold` on every `/v1/responses` request and a server compaction event replaces the local history wholesale.
+
+## 8. Build and test
 
 ### Local build (Debug)
 
@@ -253,7 +273,7 @@ ctest --test-dir .build-release -R test_config --output-on-failure
 
 `gtest_discover_tests` registers each `TEST_F`/`TEST` so `--gtest_filter` works as usual.
 
-## 8. CI flow (GitHub Actions)
+## 9. CI flow (GitHub Actions)
 
 Each workflow (`macos.yml`, `ubuntu.yml`, `windows.yml`):
 

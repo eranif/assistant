@@ -15,7 +15,7 @@
 ## Repository at a glance
 
 - C++20 static library `assistantlib` plus an interactive demo executable `code-assist`.
-- One unified runtime API (`assistant::ClientBase`) over four LLM providers: Ollama, Anthropic Claude, OpenAI (`/v1/responses`), and OpenAI-compatible messages (`/v1/chat/completions`, used for Moonshot AI).
+- One unified runtime API (`assistant::ClientBase`) over five LLM providers: Ollama, Anthropic Claude, OpenAI (`/v1/responses`), and OpenAI-compatible messages (`/v1/chat/completions`, used for Moonshot AI and Minimax).
 - Tool calling for both in-process C++ functions and **Model Context Protocol (MCP)** servers — over stdio, SSE, or remote stdio tunnelled through SSH.
 - JSON configuration with `${VAR}` environment-variable expansion.
 - Built with CMake; CI on macOS, Ubuntu, and Windows (MSYS2 clang64); GoogleTest is a git submodule.
@@ -39,7 +39,7 @@ Use this table to pick the right file before searching.
 
 | Question/topic | Primary file | Secondary |
 |---|---|---|
-| "How do I build / run tests?" | `workflows.md` (§7) | `codebase_info.md` (CMake options) |
+| "How do I build / run tests?" | `workflows.md` (§8) | `codebase_info.md` (CMake options) |
 | "Which CMake flags exist?" | `codebase_info.md` | `dependencies.md` |
 | "How do I create a client / pick a provider?" | `interfaces.md` (`MakeClient`) | `architecture.md` (client family) |
 | "What's in the config JSON?" | `data_models.md` (config schema) | `interfaces.md` (`ConfigBuilder`) |
@@ -50,6 +50,7 @@ Use this table to pick the right file before searching.
 | "How does the CLI demo work?" | `workflows.md` (§5) | `components.md` (CLI section) |
 | "What providers are supported, with what auth?" | `dependencies.md` (Provider runtime) | `data_models.md` (Endpoint hierarchy) |
 | "What's the cost model?" | `data_models.md` (Pricing/Usage) | `interfaces.md` (pricing accessors) |
+| "How does history compaction work?" | `data_models.md` (`History`), `interfaces.md` (`Compact`) | `workflows.md` (compaction flows) |
 | "Which tests exist and what do they cover?" | `components.md` (Tests) | `codebase_info.md` (test list) |
 | "Known gaps / inconsistencies" | `review_notes.md` | — |
 
@@ -83,15 +84,16 @@ The contract surface: `MakeClient` factory, full `ClientBase` API table (lifecyc
 - Bitflag enums (`ModelCapabilities`, `ChatOptions`) and `CachePolicy` semantics.
 
 ### `workflows.md`
-Eight numbered runtime flows with Mermaid sequence and flowcharts:
+Nine numbered runtime flows with Mermaid sequence and flowcharts:
 1. Application startup (`MakeClient`).
 2. Single chat turn without tools.
 3. Tool-calling turn with human-in-the-loop.
 4. MCP-backed tool turn.
 5. CLI startup and REPL (with command-line flags table, slash command table, and built-in tools table).
 6. Max-token continuation strategy.
-7. Local build and test commands.
-8. CI flow per platform.
+7. History compaction (client-side and server-side).
+8. Local build and test commands.
+9. CI flow per platform.
 
 ### `dependencies.md`
 - Dependency map diagram.

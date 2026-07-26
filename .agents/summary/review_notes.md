@@ -5,19 +5,22 @@
 
 This page lists inconsistencies discovered between source and existing documentation, places where this knowledge base abbreviated or skipped detail, and recommended follow-ups. It was produced by the `codebase-summary` SOP run that generated the rest of the files in this directory.
 
+## Resolved since the previous pass
+
+- **README `examples/` mention** — the README was rewritten and no longer references a non-existent `examples/` directory.
+- **CLI helper duplication** — the interactive console helpers now live only in `cli/utils.hpp`; the duplicates were removed from `assistant/helpers.hpp`.
+
 ## Source ↔ docs inconsistencies
 
-### README mentions a non-existent directory
+### `config.hpp` comment references a non-existent `CompactIfNeeded()`
 
-`README.md` (in the "Project Layout" section) lists `examples/ - sample configuration and usage artifacts`. There is no `examples/` directory in the repository. Sample configurations live in build directories (`.build-release/config.json`, `config-with-mcp.json`, `config-python-mcp.json`) and in test fixtures.
+The doc comment on `Endpoint::auto_compact_threshold_` (`assistant/config.hpp:115-118`) says "CompactIfNeeded() trims old tool-response messages", but no `CompactIfNeeded` exists anywhere in the codebase. There is no automatic client-side trigger tied to the threshold: `ClientBase::Compact()` is caller-initiated, and the only automatic use of the threshold is `OpenAIClient` forwarding it server-side as `compact_threshold`.
 
-**Fix candidate:** either add a real `examples/` directory and move the sample configs into it, or strike that line from the README.
+**Fix candidate:** either implement the auto-trigger the comment promises, or reword the comment to describe the current caller-initiated behaviour.
 
-### CLI demo helpers duplicated between two files
+### Interactive `Process` API has no production consumer
 
-Several interactive helpers (`ReadYesOrNoFromUser`, `GetTextFromUser`, `GetChoiceFromUser`, `ReadFileContent`, `CreateNewFile`, `CreateDirectoryForFile`) are defined as `inline` functions in **both** `assistant/helpers.hpp` and `cli/utils.hpp`. As long as the CLI translation unit only includes one of them, ODR is preserved, but maintainers updating one copy will silently miss the other.
-
-**Fix candidate:** delete the duplicated definitions from `cli/utils.hpp` and rely on `assistant/helpers.hpp`.
+`Process::StartInteractive` / `Write` / `SendInterrupt` / `Stop` are exercised only by `tests/test_process.cpp` (POSIX-only tests). `Curl` uses the one-shot API, and MCP stdio spawning bypasses `Process` entirely (handled inside `cpp-mcp`'s own spawn code). Also note `RunProcessAsync` no longer surfaces the child PID; PID access exists only on interactive processes via `GetPid()`.
 
 ### Windows workflow YAML naming
 
@@ -60,7 +63,7 @@ The following were inferred from headers, the umbrella `assistantlib.hpp`, and t
 
 - The exact JSON shape of streaming events for each provider (parsers handle these but the wire-level details are not enumerated in this knowledge base).
 - Behaviour of `CachePolicy::kAuto` — currently treated as a marker; whether any provider currently honours it differently from `kNone` is not documented.
-- The behaviour of `History::ShrinkToFit` relative to tool-call sequences (a `tool_calls` request and its `tool_result` response should not be split during shrink, but the current implementation simply trims from the front).
+- `History::Compact` trims tool-response *content* in place (the message stays, only its payload is replaced with a marker), so tool_call/tool_result pairing is preserved — but whether all providers tolerate a truncated tool result mid-conversation has not been verified against each API.
 - The exact shape returned by `ClientBase::GetModelInfo(model)` differs by provider; the knowledge base treats it as `optional<json>` without documenting per-provider keys.
 
 ## Coverage gaps
@@ -69,6 +72,7 @@ The following were inferred from headers, the umbrella `assistantlib.hpp`, and t
 - **No public API stability statement.** Headers carry no `[[deprecated]]` markers, no semantic-versioning policy, and no `<package>Config.cmake` export. Downstream consumers should treat the API as evolving.
 - **No security guidance.** The configuration format encourages `${VAR}` for secrets, but there is no explicit policy on logging headers, redacting tokens in `OLOG_DEBUG()`, or handling MCP server output that contains secrets. Worth adding a short security note in the README.
 - **No MSVC support.** The compile-options block in the top-level `CMakeLists.txt` only adjusts flags for Clang/AppleClang. MSVC consumers will get the default warning set with no thread-safety analysis.
+- **`PRICING_TABLE` has no Moonshot AI or Minimax entries.** Cost reporting (`kRequestCost`) for these providers requires the caller to inject pricing via `AddPricing(...)`/`SetPricing(...)`.
 
 ## Topic areas not yet covered in this knowledge base
 
@@ -80,7 +84,7 @@ These are subjects an AI assistant might be asked about that this generation pas
 
 ## Recommendations to the user
 
-1. Decide whether the documented inconsistencies (`OllamaCloudEndpoint`/`OllamaLocalEndpoint` URL swap, `OLLAMLIB_ROOT` naming, dead `while (false)` loop, README's missing `examples/` directory, `cli/utils.hpp` duplication) are bugs to fix or expected. Those that are bugs can be addressed in small focused commits.
+1. Decide whether the documented inconsistencies (`OllamaCloudEndpoint`/`OllamaLocalEndpoint` URL swap, `OLLAMLIB_ROOT` naming, dead `while (false)` loop, stale `CompactIfNeeded()` comment) are bugs to fix or expected. Those that are bugs can be addressed in small focused commits.
 2. Add a CI check that runs `clang-format --dry-run --Werror` on every push so the existing `.clang-format` file is enforced (no such check is currently present).
 3. Consider adding a CI step that validates the JSON examples in this knowledge base parse via `ConfigBuilder::FromContent`, so the docs cannot drift from the parser.
 4. If automation is desired, schedule a periodic regeneration of `.agents/summary/` (e.g. via a manual workflow_dispatch) and review the diff like a PR.

@@ -139,4 +139,4 @@ Tests are discovered by CTest via `gtest_discover_tests`. The CLI demo lists tes
 - No `install()` targets, no CMake export package — consumers integrate by adding the source directory.
 - No Docker, no Kubernetes manifests, no Terraform.
 - No web frontend, no scripts beyond CMake.
-- No `examples/` directory (despite the README mentioning one).
+- No `examples/` directory.

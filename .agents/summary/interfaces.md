@@ -22,6 +22,7 @@ namespace assistant {
 | `anthropic` | `ClaudeClient` |
 | `openai` | `OpenAIClient` (`/v1/responses`) |
 | `moonshotai` | `OpenAIMessagesClient` (`/v1/chat/completions`) |
+| `minimax` | `OpenAIMessagesClient` (`/v1/chat/completions`) |
 
 After construction, the factory calls `client->ApplyConfig(&conf)` so MCP servers, log level, timeouts, and other config-derived state are wired up before the caller receives the pointer.
 
@@ -48,7 +49,10 @@ virtual void CreateAndPushChatRequest(
     std::shared_ptr<ChatRequestFinaliser> finaliser) = 0;
 virtual void AddToolsResult(
     std::vector<std::pair<FunctionCall, FunctionResult>> result) = 0;
+virtual size_t Compact(size_t response_to_keep = 3) = 0;
 ```
+
+`Compact` is the client-side history compaction entry point: it walks the active history backward and replaces the content of all but the newest `response_to_keep` tool-response messages with the fixed marker `kTrimMessage` (`"[TOOL RESPONSE CONTENT TRUNCATED BY SYSTEM TO SAVE MEMORY]"`). Each concrete client supplies a provider-shaped trim lambda (Ollama/Moonshot trim `msg["content"]`, OpenAI `/v1/responses` trims `msg["output"]`, Claude trims each element of the `msg["content"]` array). Returns the estimated number of tokens trimmed (via `assistant::CountTokens`). Note: nothing in the library calls `Compact` automatically — it is caller-initiated (the CLI demo binds it to `/compact`).
 
 `OnResponseCallback` signature:
 
@@ -71,7 +75,7 @@ Returning `false` from the callback signals "stop processing further chunks for 
 | `kRequestCost` | Per-request cost summary string |
 | `kToolDenied` / `kToolAllowed` | Result of human-in-the-loop tool gate |
 | `kMaxTokensReached` | Generation hit `max_tokens`; caller may continue |
-| `kServerCompaction` | Server-side context compaction notice |
+| `kServerCompaction` | Server-side context compaction happened — the client replaced/annotated history and delivers the fixed status string `"History has been updated with server-side history compaction."` (emitted by both `OpenAIClient` and `ClaudeClient`) |
 
 ### Models and capabilities
 
@@ -89,11 +93,14 @@ virtual std::optional<ModelCapabilities> GetModelCapabilities(const std::string&
 
 | Method | Notes |
 |---|---|
-| `ApplyConfig(const Config*)` | Loads endpoint, MCP servers, log level, timeouts, compaction threshold |
+| `ApplyConfig(const Config*)` | Loads endpoint, MCP servers, log level, timeouts, auto-compact threshold |
 | `AddSystemMessage(std::string)` / `ClearSystemMessages()` | System messages are sent on every request |
-| `ClearHistoryMessages()` / `GetHistory()` / `SetHistory(messages)` | Conversation history (active history honours `SwapToTempHistory`) |
+| `ClearHistoryMessages()` / `GetHistory()` / `SetHistory(messages \| Messages)` | Conversation history (active history honours `SwapToTempHistory`). The `Messages` overload preserves per-message `MessageType` tags |
+| `GetToolResponseCount()` | Number of `MessageType::kToolResponse` entries in the active history |
+| `GetAutoCompactThreshold()` | Estimated-token threshold from `endpoints[].auto_compact_threshold` (0 = disabled) |
+| `IsThinking()` | `optional<bool>` — the endpoint's `thinking` flag (unset when absent from config) |
 | `ClearMessageQueue()` / `ClearFunctionTable()` | Drain the queue / drop tools |
-| `GetUrl()` / `GetHttpHeaders()` / `GetEndpointKind()` / `SetEndpointKind(kind)` | Endpoint metadata |
+| `GetUrl()` / `GetHttpHeaders()` (virtual) / `GetEndpointKind()` / `SetEndpointKind(kind)` | Endpoint metadata. `GetHttpHeaders` is virtual so subclasses can inject headers (Claude adds the `anthropic-beta` compaction header) |
 | `GetMaxTokens()` / `SetMaxTokens(n)` / `GetContextSize()` | Per-endpoint generation limits |
 | `SetEndpoint(Endpoint)` | Replace the active endpoint wholesale |
 | `GetModel()` | Currently configured model id |
@@ -194,6 +201,7 @@ Methods of interest beyond `Add`:
 | `Call(FunctionCall) → FunctionResult` | Dispatches by name; catches exceptions into `isError = true` |
 | `ToJSON(EndpointKind, CachePolicy) → json` | Wire schema for the active endpoint |
 | `GetFunctionsCount()` / `IsEmpty()` | Counts only **enabled** functions |
+| `GetAllFunctions() → vector<pair<string,bool>>` | Thread-safe snapshot of `{name, enabled}` for every registered function |
 
 ## MCP integration
 
@@ -256,6 +264,11 @@ OLOG_ERROR() << "...";
 ## Process and Curl utilities
 
 Both are part of the public include surface (`assistant/Process.hpp`, `assistant/Curl.hpp`) — the curl transport is selectable via `client->SetTransportType(TransportType::curl)` after construction or by setting `transport` in the configuration.
+
+`Process` offers two modes:
+
+- **One-shot** (static): `RunProcessAndWait(argv, output_cb?, use_shell)` and `RunProcessAsync(argv, output_cb, completion_cb, use_shell)`. The child's stdin is closed immediately after spawn, so children that read stdin see EOF instead of hanging. Returning `false` from `output_cb` kills the child.
+- **Interactive** (instance): `Process::StartInteractive(argv, output_cb, use_shell) → shared_ptr<Process>` spawns a bidirectional child. Instance methods: `Write(data)` / `WriteLine(data)` (mutex-guarded, callable from any thread), `IsRunning()`, `GetPid()`, `SendInterrupt()` (SIGINT / `CTRL_BREAK_EVENT`), `Stop()` (SIGTERM → 3 s grace → SIGKILL on POSIX; hard terminate on Windows). Output arrives on a detached reader thread that holds only a `weak_ptr`, so dropping the `shared_ptr` stops and reaps the child (the destructor calls `Stop()`). Constructor is private — `StartInteractive` is the only way to get an instance.
 
 ## Stability and ABI notes
 

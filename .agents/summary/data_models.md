@@ -14,7 +14,6 @@ Parsed by `assistant::ConfigBuilder::FromFile(path, env_map?)` or `FromContent(j
   "log_level": "info",
   "stream": true,
   "keep_alive": "5m",
-  "compaction_threshold": 10000,
   "server_timeout": {
     "connect_ms": 100,
     "read_ms": 10000,
@@ -30,7 +29,15 @@ Parsed by `assistant::ConfigBuilder::FromFile(path, env_map?)` or `FromContent(j
       "max_tokens": 8192,
       "context_size": 200000,
       "verify_server_ssl": true,
-      "transport": "httplib"
+      "transport": "httplib",
+      "thinking": true,
+      "auto_compact_threshold": 100000,
+      "server_compaction": {
+        "enabled": false,
+        "trigger_input_tokens": 150000,
+        "pause_after_compaction": false,
+        "instructions": "optional custom summarisation prompt"
+      }
     }
   ],
   "mcp_servers": [
@@ -66,7 +73,7 @@ Parsed by `assistant::ConfigBuilder::FromFile(path, env_map?)` or `FromContent(j
 Constraints enforced by `ConfigBuilder`:
 
 - Exactly one endpoint should be marked `"active": true`. If none are marked active, the first one becomes the effective endpoint.
-- `endpoints[].type` must be one of `ollama`, `anthropic`, `openai`, `moonshotai` (decoded via `magic_enum::enum_cast<EndpointKind>`).
+- `endpoints[].type` must be one of `ollama`, `anthropic`, `openai`, `moonshotai`, `minimax` (decoded via `magic_enum::enum_cast<EndpointKind>`).
 - `endpoints[].transport` (if present) must be `httplib` or `curl` (decoded via `magic_enum::enum_cast<TransportType>`).
 - Each `mcp_servers[]` entry must contain exactly one of `stdio` or `sse`.
 - All string values are `EnvExpander`-processed before validation; `${VAR}` and `$VAR` references are resolved against the optional `env_map` parameter and then the process environment.
@@ -78,7 +85,6 @@ Defaults (when fields are omitted):
 | `log_level` | `info` |
 | `stream` | `true` |
 | `keep_alive` | `"5m"` |
-| `compaction_threshold` | `10000` |
 | `server_timeout.connect_ms` | `100` |
 | `server_timeout.read_ms` | `10000` |
 | `server_timeout.write_ms` | `10000` |
@@ -86,10 +92,22 @@ Defaults (when fields are omitted):
 | `endpoint.context_size` | `32 * 1024` |
 | `endpoint.verify_server_ssl` | `true` |
 | `endpoint.transport` | `httplib` |
+| `endpoint.thinking` | unset (`std::optional<bool>` — tri-state, not `false`) |
+| `endpoint.auto_compact_threshold` | `context_size / 2` when `context_size` is set, else `10000`; `0` disables |
+| `endpoint.server_compaction.enabled` | `false` |
+| `endpoint.server_compaction.trigger_input_tokens` | `150000` (Anthropic enforces a 50000 minimum server-side; forwarded verbatim) |
+| `endpoint.server_compaction.pause_after_compaction` | `false` |
+| `endpoint.server_compaction.instructions` | unset (when set, **replaces** the default Anthropic summarisation prompt) |
+
+Notes on the newer endpoint keys:
+
+- `thinking` (bool) is only consulted by `OpenAIMessagesClient` (Moonshot AI / Minimax): when set, requests carry `"thinking": {"type": "enabled"|"disabled"}`; when unset, no `thinking` field is emitted.
+- `auto_compact_threshold` (renamed from `compaction_threshold`) is the client-side compaction threshold in *estimated* tokens. The library does not trigger compaction automatically from it — `ClientBase::Compact()` is caller-initiated. `OpenAIClient` additionally forwards it server-side as `context_management: [{type: "compaction", compact_threshold: N}]` on every `/v1/responses` request when non-zero.
+- `server_compaction` configures **Anthropic** server-side compaction (beta). When enabled, `ClaudeClient` adds the `anthropic-beta: compact-2026-01-12` header (merged with any operator-supplied value) and a `context_management.edits` entry of type `compact_20260112` to each request.
 
 ## Endpoint hierarchy
 
-`Endpoint` (`assistant/config.hpp`) is the value object for a single provider configuration. The header pre-builds five convenience subclasses with sensible defaults:
+`Endpoint` (`assistant/config.hpp`) is the value object for a single provider configuration. The header pre-builds six convenience subclasses with sensible defaults:
 
 ```mermaid
 classDiagram
@@ -98,22 +116,33 @@ classDiagram
     EndpointKind type_
     map~string,string~ headers_
     bool active_
+    optional~bool~ thinking_
     string model_
     vector~string~ models_
     optional~size_t~ max_tokens_
     optional~size_t~ context_size_
     bool verify_server_ssl_
     TransportType transport_
-    size_t compaction_threshold_
+    size_t auto_compact_threshold_
+    ServerCompaction server_compaction_
+  }
+  class ServerCompaction {
+    bool enabled
+    size_t trigger_input_tokens
+    bool pause_after_compaction
+    optional~string~ instructions
   }
   class AnthropicEndpoint
   class OpenAIEndpoint
   class MoonshotAIEndpoint
+  class MinimaxEndpoint
   class OllamaLocalEndpoint
   class OllamaCloudEndpoint
+  Endpoint --> ServerCompaction
   Endpoint <|-- AnthropicEndpoint
   Endpoint <|-- OpenAIEndpoint
   Endpoint <|-- MoonshotAIEndpoint
+  Endpoint <|-- MinimaxEndpoint
   Endpoint <|-- OllamaLocalEndpoint
   Endpoint <|-- OllamaCloudEndpoint
 ```
@@ -126,6 +155,8 @@ URL constants (`assistant/config.hpp`):
 | `kEndpointAnthropic` | `https://api.anthropic.com` |
 | `kEndpointOllamaCloud` | `https://ollama.com` |
 | `kEndpointOpenAI` | `https://api.openai.com` |
+| `kEndpointMoonshotAI` | `https://api.moonshot.ai` |
+| `kEndpointMinimax` | `https://api.minimax.io` |
 
 ## MCP server configuration
 
@@ -222,7 +253,7 @@ classDiagram
     -Locker~map~string,ModelCapabilities~~ m_model_capabilities
     -atomic_bool m_interrupt
     -atomic_bool m_stream
-    -atomic_size_t m_compaction_threshold
+    -atomic_size_t m_auto_compact_threshold
     -Locker~string~ m_keep_alive
     -OnToolInvokeCallback m_on_invoke_tool_cb
     -Locker~optional~Pricing~~ m_cost
@@ -238,7 +269,17 @@ classDiagram
 
 ## `History` semantics
 
-`History` owns two message vectors — `messages_` (main) and `temp_messages_` — plus a pointer `active_history_` and a counter `swap_count_` (all `GUARDED_BY(mutex_)`).
+`History` owns two `Messages` stores — `messages_` (main) and `temp_messages_` — plus a pointer `active_history_` and a counter `swap_count_` (all `GUARDED_BY(mutex_)`).
+
+`Messages` (defined alongside `History` in `client_base.hpp`) pairs the raw `assistant::messages` vector with a parallel `std::vector<MessageType>`, so every history entry carries a type tag:
+
+```cpp
+enum class MessageType {
+  kNormal,        // regular user/assistant/system messages (default)
+  kToolRequest,   // assistant messages that request a tool invocation
+  kToolResponse,  // tool result messages (the compaction target)
+};
+```
 
 ```mermaid
 stateDiagram-v2
@@ -248,15 +289,20 @@ stateDiagram-v2
   Temp --> Main : SwapToMainHistory() drops swap_count_ to 0
   state Main {
     [*] --> Active
-    Active : AddMessage / GetMessages / SetMessages / Clear / ShrinkToFit
+    Active : AddMessage / GetMessages / SetMessages / Clear / Compact / GetToolResponseCount
   }
   state Temp {
     [*] --> ActiveT
-    ActiveT : same operations on temp_messages_
+    ActiveT : same operations on temp_messages_ (Compact and GetToolResponseCount are no-ops)
   }
 ```
 
-`ShrinkToFit(max_size)` removes oldest messages until the active history's length is `≤ max_size`. `ClearAll()` empties both vectors regardless of which is active.
+Compaction primitives (both no-ops while the temp history is active):
+
+- `GetToolResponseCount()` — counts `kToolResponse` entries in the active history.
+- `Compact(msg_trim_func, responses_to_keep = 3)` — walks the history backward, leaves the newest `responses_to_keep` tool responses untouched, and passes every older `kToolResponse` message to `msg_trim_func`, which mutates it in place and returns the number of tokens it trimmed. `kNormal` and `kToolRequest` messages are never touched. Returns the total tokens trimmed. The trim replaces content with `kTrimMessage` (`"[TOOL RESPONSE CONTENT TRUNCATED BY SYSTEM TO SAVE MEMORY]"`); token counts come from `assistant::CountTokens` (`assistant/common/tokens.hpp`), a local cl100k-style estimator (±5% prose / ±10% code — no BPE table, no network).
+
+`SetMessages(const assistant::messages&)` tags everything `kNormal`; the `SetMessages(const Messages&)` overload preserves tags. `ClearAll()` empties both stores regardless of which is active. (The old `ShrinkToFit(max_size)` oldest-message eviction was removed in favour of `Compact`.)
 
 ## Pricing and usage
 

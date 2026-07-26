@@ -153,7 +153,8 @@ Concurrency primitives in use:
 - `assistant::ThreadNotifier<Value>` (`thread_notifier.hpp`) — a condvar-backed value slot used to deliver one-shot results between threads with a timeout.
 - `std::atomic_bool m_interrupt` on `ClientBase` for cooperative cancellation.
 - `ChatRequestQueue` (in `client_base.hpp`) — internally a `std::vector` guarded by a `std::mutex`.
-- `History` (in `client_base.hpp`) — guards the active message vector with a mutex; supports nested `SwapToTempHistory`/`SwapToMainHistory`.
+- `History` (in `client_base.hpp`) — guards the active `Messages` store (message vector + parallel `MessageType` tags) with a mutex; supports nested `SwapToTempHistory`/`SwapToMainHistory` and thread-safe `Compact`/`GetToolResponseCount`.
+- `Process` interactive mode — one detached reader thread per interactive child, holding only a `weak_ptr` to the `Process` so object destruction stops the thread and the child.
 
 ## Transport
 
@@ -207,6 +208,13 @@ sequenceDiagram
   end
   Client-->>App: cb(text, Reason::kDone, ...)
 ```
+
+## History compaction
+
+Long tool-heavy conversations are kept in bounds by two independent mechanisms:
+
+- **Client-side (all providers):** every history entry is tagged with a `MessageType` (`kNormal` / `kToolRequest` / `kToolResponse`). `ClientBase::Compact(responses_to_keep = 3)` replaces the content of all but the newest N tool responses with a fixed truncation marker and returns the estimated tokens trimmed (`assistant::CountTokens`). Each client supplies a trim lambda matching its wire format (Claude trims `tool_result` blocks inside a content array; OpenAI `/v1/responses` trims `msg["output"]`; Ollama/chat-completions trim `msg["content"]`). This is **caller-initiated** — the endpoint's `auto_compact_threshold` is exposed via `GetAutoCompactThreshold()` but the library does not act on it by itself.
+- **Server-side (Anthropic and OpenAI):** `ClaudeClient` implements Anthropic's compaction beta (`anthropic-beta: compact-2026-01-12` header + `context_management.edits`, configured via the endpoint's `server_compaction` block); the streamed summary is stored into history as a `{"type": "compaction"}` block and surfaced as `Reason::kServerCompaction`. `OpenAIClient` forwards `auto_compact_threshold` as `context_management: [{type: "compaction", compact_threshold: N}]` and, on a server compaction event, replaces the local history with the compaction output.
 
 ## Cancellation, max tokens, and continuation
 

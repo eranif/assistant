@@ -86,9 +86,10 @@ The library itself only speaks HTTP(S). What you also need outside the build:
 
 | Provider | Account / endpoint | Auth header (typical) |
 |---|---|---|
-| Anthropic Claude | `https://api.anthropic.com` API key | `x-api-key: ${ANTHROPIC_API_KEY}`, plus `anthropic-version: 2023-06-01` |
+| Anthropic Claude | `https://api.anthropic.com` API key | `x-api-key: ${ANTHROPIC_API_KEY}`, plus `anthropic-version: 2023-06-01` (with `server_compaction.enabled`, the client adds `anthropic-beta: compact-2026-01-12` itself) |
 | OpenAI | `https://api.openai.com` API key | `Authorization: Bearer ${OPENAI_API_KEY}` |
-| Moonshot AI / OpenAI-compatible | provider-specific base URL | provider-specific |
+| Moonshot AI | `https://api.moonshot.ai` | provider-specific |
+| Minimax | `https://api.minimax.io` | provider-specific |
 | Ollama (local) | `http://127.0.0.1:11434` (must be running) | none |
 | Ollama (cloud) | `https://ollama.com` | provider-specific |
 
