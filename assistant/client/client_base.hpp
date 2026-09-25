@@ -554,8 +554,14 @@ class ClientBase {
     return m_last_request_usage.get_value();
   }
 
+  /// Record the usage of a completed request. The aggregated usage (billing)
+  /// always includes it, but requests made against the temporary history
+  /// (`ChatOptions::kNoHistory`) do not update the last-request usage, which
+  /// tracks the size of the main conversation context.
   inline void SetLastRequestUsage(const Usage& usage) {
-    m_last_request_usage.set_value(usage);
+    if (!m_history.IsTempHistory()) {
+      m_last_request_usage.set_value(usage);
+    }
     m_aggregated_usage.with_mut([&usage](Usage& agg) { agg.Add(usage); });
   }
 
@@ -571,7 +577,7 @@ class ClientBase {
    * @brief Get token usage statistics relative to context size.
    *
    * Returns a TokenUsageStats structure containing the current token usage
-   * (from the last request) compared against the configured context size.
+   * (from the last main-history request) compared against the configured context size.
    *
    * @return TokenUsageStats with usage information and context limits.
    */
@@ -588,7 +594,11 @@ class ClientBase {
   TokenUsageStats GetAggregatedTokenUsageStats() const;
 
   /**
-   * @brief Check if the current token usage is near the context limit.
+   * @brief Check if the main conversation is near the context limit.
+   *
+   * Based on the last main-history request (temporary-history requests are
+   * ignored), not on the cumulative usage. Returns false if no request has
+   * been made yet.
    *
    * @param threshold_percentage Percentage threshold (default 80.0).
    * @return true if usage is at or above the threshold.

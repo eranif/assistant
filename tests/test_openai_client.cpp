@@ -205,6 +205,74 @@ TEST(OpenAIClientTest, UsageTracking) {
   EXPECT_EQ(aggregated.output_tokens, 125);
 }
 
+namespace {
+// Exposes the (protected) history so tests can switch to the temp history.
+class TestableOpenAIClient : public OpenAIClient {
+ public:
+  using OpenAIClient::OpenAIClient;
+  void SwapToTemp() { m_history.SwapToTempHistory(); }
+  void SwapToMain() { m_history.SwapToMainHistory(); }
+};
+}  // namespace
+
+// Requests made against the temp history must not affect the context usage of
+// the main conversation, but must still be counted in the aggregated usage.
+TEST(OpenAIClientTest, TempHistoryUsageDoesNotAffectMainContext) {
+  OpenAIEndpoint endpoint;
+  endpoint.context_size_ = 1000;
+  TestableOpenAIClient client(endpoint);
+
+  Usage main_usage;
+  main_usage.input_tokens = 100;
+  main_usage.output_tokens = 10;
+  client.SetLastRequestUsage(main_usage);
+
+  client.SwapToTemp();
+  Usage temp_usage;
+  temp_usage.input_tokens = 900;
+  temp_usage.output_tokens = 50;
+  client.SetLastRequestUsage(temp_usage);
+  client.SwapToMain();
+
+  // Last usage still reflects the main conversation
+  auto last = client.GetLastRequestUsage();
+  ASSERT_TRUE(last.has_value());
+  EXPECT_EQ(last->input_tokens, 100);
+  EXPECT_EQ(last->output_tokens, 10);
+
+  auto stats = client.GetTokenUsageStats();
+  ASSERT_TRUE(stats.has_value());
+  EXPECT_EQ(stats->total_tokens_used, 110);
+  EXPECT_FALSE(client.IsNearContextLimit(80.0));
+
+  // Aggregated (billing) usage includes the temp request
+  auto aggregated = client.GetAggregatedUsage();
+  EXPECT_EQ(aggregated.input_tokens, 1000);
+  EXPECT_EQ(aggregated.output_tokens, 60);
+}
+
+// Context limit is based on the last main-history request, not the
+// cumulative usage.
+TEST(OpenAIClientTest, IsNearContextLimitUsesLastRequest) {
+  OpenAIEndpoint endpoint;
+  endpoint.context_size_ = 1000;
+  OpenAIClient client(endpoint);
+  EXPECT_FALSE(client.IsNearContextLimit(80.0));
+
+  Usage usage;
+  usage.input_tokens = 300;
+  usage.output_tokens = 0;
+  // Cumulative usage (900) would exceed 80%, the last request (300) does not.
+  client.SetLastRequestUsage(usage);
+  client.SetLastRequestUsage(usage);
+  client.SetLastRequestUsage(usage);
+  EXPECT_FALSE(client.IsNearContextLimit(80.0));
+
+  usage.input_tokens = 900;
+  client.SetLastRequestUsage(usage);
+  EXPECT_TRUE(client.IsNearContextLimit(80.0));
+}
+
 // Test transport type configuration
 TEST(OpenAIClientTest, TransportType) {
   OpenAIClient client;

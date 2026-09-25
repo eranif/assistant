@@ -320,8 +320,12 @@ TokenUsageStats ClientBase::GetAggregatedTokenUsageStats() const {
 }
 
 bool ClientBase::IsNearContextLimit(double threshold_percentage) const {
-  // Use aggregated usage to check overall context consumption
-  TokenUsageStats stats = GetAggregatedTokenUsageStats();
-  return stats.IsNearContextLimit(threshold_percentage);
+  // The aggregated usage is cumulative (billing); the context consumption is
+  // what the last main-history request sent and received.
+  auto stats = GetTokenUsageStats();
+  if (!stats.has_value()) {
+    return false;
+  }
+  return stats->IsNearContextLimit(threshold_percentage);
 }
 }  // namespace assistant
