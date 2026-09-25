@@ -119,8 +119,7 @@ void ClientBase::SendWithRetry(const std::function<void()>& send,
 
       auto delay = policy->GetDelay(ctx);
       // Round up to whole seconds for the human-readable message.
-      auto seconds =
-          (delay.count() + 999) / 1000;  // ceil(delay_ms / 1000)
+      auto seconds = (delay.count() + 999) / 1000;  // ceil(delay_ms / 1000)
 
       std::stringstream ss;
       ss << "Retrying " << (attempt + 1);
@@ -132,8 +131,7 @@ void ClientBase::SendWithRetry(const std::function<void()>& send,
       // The underlying error is verbose (it may contain the full response
       // body); keep it in the log only, and surface a concise message to the
       // caller.
-      OLOG(LogLevel::kWarning)
-          << ss.str() << " Request failed: " << e.what();
+      OLOG(LogLevel::kWarning) << ss.str() << " Request failed: " << e.what();
       if (callback) {
         callback(ss.str(), Reason::kRetry, false);
       }

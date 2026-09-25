@@ -577,7 +577,8 @@ class ClientBase {
    * @brief Get token usage statistics relative to context size.
    *
    * Returns a TokenUsageStats structure containing the current token usage
-   * (from the last main-history request) compared against the configured context size.
+   * (from the last main-history request) compared against the configured
+   * context size.
    *
    * @return TokenUsageStats with usage information and context limits.
    */
